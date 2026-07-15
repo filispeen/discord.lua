@@ -49,6 +49,10 @@ local class = require("core.class")
 -- Bot class
 local Bot = class("Bot")
 
+function Bot.__call()
+    error("Bot is not a function, use Bot:new() or Bot.new()")
+end
+
 function Bot.new(token, ratelimiter)
     local self = {
         token = token,

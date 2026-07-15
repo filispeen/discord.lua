@@ -49,7 +49,7 @@ describe("Group", function()
 
     it("handles empty subcommand name", function()
         local group = M.new("test")
-
-        assert.equals("test test", group:get_full_name("test"))
+        -- When no subcommand is provided, it returns just the group name
+        assert.equals("test", group:get_full_name())
     end)
 end)
