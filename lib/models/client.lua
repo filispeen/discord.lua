@@ -49,6 +49,7 @@ function Client.new(token, ratelimiter)
         ratelimiter = ratelimiter or {},
         events = {},
         http = nil,
+        gateway = nil,
     }
     setmetatable(self, {
         __index = Client
@@ -68,6 +69,43 @@ function Client:_create_http()
     self.http = http_client
 
     return http_client
+end
+
+-- Create and start gateway
+function Client:start_gateway()
+    local gateway_manager = require("gateway.manager")
+
+    self.gateway = gateway_manager.new(self, 1)
+
+    -- Listen for gateway events
+    self.gateway:on_shard_ready(function(shard_id, shard)
+        self:emit("shard_ready", { shard_id = shard_id, shard = shard })
+    end)
+
+    self.gateway:on_shard_error(function(shard_id, shard, error)
+        self:emit("shard_error", { shard_id = shard_id, shard = shard, error = error })
+    end)
+
+    self.gateway:on_shard_disconnect(function(shard_id, shard, event)
+        self:emit("shard_disconnect", { shard_id = shard_id, shard = shard, event = event })
+    end)
+
+    self.gateway:on_ready(function()
+        self:emit("ready")
+    end)
+
+    self.gateway:start()
+
+    return self
+end
+
+-- Stop gateway
+function Client:stop_gateway()
+    if self.gateway then
+        self.gateway:stop()
+        self.gateway = nil
+    end
+    return self
 end
 
 -- Event methods
@@ -110,6 +148,47 @@ function Client:off(event, callback)
     return self
 end
 
+-- Gateway-specific event listeners
+function Client:on_gateway_ready(callback)
+    if not self.listeners.gateway_ready then
+        self.listeners.gateway_ready = {}
+    end
+    table.insert(self.listeners.gateway_ready, callback)
+    return self
+end
+
+function Client:on_gateway_shard_ready(shard_id, callback)
+    if not self.listeners["gateway_shard_ready"] then
+        self.listeners["gateway_shard_ready"] = {}
+    end
+    table.insert(self.listeners["gateway_shard_ready"], callback)
+    return self
+end
+
+function Client:on_gateway_shard_error(shard_id, callback)
+    if not self.listeners["gateway_shard_error"] then
+        self.listeners["gateway_shard_error"] = {}
+    end
+    table.insert(self.listeners["gateway_shard_error"], callback)
+    return self
+end
+
+function Client:on_gateway_shard_disconnect(shard_id, callback)
+    if not self.listeners["gateway_shard_disconnect"] then
+        self.listeners["gateway_shard_disconnect"] = {}
+    end
+    table.insert(self.listeners["gateway_shard_disconnect"], callback)
+    return self
+end
+
+function Client:on_gateway_event(callback)
+    if not self.listeners.gateway_event then
+        self.listeners.gateway_event = {}
+    end
+    table.insert(self.listeners.gateway_event, callback)
+    return self
+end
+
 -- Getters (these need to be implemented with actual API calls)
 function Client:get_user(id)
     if self.http then
@@ -143,6 +222,47 @@ function Client:get_guild(id)
         return response
     end
     return nil
+end
+
+-- Gateway event dispatch methods
+function Client:dispatch_gateway_event(event)
+    -- Dispatch to gateway event listeners
+    if self.listeners.gateway_event then
+        for _, cb in ipairs(self.listeners.gateway_event) do
+            cb(event)
+        end
+    end
+    return self
+end
+
+function Client:dispatch_shard_ready(shard_id, shard)
+    -- Dispatch to shard ready listeners
+    if self.listeners["gateway_shard_ready"] then
+        for _, cb in ipairs(self.listeners["gateway_shard_ready"]) do
+            cb(shard_id, shard)
+        end
+    end
+    return self
+end
+
+function Client:dispatch_shard_error(shard_id, shard, error)
+    -- Dispatch to shard error listeners
+    if self.listeners["gateway_shard_error"] then
+        for _, cb in ipairs(self.listeners["gateway_shard_error"]) do
+            cb(shard_id, shard, error)
+        end
+    end
+    return self
+end
+
+function Client:dispatch_shard_disconnect(shard_id, shard, event)
+    -- Dispatch to shard disconnect listeners
+    if self.listeners["gateway_shard_disconnect"] then
+        for _, cb in ipairs(self.listeners["gateway_shard_disconnect"]) do
+            cb(shard_id, shard, event)
+        end
+    end
+    return self
 end
 
 return Client
