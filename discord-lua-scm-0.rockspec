@@ -1,10 +1,10 @@
 package = {
     name =    "discord-lua",
     version = "0.1.0",
-    description = "A port of pycord to Lua on top of Luvit",
+    description = "Discord API wrapper written in Lua",
     license = "MIT",
-    author = "discord.lua developers",
-    url = "https://github.com/discord-lua/discord.lua",
+    author = "filispeen",
+    url = "https://github.com/filispeen/discord.lua",
 }
 
 source = {

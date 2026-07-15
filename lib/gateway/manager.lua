@@ -25,7 +25,7 @@
 
 local class = require("core.class")
 local Shard = require("gateway.shard")
-local uv = require("luv")
+local uv = package.loaded["mock_luv"] or require("luv")
 
 -- ShardManager class
 local ShardManager = class("ShardManager")

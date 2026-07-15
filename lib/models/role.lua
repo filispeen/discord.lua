@@ -22,6 +22,18 @@
 --
 --   Role:permissions -> number
 --     Role's permissions bitmask.
+--
+--   Role:position -> number
+--     Role's sort position.
+--
+--   Role:managed -> boolean
+--     True if role is managed by an integration.
+--
+--   Role:icon -> string or nil
+--     Role's custom emoji icon.
+--
+--   Role:emoji -> table or nil
+--     Role's custom emoji.
 
 local class = require("core.class")
 
@@ -43,6 +55,7 @@ function Role.new(data)
 
     -- Additional fields
     self.position = data.position or 0
+    self.managed = data.managed or false
     self.icon = data.icon or nil
     self.emoji = data.emoji or nil
 

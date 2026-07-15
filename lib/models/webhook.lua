@@ -22,9 +22,18 @@
 --
 --   Webhook:user -> User or nil
 --     Webhook creator.
+--
+--   Webhook:avatar -> string or nil
+--     Webhook avatar URL.
+--
+--   Webhook:application_id -> string or nil
+--     Application ID.
+--
+--   Webhook:send(content, options) -> table
+--     Sends a message via webhook.
 
 local class = require("core.class")
-local json = require("json")
+local json = require("json") or require("dkjson")
 
 -- Webhook class
 local Webhook = class("Webhook")
@@ -41,8 +50,8 @@ function Webhook.new(data)
     self.channel_id = data.channel_id
     self.token = data.token
     self.user = data.user
-    self.avatar = data.avatar
-    self.application_id = data.application_id
+    self.avatar = data.avatar or nil
+    self.application_id = data.application_id or nil
 
     return self
 end
@@ -59,7 +68,7 @@ function Webhook:send(content, options)
     }
 
     local url = "https://discord.com/api/v10/webhooks/" .. self.id
-    local http = require("http")
+    local http = require("http.client")
     local response, err = http.request(url, {
         method = "POST",
         headers = headers,
@@ -70,7 +79,7 @@ function Webhook:send(content, options)
         error("Webhook send failed: " .. tostring(err), 0)
     end
 
-    return require("json").decode(response.body) or {}
+    return json.decode(response.body) or {}
 end
 
 return Webhook
