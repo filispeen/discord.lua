@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint:
+    name: Lint with luacheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Lua
+        uses: leafo/gh-actions-lua@v10
+        with:
+          luaVersion: "5.1"
+
+      - name: Install luvit
+        run: luarocks install luvit
+
+      - name: Run luacheck
+        run: luacheck --no-unused-args .
+
+  test:
+    name: Run busted tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Lua
+        uses: leafo/gh-actions-lua@v10
+        with:
+          luaVersion: "5.1"
+
+      - name: Install luvit
+        run: luarocks install luvit
+
+      - name: Run busted tests
+        run: busted -p "_test.lua" spec
+
+  rockspec:
+    name: Validate rockspec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Lua
+        uses: leafo/gh-actions-lua@v10
+        with:
+          luaVersion: "5.1"
+
+      - name: Install luvit
+        run: luarocks install luvit
+
+      - name: Validate rockspec
+        run: luarocks pack discord-lua --source-only
