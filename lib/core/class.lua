@@ -21,30 +21,34 @@ function M.class(name, parent)
 
     -- Make class_table callable to create instances
     setmetatable(class_table, {
-        __call = function(self, ...)
-            -- Create instance with self as metatable
+        __call = function(cls, ...)
+            -- If .new() exists, call it (for constructors)
+            if cls.new then
+                local instance = cls.new(...)
+                setmetatable(instance, cls)
+                return instance
+            end
+            -- Otherwise create instance directly
             local instance = {}
-            setmetatable(instance, self)
+            setmetatable(instance, cls)
             return instance
         end,
     })
 
-    -- Set __index AFTER __call is set, so __call is checked first
-    -- parent is already the class_table (not parent.class_table)
-    class_table.__index = parent and parent or M
+    -- Set __index for method lookup - this is the class_table itself
+    class_table.__index = class_table
+
     return class_table
 end
 
 -- Make M callable to create classes
--- The __call metatable receives M as self, so we need to handle this
 setmetatable(M, {
-    __call = function(self, name, parent)
+    __call = function(_, name, parent)
         return M.class(name, parent)
     end
 })
 
 -- Check if an instance is of the given class (or subclass)
--- Traverses the __index chain to find the class_table
 function M.isInstanceOf(instance, Class)
     if not Class then
         return false
@@ -52,11 +56,9 @@ function M.isInstanceOf(instance, Class)
 
     local current = getmetatable(instance)
     while current do
-        -- Check if current is the Class itself (for direct class references)
         if current == Class then
             return true
         end
-        -- Check if current has the __name field matching Class._name
         if current._name == Class._name then
             return true
         end

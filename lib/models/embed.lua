@@ -1,60 +1,5 @@
 -- lib/models/embed.lua
 -- Embed model for Discord API
---
--- Public Contract:
---   Embed.new(data) -> Embed
---     Creates a new Embed from API data.
---
---   Embed:title -> string or nil
---     Embed title.
---
---   Embed:description -> string or nil
---     Embed description.
---
---   Embed:url -> string or nil
---     Embed URL (with thumbnail).
---
---   Embed:image -> string or nil
---     Embed image URL.
---
---   Embed:thumbnail -> string or nil
---     Embed thumbnail URL.
---
---   Embed:author -> table or nil
---     Embed author.
---
---   Embed:footer -> table or nil
---     Embed footer.
---
---   Embed:color -> number
---     Embed color (hex).
---
---   Embed:fields -> table
---     Embed fields.
---
---   Embed:timestamp -> string or nil
---     Embed timestamp.
---
---   Embed:new(title, description, color) -> Embed
---     Creates a new Embed with optional fields.
---
---   Embed:with_author(name, url, icon_url) -> Embed
---     Adds author to embed.
---
---   Embed:with_thumbnail(url) -> Embed
---     Adds thumbnail to embed.
---
---   Embed:with_image(url) -> Embed
---     Adds image to embed.
---
---   Embed:with_footer(text, icon_url) -> Embed
---     Adds footer to embed.
---
---   Embed:with_timestamp() -> Embed
---     Adds current timestamp to embed.
---
---   Embed:with_field(name, value, inline) -> Embed
---     Adds a field to embed.
 
 local class = require("core.class")
 
@@ -62,10 +7,9 @@ local class = require("core.class")
 local Embed = class("Embed")
 
 function Embed.new(data)
+    data = data or {}
     local self = {}
-    setmetatable(self, {
-        __index = Embed
-    })
+    setmetatable(self, { __index = Embed })
 
     self.title = data.title
     self.type = data.type or "rich"
@@ -78,83 +22,99 @@ function Embed.new(data)
     self.thumbnail = data.thumbnail
     self.author = data.author
     self.fields = data.fields or {}
+    self.provider = data.provider
+    self.video = data.video
+    self.attachments = data.attachments or {}
+    self.mentions = data.mentions or {}
+    self.mention_roles = data.mention_roles or {}
+    self.mention_channels = data.mention_channels or {}
+    self.pinned = data.pinned or false
+    self.webhook_id = data.webhook_id
+
+    self.to_json = Embed.to_json
 
     return self
 end
 
--- Create a new embed
-function Embed.create(title, description, color)
-    local embed = Embed.new({
-        title = title,
-        description = description,
-        color = color or 0x000000,
-    })
-    return embed
-end
-
--- Add author to embed
-function Embed:with_author(name, url, icon_url)
-    self.author = {
-        name = name,
-        url = url,
-        icon_url = icon_url,
-    }
+function Embed.with_author(self, name, url, icon_url, color)
+    self.author = {name = name, url = url, icon_url = icon_url}
+    if color then self:with_color(color) end
     return self
 end
 
--- Add thumbnail to embed
-function Embed:with_thumbnail(url)
+function Embed.with_thumbnail(self, url, color)
     self.thumbnail = url
+    if color then self:with_color(color) end
     return self
 end
 
--- Add image to embed
-function Embed:with_image(url)
+function Embed.with_image(self, url, color)
     self.image = url
+    if color then self:with_color(color) end
     return self
 end
 
--- Add footer to embed
-function Embed:with_footer(text, icon_url)
-    self.footer = {
-        text = text,
-        icon_url = icon_url,
-    }
+function Embed.with_video(self, url, color)
+    self.video = {url = url}
+    if color then self:with_color(color) end
     return self
 end
 
--- Add timestamp to embed
-function Embed:with_timestamp()
+function Embed.with_provider(self, name, url, image_url, color)
+    self.provider = {name = name, url = url, image_url = image_url}
+    if color then self:with_color(color) end
+    return self
+end
+
+function Embed.with_footer(self, text, icon_url, color)
+    self.footer = {text = text, icon_url = icon_url}
+    if color then self:with_color(color) end
+    return self
+end
+
+function Embed.with_timestamp(self)
     self.timestamp = os.date("%Y-%m-%dT%H:%M:%SZ")
     return self
 end
 
--- Add a field to embed
-function Embed:with_field(name, value, inline)
-    table.insert(self.fields, {
-        name = name,
-        value = value,
-        inline = inline or false,
-    })
+function Embed.with_field(self, name, value, inline)
+    table.insert(self.fields, {name = name, value = value, inline = inline or false})
     return self
 end
 
--- Set color
-function Embed:color(color)
+function Embed.with_fields(self, fields)
+    for _, field in ipairs(fields) do
+        self:with_field(field.name, field.value, field.inline)
+    end
+    return self
+end
+
+function Embed.with_color(self, color)
     self.color = color
     return self
 end
 
--- Set title
-function Embed:title(title)
+function Embed.title(self, title, url, color)
     self.title = title
+    self.url = url
+    if color then self:with_color(color) end
     return self
 end
 
--- Set description
-function Embed:description(desc)
+function Embed.description(self, desc, color)
     self.description = desc
+    if color then self:with_color(color) end
     return self
+end
+
+function Embed.to_json(self)
+    local json = require("json") or require("dkjson")
+    return json.encode(self)
+end
+
+-- Create a new embed (factory function)
+function Embed.create()
+    return Embed.new({})
 end
 
 return Embed

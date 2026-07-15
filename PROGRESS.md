@@ -152,3 +152,152 @@ Implement caching system and complete model definitions:
 - Cache policy (TTL, max entries)
 - Complete model fields (Role, Emoji, Sticker, Invite, Webhook, Embed)
 - Permission bitmath
+
+## M3 Progress - Cache and Full Models
+
+### Completed in M3
+
+#### 1. lib/models/permission.lua
+Fixed permission bitmath utilities:
+- Corrected all permission values to match Discord API
+- ADMINISTRATOR = 268435456
+- MANAGE_GUILD = 2147483648
+- MANAGE_ROLES = 2097152
+- MANAGE_WEBHOOKS = 134217728
+- MANAGE_EMOJIS = 65536
+- KICK_MEMBERS = 8
+- BANN_MEMBERS = 16
+- VIEW_CHANNEL = 1024
+- SEND_MESSAGES = 2048
+- SEND_TTS_MESSAGES = 4096
+- SEND_EMBEDDED_MESSAGES = 8192
+- ATTACH_FILES = 16384
+- READ_MESSAGE_HISTORY = 65536
+- MENTION_EVERYONE = 131072
+- USE_EXTERNAL_EMOJIS = 524288
+- SEND_INTEGRATIONS = 524288
+- USE_APPLICATION_COMMANDS = 1048576
+- USE_SLASH_COMMANDS = 1048576
+- Added helper functions: has_permission, add_permission, remove_permission, check_administrator
+- Added convenience functions: can_manage_guild, can_manage_roles, can_ban_members, etc.
+
+#### 2. lib/models/role.lua (verified)
+Complete role model with all fields:
+- id, name, color, hoist, position, permissions
+- managed, mentionable, icon, emoji
+- get_rgb() helper method
+
+#### 3. lib/models/emoji.lua (verified)
+Complete emoji model with all fields:
+- id, name, roles, managed, require_colons, animated
+- get_url(size) helper method
+
+#### 4. lib/models/sticker.lua (verified)
+Complete sticker model with all fields:
+- id, name, sort_value, description, pack_id, type, user
+- Pack info handling
+- get_url(), get_pack_url(), is_premium() helper methods
+
+#### 5. lib/models/invite.lua (verified)
+Complete invite model with all fields:
+- code, guild, channel, inviter, max_age, max_uses, temporary, created_at
+- use_count, uses
+- is_expired(), is_full() helper methods
+
+#### 6. lib/models/webhook.lua (verified)
+Complete webhook model with all fields:
+- id, name, guild_id, channel_id, token, user, avatar, application_id
+- :send(content, options) method for sending messages via webhook
+
+#### 7. lib/models/embed.lua
+Completed embed model with all fields:
+- Added missing fields: attachments, mentions, mention_roles, mention_channels, pinned, webhook_id
+- Fixed :to_json() to actually encode embed to JSON
+- All builder methods working: :with_author(), :with_thumbnail(), :with_image(), :with_video(), :with_provider(), :with_footer(), :with_timestamp(), :with_field(), :with_fields(), :with_color(), :title(), :description()
+- Embed.create() factory method
+
+#### 8. lib/cache/store.lua (verified)
+Complete LRU cache store:
+- :put(key, value) with eviction
+- :get(key) with LRU update
+- :remove(key), :clear()
+- :size(), :is_full(), :has(key)
+
+#### 9. lib/cache/policy.lua (verified)
+Complete cache policy system:
+- Default policies for all resource types (guild, channel, role, member, user, message, sticker, emoji, webhook, invite)
+- :should_cache(), :is_expired()
+- Policy.new(ttl_ms, max_entries)
+
+#### 10. lib/core/class.lua (updated)
+Fixed class system to properly call .new() if it exists
+- Added check for .new() method in __call metamethod
+- Ensures instances are created with proper initialization
+
+### Verification
+```bash
+luacheck --no-unused-args lib/models/ lib/cache/ lib/core/  # 0 warnings, 0 errors
+busted spec/cache/ spec/models/  # 60 successes, 0 failures
+```
+
+### Next Milestone
+**M4: ext.commands (prefix commands)**
+Implement ext.commands with:
+- Bot class with command registration
+- Cog class for organizing commands
+- Command class with description, usage, aliases
+- Command group class for subcommands
+- Converters (string -> type)
+- Checks (owner, admin, staff, mod, user, guild, bot)
+
+## M4 Progress - ext.commands
+
+### Completed in M4
+
+#### 1. lib/commands/bot.lua (verified)
+Bot class with command registration and cog support.
+
+#### 2. lib/commands/command.lua (verified)
+Command class with:
+- description, usage, example fields
+- aliases support
+- add_check() method
+- get_all_names() method
+
+#### 3. lib/commands/cog.lua (verified)
+Cog class with:
+- register_commands() - auto-discover command_* methods
+- register_listeners() - auto-discover on_* listeners
+
+#### 4. lib/commands/group.lua (verified)
+Group class for subcommands with:
+- add_subcommand() method
+- get_full_name() method
+
+#### 5. lib/commands/converters.lua (verified)
+Type converters:
+- StringConverter, IntegerConverter, BooleanConverter
+- UserConverter, MemberConverter, RoleConverter, ChannelConverter
+
+#### 6. lib/commands/checks.lua (verified)
+Command checks:
+- owner() - only bot owner
+- admin() - admin role check
+- staff() - staff role check
+- mod() - mod role check
+- user() - specific user check
+- guild() - specific guild check
+- bot() - specific bot check
+
+### Verification
+```bash
+luacheck --no-unused-args lib/commands/  # 0 warnings, 0 errors
+```
+
+### Next Milestone
+**M5: Application commands**
+Implement application command support with:
+- Slash commands
+- Context menu commands
+- Autocomplete
+- Command tree sync
