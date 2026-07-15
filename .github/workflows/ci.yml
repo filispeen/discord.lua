@@ -21,6 +21,9 @@ jobs:
       - name: Install luvit
         run: luarocks install luvit
 
+      - name: Install dependencies
+        run: luarocks install coro-http coro-websocket secure-socket json
+
       - name: Run luacheck
         run: luacheck --no-unused-args .
 
