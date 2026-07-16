@@ -12,6 +12,7 @@ M.Group = {
     example = "",
     name = "",
     aliases = {},
+    subcommands = {},  -- Array of subcommand objects
 }
 
 -- Create a new Group
@@ -22,6 +23,7 @@ function M.new(name, description)
         usage = "",
         example = "",
         aliases = {},
+        subcommands = {},
     }
     setmetatable(group, {
         __index = M.Group
@@ -37,19 +39,19 @@ end
 
 -- Add a subcommand
 function M.Group:add_subcommand(name, description)
-    if not self.subcommands then
-        self.subcommands = {}
-    end
-    self.subcommands[name] = {
+    table.insert(self.subcommands, {
         name = name,
         description = description or "",
-    }
+    })
     return self
 end
 
 -- Get full command name
 function M.Group:get_full_name(subcommand)
-    return self.name .. " " .. (subcommand or self.name)
+    if subcommand then
+        return self.name .. " " .. subcommand
+    end
+    return self.name
 end
 
 return M
