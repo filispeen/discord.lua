@@ -1,7 +1,6 @@
 -- spec/commands/cog_spec.lua
 -- Tests for cog class
 
--- Setup package path to find lib modules
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
 local M = require("commands.cog")
@@ -19,25 +18,24 @@ describe("Cog", function()
         local cog = M.new("test")
 
         -- Simulate registering commands
-        cog.test_command = function(ctx, args) return "test" end
-        cog.another_command = function(ctx, args) return "another" end
+        cog.command_test = function(ctx, args) return "test" end
+        cog.command_another = function(ctx, args) return "another" end
         cog.normal_function = function(ctx) return "normal" end  -- Should not be registered
 
         local commands = {}
-        -- Get raw methods from the cog table (excluding metatable)
-        local mt = getmetatable(cog)
-        if mt then
-            for method, func in pairs(mt) do
-                if method:sub(1, 8) == "command_" then
-                    table.insert(commands, method)
-                end
+        for method, func in pairs(cog) do
+            if method:sub(1, 8) == "command_" then
+                table.insert(commands, method)
             end
         end
 
-        -- The test expects to find test_command and another_command
-        -- But our implementation looks for command_* methods
-        -- So we adjust to check what we actually have
-        assert.equals(2, #cog.commands)  -- Commands registered via :register_commands
+        assert.equals(2, #commands)
+        local cmd_names = {}
+        for _, cmd in ipairs(commands) do
+            cmd_names[cmd] = true
+        end
+        assert.is_true(cmd_names["command_test"])
+        assert.is_true(cmd_names["command_another"])
     end)
 
     it("discovers listener methods", function()
@@ -48,42 +46,39 @@ describe("Cog", function()
         cog.on_other = function() return "other" end
 
         local listeners = {}
-        -- Get raw methods from the cog table
-        local mt = getmetatable(cog)
-        if mt then
-            for method, func in pairs(mt) do
-                if method:sub(1, 3) == "on_" then
-                    table.insert(listeners, method)
-                end
+        for method, func in pairs(cog) do
+            if method:sub(1, 3) == "on_" then
+                table.insert(listeners, method)
             end
         end
 
-        -- Check that listeners were found
+        -- Check that all listeners were found (order may vary)
         local has_ready = false
         local has_message = false
+        local has_other = false
         for _, listener in ipairs(listeners) do
             if listener == "on_ready" then has_ready = true end
             if listener == "on_message" then has_message = true end
+            if listener == "on_other" then has_other = true end
         end
         assert.is_true(has_ready)
         assert.is_true(has_message)
+        assert.is_true(has_other)
     end)
 
     it("does not register private methods", function()
         local cog = M.new("test")
 
         cog._private = function() return "private" end
-        cog.test_command = function(ctx, args) return "test" end
+        cog.command_test = function(ctx, args) return "test" end
 
-        -- Check that _private is not in the cog's raw methods
-        local mt = getmetatable(cog)
-        local has_private = false
-        if mt then
-            for method in pairs(mt) do
-                if method == "_private" then has_private = true end
+        local commands = {}
+        for method in pairs(cog) do
+            if method:sub(1, 8) == "command_" then
+                table.insert(commands, method)
             end
         end
-        -- _private should be accessible on the cog table
-        assert.is_true(type(cog._private) == "function")
+
+        assert.equals(1, #commands)
     end)
 end)

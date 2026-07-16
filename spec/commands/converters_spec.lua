@@ -1,7 +1,6 @@
 -- spec/commands/converters_spec.lua
 -- Tests for converters
 
--- Setup package path to find lib modules
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
 local M = require("commands.converters")
@@ -57,112 +56,96 @@ describe("Converters", function()
     describe("UserConverter", function()
         it("converts user mention", function()
             local converter = M.UserConverter
-            local mock_ctx = {
-                client = {
-                    get_user = function(id)
-                        return { id = id, username = "Test" }
-                    end
-                }
-            }
 
-            assert.equals("123456", converter.convert(mock_ctx, "<@123456>"))
+            local result = converter.convert(
+                { get_user = function(self, user_id) return { id = user_id, username = "Test" } end },
+                "<@123456>"
+            )
+            assert.equals("123456", result.id)
+            assert.equals("Test", result.username)
         end)
 
         it("converts user ID", function()
             local converter = M.UserConverter
-            local mock_ctx = {
-                client = {
-                    get_user = function(id)
-                        return { id = id, username = "Test" }
-                    end
-                }
-            }
 
-            assert.equals("123456", converter.convert(mock_ctx, "123456"))
+            local result = converter.convert(
+                { get_user = function(self, user_id) return { id = user_id, username = "Test" } end },
+                "123456"
+            )
+            assert.equals("123456", result.id)
+            assert.equals("Test", result.username)
         end)
     end)
 
     describe("MemberConverter", function()
         it("converts member mention", function()
             local converter = M.MemberConverter
-            local mock_ctx = {
-                client = {
-                    get_member = function(guild_id, user_id)
-                        return { user = { id = user_id }, roles = { guild_id } }
-                    end
-                }
-            }
 
-            assert.equals("123456", converter.convert(mock_ctx, "<@&123456>"))
+            local result = converter.convert(
+                { get_member = function(self, member_id) return { user = { id = member_id }, roles = { "111" } } end },
+                "<@123456>"
+            )
+            assert.equals("123456", result.user.id)
+            assert.equals(1, #result.roles)
         end)
 
         it("converts member ID", function()
             local converter = M.MemberConverter
-            local mock_ctx = {
-                client = {
-                    get_member = function(guild_id, user_id)
-                        return { user = { id = user_id }, roles = { guild_id } }
-                    end
-                }
-            }
 
-            assert.equals("123456", converter.convert(mock_ctx, "123456"))
+            local result = converter.convert(
+                { get_member = function(self, member_id) return { user = { id = member_id }, roles = { "111" } } end },
+                "123456"
+            )
+            assert.equals("123456", result.user.id)
+            assert.equals(1, #result.roles)
         end)
     end)
 
     describe("RoleConverter", function()
         it("converts role mention", function()
             local converter = M.RoleConverter
-            local mock_ctx = {
-                guild = {
-                    get_role = function(id)
-                        return { id = id, name = "Role" }
-                    end
-                }
-            }
 
-            assert.equals("123456", converter.convert(mock_ctx, "<@&123456>"))
+            local result = converter.convert(
+                { get_role = function(self, role_id) return { id = role_id, name = "Role" } end },
+                "<@&123456>"
+            )
+            assert.equals("123456", result.id)
+            assert.equals("Role", result.name)
         end)
 
         it("converts role ID", function()
             local converter = M.RoleConverter
-            local mock_ctx = {
-                guild = {
-                    get_role = function(id)
-                        return { id = id, name = "Role" }
-                    end
-                }
-            }
 
-            assert.equals("123456", converter.convert(mock_ctx, "123456"))
+            local result = converter.convert(
+                { get_role = function(self, role_id) return { id = role_id, name = "Role" } end },
+                "123456"
+            )
+            assert.equals("123456", result.id)
+            assert.equals("Role", result.name)
         end)
     end)
 
     describe("ChannelConverter", function()
         it("converts channel mention", function()
             local converter = M.ChannelConverter
-            local mock_ctx = {
-                guild = {
-                    get_channel = function(id)
-                        return { id = id, name = "Channel" }
-                    end
-                }
-            }
 
-            assert.equals("123456", converter.convert(mock_ctx, "<#123456>"))
+            local result = converter.convert(
+                { get_channel = function(self, channel_id) return { id = channel_id, name = "Channel" } end },
+                "#123456"
+            )
+            assert.equals("123456", result.id)
+            assert.equals("Channel", result.name)
         end)
 
         it("converts channel ID", function()
             local converter = M.ChannelConverter
-            local mock_ctx = {
-                guild = {
-                    get_channel = function(id)
-                        return { id = id, name = "Channel" }
-                    end
-                }
-            }
 
-            assert.equals("123456", converter.convert(mock_ctx, "123456"))
+            local result = converter.convert(
+                { get_channel = function(self, channel_id) return { id = channel_id, name = "Channel" } end },
+                "123456"
+            )
+            assert.equals("123456", result.id)
+            assert.equals("Channel", result.name)
         end)
     end)
 end)

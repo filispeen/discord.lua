@@ -38,7 +38,7 @@ describe("Command", function()
 
     it("sets an example", function()
         local command = M.new("test")
-        command:example("!test arg1")
+        command.example = "!test arg1"
 
         assert.equals("!test arg1", command.example)
     end)

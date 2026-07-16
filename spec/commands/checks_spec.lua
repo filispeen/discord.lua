@@ -4,6 +4,7 @@
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
 local M = require("commands.checks")
+local permission = require("models.permission")
 
 describe("Checks", function()
     describe("owner check", function()
@@ -32,15 +33,11 @@ describe("Checks", function()
                 author = { id = "123" },
                 guild = { id = "111" },
                 bot = {
-                    get_member = function(id)
-                        -- Extract id properly
-                        local actual_id = type(id) == "table" and (id.id or id.username or id.global_name) or id
-                        return { id = tostring(actual_id), roles = { "789" } }
+                    get_member = function()
+                        return { id = "123", roles = { "789" } }
                     end,
-                    get_role = function(role_id)
-                        -- Extract role_id properly
-                        local role_id_str = type(role_id) == "table" and tostring(role_id.id or role_id.name) or tostring(role_id)
-                        if role_id_str == "789" then return { admin = true } end
+                    get_role = function(self, role_id)
+                        if role_id == "789" then return { admin = true, id = "789" } end
                         return nil
                     end
                 }
@@ -54,13 +51,11 @@ describe("Checks", function()
                 author = { id = "123" },
                 guild = { id = "111" },
                 bot = {
-                    get_member = function(id)
-                        local actual_id = type(id) == "table" and (id.id or id.username or id.global_name) or id
-                        return { id = tostring(actual_id), roles = { "789" } }
+                    get_member = function()
+                        return { id = "123", roles = { "789" } }
                     end,
-                    get_role = function(role_id)
-                        local role_id_str = type(role_id) == "table" and tostring(role_id.id or role_id.name) or tostring(role_id)
-                        if role_id_str == "789" then return { admin = false } end
+                    get_role = function(self, role_id)
+                        if role_id == "789" then return { admin = false, id = "789" } end
                         return nil
                     end
                 }
@@ -76,13 +71,11 @@ describe("Checks", function()
                 author = { id = "123" },
                 guild = { id = "111" },
                 bot = {
-                    get_member = function(id)
-                        local actual_id = type(id) == "table" and (id.id or id.username or id.global_name) or id
-                        return { id = tostring(actual_id), roles = { "789" } }
+                    get_member = function()
+                        return { id = "123", roles = { "789" } }
                     end,
-                    get_role = function(role_id)
-                        local role_id_str = type(role_id) == "table" and tostring(role_id.id or role_id.name) or tostring(role_id)
-                        if role_id_str == "789" then return { staff = true } end
+                    get_role = function(self, role_id)
+                        if role_id == "789" then return { staff = true, id = "789" } end
                         return nil
                     end
                 }
@@ -98,13 +91,11 @@ describe("Checks", function()
                 author = { id = "123" },
                 guild = { id = "111" },
                 bot = {
-                    get_member = function(id)
-                        local actual_id = type(id) == "table" and (id.id or id.username or id.global_name) or id
-                        return { id = tostring(actual_id), roles = { "789" } }
+                    get_member = function()
+                        return { id = "123", roles = { "789" } }
                     end,
-                    get_role = function(role_id)
-                        local role_id_str = type(role_id) == "table" and tostring(role_id.id or role_id.name) or tostring(role_id)
-                        if role_id_str == "789" then return { mod = true } end
+                    get_role = function(self, role_id)
+                        if role_id == "789" then return { mod = true, id = "789" } end
                         return nil
                     end
                 }

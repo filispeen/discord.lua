@@ -1,7 +1,6 @@
 -- spec/commands/group_spec.lua
 -- Tests for group class
 
--- Setup package path to find lib modules
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
 local M = require("commands.group")
@@ -15,7 +14,7 @@ describe("Group", function()
         assert.equals("", group.usage)
         assert.equals("", group.example)
         assert.equals(0, #group.aliases)
-        assert.equals(nil, group.subcommands)
+        assert.equals(0, #group.subcommands)
     end)
 
     it("adds an alias", function()
@@ -49,7 +48,7 @@ describe("Group", function()
 
     it("handles empty subcommand name", function()
         local group = M.new("test")
-        -- When no subcommand is provided, it returns just the group name
+
         assert.equals("test", group:get_full_name())
     end)
 end)
