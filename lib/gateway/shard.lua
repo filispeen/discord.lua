@@ -63,6 +63,21 @@ function Shard.new(client, shard_id, total_shards)
     return self
 end
 
+-- Get shard ID
+function Shard:shard_id()
+    return self.shard_id
+end
+
+-- Get total shards
+function Shard:total_shards()
+    return self.total_shards
+end
+
+-- Get shard affinity
+function Shard:shard_affinity()
+    return self.shard_affinity
+end
+
 -- Reset internal state
 function Shard:reset_state()
     self._state.connected = false

@@ -6,7 +6,7 @@
 --     Creates a new ShardManager.
 --
 --   ShardManager:start() -> nil
---     Starts all shards.
+--     Starts all shards with max_concurrency limit.
 --
 --   ShardManager:stop() -> nil
 --     Stops all shards.
@@ -22,6 +22,18 @@
 --
 --   ShardManager:on_ready(callback) -> self
 --     Listen for bot ready event.
+--
+--   ShardManager:on_shard_ready(shard_id, callback) -> self
+--     Listen for individual shard ready event.
+--
+--   ShardManager:on_shard_error(shard_id, callback) -> self
+--     Listen for individual shard error event.
+--
+--   ShardManager:on_shard_disconnect(shard_id, callback) -> self
+--     Listen for individual shard disconnect event.
+--
+--   ShardManager:wait_for_shard(shard_id, timeout) -> boolean
+--     Wait for a shard to be ready (deprecated, use on_shard_ready).
 
 local class = require("core.class")
 local Shard = require("gateway.shard")
@@ -49,7 +61,7 @@ function ShardManager.new(client, max_concurrency)
     return self
 end
 
--- Start all shards
+-- Start all shards with auto-sharding support
 function ShardManager:start()
     -- Get shard configuration from gateway
     local gateway_url = self.client:get("/gateway/bot")
@@ -58,35 +70,54 @@ function ShardManager:start()
     end
 
     -- Parse shard count and max concurrency
-    local shards = gateway_url.data.shards
+    local shards = gateway_url.data.shards or 1
     local max_concurrency = gateway_url.data.max_concurrency or 1
 
     -- Update max concurrency
     self.max_concurrency = math.min(self.max_concurrency, max_concurrency)
 
     -- Create shards
-    for i = 1, #shards do
+    for i = 1, shards do
         local shard_id = i - 1
-        self.shards[shard_id] = Shard.new(self.client, shard_id, #shards)
+        self.shards[shard_id] = Shard.new(self.client, shard_id, shards)
     end
 
-    -- Start each shard
-    for _, shard in ipairs(self.shards) do
-        shard:connect()
+    -- Start shards respecting max_concurrency
+    local ready_count = 0
+    local started_count = 0
 
-        -- Wait for shard to be ready (for max_concurrency control)
-        local shard_ready = false
-        shard:on_ready(function()
-            shard_ready = true
-        end)
-
-        -- Start next shard after current one is ready
-        local timer = uv.timer:new(function()
-            if not shard_ready and shard._state.connected then
-                self:start()
+    local start_next = function()
+        if ready_count >= self.max_concurrency and started_count < shards then
+            for i = started_count, shards - 1 do
+                local shard = self.shards[i]
+                if shard and not shard._state.connected then
+                    shard:connect()
+                    shard:on_ready(function()
+                        ready_count = ready_count + 1
+                        if ready_count < self.max_concurrency then
+                            start_next()
+                        end
+                    end)
+                    started_count = started_count + 1
+                    break
+                end
             end
-        end)
-        timer:start(1000, 1000)
+        end
+    end
+
+    -- Start initial batch respecting max_concurrency
+    for i = 0, math.min(shards - 1, self.max_concurrency - 1) do
+        local shard = self.shards[i]
+        if shard and not shard._state.connected then
+            shard:connect()
+            shard:on_ready(function()
+                ready_count = ready_count + 1
+                if ready_count < self.max_concurrency then
+                    start_next()
+                end
+            end)
+            started_count = started_count + 1
+        end
     end
 
     return self
