@@ -17,18 +17,16 @@ local M = {}
 function M.class(name, parent)
     local class_table = {
         _name = name,
+        _parent = parent,
     }
 
     -- Make class_table callable to create instances
     setmetatable(class_table, {
+        __index = parent,
         __call = function(cls, ...)
-            -- If .new() exists, call it (for constructors)
             if cls.new then
-                local instance = cls.new(...)
-                setmetatable(instance, cls)
-                return instance
+                return cls.new(...)
             end
-            -- Otherwise create instance directly
             local instance = {}
             setmetatable(instance, cls)
             return instance
@@ -36,6 +34,7 @@ function M.class(name, parent)
     })
 
     -- Set __index for method lookup - this is the class_table itself
+    -- Unresolved lookups fall through to parent via the metatable __index above
     class_table.__index = class_table
 
     return class_table
@@ -62,7 +61,7 @@ function M.isInstanceOf(instance, Class)
         if current._name == Class._name then
             return true
         end
-        current = current.__index
+        current = current._parent
     end
     return false
 end
