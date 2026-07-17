@@ -156,6 +156,11 @@ function Client:put(endpoint, body, options)
     return self:request("PUT", endpoint, { body = body, options = options })
 end
 
+-- PATCH wrapper
+function Client:patch(endpoint, body, options)
+    return self:request("PATCH", endpoint, { body = body, options = options })
+end
+
 -- DELETE wrapper
 function Client:delete(endpoint, options)
     return self:request("DELETE", endpoint, options)
