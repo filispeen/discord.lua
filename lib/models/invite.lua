@@ -88,7 +88,7 @@ function Invite:is_expired()
         created = now
     end
 
-    return now - created > self.max_age
+    return now - created >= self.max_age
 end
 
 -- Check if invite is full

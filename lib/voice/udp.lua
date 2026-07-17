@@ -38,7 +38,7 @@ function UDPClient.new(endpoint, token)
             read_timer = nil,
         },
     }
-    setmetatable(self, UDPClient)
+    setmetatable(self, { __index = UDPClient })
     return self
 end
 

@@ -73,7 +73,7 @@ describe("Permissions", function()
     end)
 
     it("can_ban_members works", function()
-        assert.is_true(permission.can_ban_members(permission.BANN_MEMBERS))
+        assert.is_true(permission.can_ban_members(permission.BAN_MEMBERS))
         assert.is_false(permission.can_ban_members(0))
     end)
 end)

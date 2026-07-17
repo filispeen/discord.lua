@@ -10,13 +10,21 @@
 --     decoder:decode(opus_packet) - Decode Opus to PCM
 --     decoder:destroy() - Cleanup decoder
 
-local ffi = require("ffi")
+local ffi_ok, ffi = pcall(require, "ffi")
+if not ffi_ok then
+    ffi = nil
+end
 
-local C = ffi.C
+local C = ffi_ok and ffi.C or nil
 
 -- Load libopus
 local opus_lib = nil
 local function load_opus()
+    if not ffi_ok then
+        -- Not running under LuaJIT, ffi unavailable
+        return
+    end
+
     if opus_lib then return end
 
     local success, err = pcall(function()

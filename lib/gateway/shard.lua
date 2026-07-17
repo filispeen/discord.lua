@@ -63,21 +63,6 @@ function Shard.new(client, shard_id, total_shards)
     return self
 end
 
--- Get shard ID
-function Shard:shard_id()
-    return self.shard_id
-end
-
--- Get total shards
-function Shard:total_shards()
-    return self.total_shards
-end
-
--- Get shard affinity
-function Shard:shard_affinity()
-    return self.shard_affinity
-end
-
 -- Reset internal state
 function Shard:reset_state()
     self._state.connected = false
@@ -87,6 +72,7 @@ function Shard:reset_state()
     self._state.missed_acks = 0
     self._state.session_id = nil
     self._state.seq = 0
+    return self
 end
 
 -- Connect to the gateway
@@ -124,7 +110,7 @@ function Shard:connect()
 
     -- Handle close event
     ws:on("close", function(code, reason)
-        self:close()
+        self:close(code, reason)
     end)
 
     -- Handle error event
@@ -164,7 +150,7 @@ function Shard:send(msg)
 end
 
 -- Close the connection
-function Shard:close()
+function Shard:close(code, reason)
     if self._state.connected then
         if self.ws then
             self.ws:close()
@@ -173,7 +159,7 @@ function Shard:close()
         self._state.connected = false
         self._state.heartbeat_interval = nil
         self._state.missed_acks = 0
-        self:emit("disconnect", { code = 1000, reason = "Connection closed" })
+        self:emit("disconnect", { code = code or 1000, reason = reason or "Connection closed" })
     end
     return self
 end

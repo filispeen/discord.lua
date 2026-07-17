@@ -58,7 +58,7 @@ end
 function M.bnot(a)
     local result = 0
     local mask = 1
-    for i = 1, 32 do
+    for _ = 1, 32 do
         if (a % 2 == 0) then
             result = result + mask
         end

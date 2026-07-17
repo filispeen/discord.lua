@@ -120,7 +120,7 @@ function M:off(event, fn)
 end
 
 -- Get all listeners for an event (for debugging)
-function M:getListeners(_, event)
+function M.getListeners(_self, event)
     return M._listeners[event] or {}
 end
 

@@ -42,13 +42,13 @@ local udp = require("voice.udp")
 describe("UDP", function()
     describe("UDPClient", function()
         it("should create a new UDP client", function()
-            local client = udp.UDPClient:new("192.168.1.1:12345", "token123")
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
             assert.is_not_nil(client)
             assert.is_not_nil(client._state)
         end)
 
         it("should connect to endpoint", function()
-            local client = udp.UDPClient:new("192.168.1.1:12345", "token123")
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
 
             local success, err = pcall(function()
                 client:connect()
@@ -58,8 +58,10 @@ describe("UDP", function()
         end)
 
         it("should send RTP packet", function()
-            local client = udp.UDPClient:new("192.168.1.1:12345", "token123")
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
             client:connect()
+            client._state.ip = "1.2.3.4"
+            client._state.port = 5555
 
             local packet = table.pack(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
             local success, err = pcall(function()
@@ -70,7 +72,7 @@ describe("UDP", function()
         end)
 
         it("should construct RTP header", function()
-            local client = udp.UDPClient:new("192.168.1.1:12345", "token123")
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
             client:connect()
 
             -- Manually test header construction
@@ -82,18 +84,18 @@ describe("UDP", function()
             assert.equals(0x7F, header[2])  -- Opus payload type
             assert.equals(0, header[3])     -- Sequence
             assert.equals(0, header[4])
-            assert.equals(0, header[5])
-            assert.equals(0, header[6])
-            assert.equals(0, header[7])
-            assert.equals(0, header[8])
-            assert.equals(0, header[9])
+            assert.is_number(header[5])     -- Timestamp bytes
+            assert.is_number(header[6])
+            assert.is_number(header[7])
+            assert.is_number(header[8])
+            assert.equals(0, header[9])     -- SSRC
             assert.equals(0, header[10])
             assert.equals(0, header[11])
             assert.equals(0, header[12])
         end)
 
         it("should receive packets", function()
-            local client = udp.UDPClient:new("192.168.1.1:12345", "token123")
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
 
             local success, err = pcall(function()
                 return client:receive(1000)
@@ -103,7 +105,7 @@ describe("UDP", function()
         end)
 
         it("should discover IP", function()
-            local client = udp.UDPClient:new("192.168.1.1:12345", "token123")
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
 
             local success, err = pcall(function()
                 return client:discover_ip()
@@ -114,10 +116,10 @@ describe("UDP", function()
         end)
 
         it("should parse discovery response", function()
-            local client = udp.UDPClient:new("192.168.1.1:12345", "token123")
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
 
             -- Mock response: 10.0.0.1:1337
-            local response = table.pack(0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+            local response = table.pack(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 57, 10, 0, 0, 1)
             local ip, port = client:_parse_discovery_response(response)
 
             assert.equals("10.0.0.1", ip)
@@ -125,7 +127,7 @@ describe("UDP", function()
         end)
 
         it("should close connection", function()
-            local client = udp.UDPClient:new("192.168.1.1:12345", "token123")
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
 
             local success, err = pcall(function()
                 client:close()

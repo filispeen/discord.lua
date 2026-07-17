@@ -39,6 +39,7 @@ function Member.new(data, guild)
         __index = Member
     })
 
+    self.guild = guild
     self.user = data.user
     self.roles = data.roles or {}
     self.joined_at = data.joined_at and tonumber(data.joined_at)

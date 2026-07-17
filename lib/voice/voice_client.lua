@@ -21,9 +21,10 @@ local enums = require("voice.enums")
 local errors = require("voice.errors")
 local opus = require("voice.opus")
 local udp = require("voice.udp")
+local VoiceGateway = require("voice.voice_gateway")
 
 local VoiceClient = class("VoiceClient")
-function VoiceClient:new(client, channel)
+function VoiceClient.new(client, channel)
     local self = {
         client = client,
         channel = channel,
@@ -139,11 +140,11 @@ function VoiceClient:disconnect(force)
             self._timer = nil
         end
 
-        if self.udp then
+        if self.udp and self.udp.close then
             self.udp:close()
         end
 
-        if self.gateway then
+        if self.gateway and self.gateway.close then
             self.gateway:close()
         end
     else
@@ -165,10 +166,9 @@ function VoiceClient:move_to(channel)
     local state = self.state
 
     if not state.connected then
-        return false, "Not connected"
+        error("Not connected", 0)
     end
 
-    -- Update voice state
     -- self.client:voice_state_update({
     --     guild_id = self.guild.id,
     --     channel_id = channel.id,
@@ -438,8 +438,4 @@ function VoiceClient:_on_speaking(data)
     return true
 end
 
-local M = {
-    VoiceClient = VoiceClient,
-}
-
-return M
+return VoiceClient

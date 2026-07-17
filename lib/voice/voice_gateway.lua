@@ -12,6 +12,9 @@
 --   gateway:send_client_connect(user_id, ssrc) - Client connected
 --   gateway:send_client_disconnect(user_id, ssrc) - Client disconnected
 --   gateway:send_speaking(user_id, ssrc, speaking) - Speaking update
+--   gateway:on(event, callback) - Subscribe to a gateway event
+--   gateway:off(event, callback?) - Unsubscribe from a gateway event
+--   gateway:emit(event, ...) - Emit a gateway event to subscribers
 
 local class = require("core.class")
 local enums = require("voice.enums")
@@ -19,7 +22,7 @@ local errors = require("voice.errors")
 
 local VoiceGateway = class("VoiceGateway")
 
-function VoiceGateway:new(client, guild_id)
+function VoiceGateway.new(client, guild_id)
     local self = {
         client = client,
         guild_id = guild_id,
@@ -41,8 +44,46 @@ function VoiceGateway:new(client, guild_id)
         secret_key = nil,
         heartbeat_timer = nil,
         known_users = {},
+        listeners = {},
     }
     setmetatable(self, VoiceGateway)
+    return self
+end
+
+-- Subscribe to a gateway event
+function VoiceGateway:on(event, callback)
+    if not self.listeners[event] then
+        self.listeners[event] = {}
+    end
+    table.insert(self.listeners[event], callback)
+    return self
+end
+
+-- Unsubscribe from a gateway event
+function VoiceGateway:off(event, callback)
+    if not self.listeners[event] then
+        return self
+    end
+    if not callback then
+        self.listeners[event] = nil
+    else
+        for i, cb in ipairs(self.listeners[event]) do
+            if cb == callback then
+                table.remove(self.listeners[event], i)
+                break
+            end
+        end
+    end
+    return self
+end
+
+-- Emit a gateway event to all subscribers
+function VoiceGateway:emit(event, ...)
+    if self.listeners[event] then
+        for _, callback in ipairs(self.listeners[event]) do
+            callback(...)
+        end
+    end
     return self
 end
 
@@ -152,6 +193,7 @@ function VoiceGateway:receive_hello(data)
     local state = self.state
 
     state.heartbeat_interval = data.heartbeat_interval
+    state.ssrc = data.ssrc
     state.ip = data.ip
     state.port = data.port
     state.modes = data.modes
@@ -189,8 +231,7 @@ end
 
 -- Dispatch ready event
 function VoiceGateway:_dispatch_ready(data)
-    -- This would dispatch to the client
-    -- self.client:dispatch('VOICE_READY', data)
+    self:emit("ready", data)
     return data
 end
 
@@ -330,8 +371,4 @@ function VoiceGateway:close()
     return true
 end
 
-local M = {
-    VoiceGateway = VoiceGateway,
-}
-
-return M
+return VoiceGateway

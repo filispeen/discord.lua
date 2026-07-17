@@ -5,7 +5,6 @@
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
 local class = require("core.class")
-local ShardManager = require("gateway.manager")
 
 -- Mock luv for testing
 local uv = {
@@ -22,6 +21,20 @@ local uv = {
 }
 package.loaded["luv"] = uv
 
+-- Mock coro-websocket for testing
+local mock_ws = {
+    on = function() end,
+    send = function() end,
+    close = function() end,
+}
+package.loaded["coro-websocket"] = {
+    connect = function()
+        return mock_ws
+    end,
+}
+
+local ShardManager = require("gateway.manager")
+
 -- Mock HTTP client
 local MockHTTPClient = class("MockHTTPClient")
 function MockHTTPClient.new(token)
@@ -36,7 +49,7 @@ function MockHTTPClient:get(endpoint, callback)
     if endpoint == "/gateway/bot" then
         return {
             data = {
-                shards = {0, 1, 2},
+                shards = 3,
                 heartbeat_interval = 5000,
                 max_concurrency = 2,
             }
@@ -46,16 +59,11 @@ function MockHTTPClient:get(endpoint, callback)
 end
 
 describe("ShardManager", function()
-    before_each(function()
-        -- Mock the Shard class
-        Shard = require("lib.gateway.shard")
-    end)
-
     it("should create a new shard manager", function()
         local mock_client = MockHTTPClient.new("test_token")
         local manager = ShardManager.new(mock_client, 2)
 
-        assert.is_table(manager.shards)
+        assert.is_table(manager:shards())
         assert.equals(2, manager.max_concurrency)
     end)
 
@@ -65,8 +73,6 @@ describe("ShardManager", function()
 
         assert.equals(manager, manager:start())
         assert.equals(manager, manager:stop())
-        assert.equals(manager, manager:get_shard(0))
-        assert.equals(manager, manager:shards())
         assert.equals(manager, manager:dispatch({}))
     end)
 
@@ -111,7 +117,7 @@ describe("ShardManager", function()
                 -- Mock emit
             end
         }
-        manager.shards = {mock_shard}
+        manager._shards = {mock_shard}
 
         manager:dispatch({test = true})
 
@@ -126,7 +132,7 @@ describe("ShardManager", function()
         mock_client.get = function(...)
             return {
                 data = {
-                    shards = {0, 1},
+                    shards = 2,
                     max_concurrency = 1,
                 }
             }

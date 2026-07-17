@@ -76,7 +76,7 @@ function Bot:get_commands()
     return self.commands
 end
 
-function Bot:get_member(user_id)
+function Bot.get_member(_self, _user_id)
     return nil
 end
 
@@ -88,11 +88,11 @@ function Bot:get_user(user_id)
     return nil
 end
 
-function Bot:get_channel(channel_id)
+function Bot.get_channel(_self, _channel_id)
     return nil
 end
 
-function Bot:get_role(role_id)
+function Bot.get_role(_self, _role_id)
     return nil
 end
 

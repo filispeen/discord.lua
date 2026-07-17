@@ -54,7 +54,7 @@ function ShardManager.new(client, max_concurrency)
     local self = {
         client = client,
         max_concurrency = max_concurrency or 1,
-        shards = {},
+        _shards = {},
         listeners = {},
     }
     setmetatable(self, { __index = ShardManager })
@@ -79,17 +79,18 @@ function ShardManager:start()
     -- Create shards
     for i = 1, shards do
         local shard_id = i - 1
-        self.shards[shard_id] = Shard.new(self.client, shard_id, shards)
+        self._shards[shard_id] = Shard.new(self.client, shard_id, shards)
     end
 
     -- Start shards respecting max_concurrency
     local ready_count = 0
     local started_count = 0
 
-    local start_next = function()
+    local start_next
+    start_next = function()
         if ready_count >= self.max_concurrency and started_count < shards then
             for i = started_count, shards - 1 do
-                local shard = self.shards[i]
+                local shard = self._shards[i]
                 if shard and not shard._state.connected then
                     shard:connect()
                     shard:on_ready(function()
@@ -107,7 +108,7 @@ function ShardManager:start()
 
     -- Start initial batch respecting max_concurrency
     for i = 0, math.min(shards - 1, self.max_concurrency - 1) do
-        local shard = self.shards[i]
+        local shard = self._shards[i]
         if shard and not shard._state.connected then
             shard:connect()
             shard:on_ready(function()
@@ -125,26 +126,26 @@ end
 
 -- Stop all shards
 function ShardManager:stop()
-    for _, shard in ipairs(self.shards) do
+    for _, shard in pairs(self._shards) do
         shard:close()
     end
-    self.shards = {}
+    self._shards = {}
     return self
 end
 
 -- Get a shard by ID
 function ShardManager:get_shard(id)
-    return self.shards[id]
+    return self._shards[id]
 end
 
 -- Get all shards
 function ShardManager:shards()
-    return self.shards
+    return self._shards
 end
 
 -- Dispatch event to all shards
 function ShardManager:dispatch(event)
-    for _, shard in ipairs(self.shards) do
+    for _, shard in pairs(self._shards) do
         shard:emit(event)
     end
     return self
@@ -160,7 +161,7 @@ function ShardManager:on_ready(callback)
 end
 
 -- On shard ready
-function ShardManager:on_shard_ready(shard_id, callback)
+function ShardManager:on_shard_ready(_shard_id, callback)
     if not self.listeners["shard_ready"] then
         self.listeners["shard_ready"] = {}
     end
@@ -169,7 +170,7 @@ function ShardManager:on_shard_ready(shard_id, callback)
 end
 
 -- On shard error
-function ShardManager:on_shard_error(shard_id, callback)
+function ShardManager:on_shard_error(_shard_id, callback)
     if not self.listeners["shard_error"] then
         self.listeners["shard_error"] = {}
     end
@@ -178,7 +179,7 @@ function ShardManager:on_shard_error(shard_id, callback)
 end
 
 -- On shard disconnect
-function ShardManager:on_shard_disconnect(shard_id, callback)
+function ShardManager:on_shard_disconnect(_shard_id, callback)
     if not self.listeners["shard_disconnect"] then
         self.listeners["shard_disconnect"] = {}
     end
@@ -195,7 +196,7 @@ function ShardManager:wait_for_shard(shard_id, timeout)
         if start_time + timeout < uv.now() then
             return false
         end
-        local shard = self.shards[shard_id]
+        local shard = self._shards[shard_id]
         if shard and shard._state.connected then
             return true
         end

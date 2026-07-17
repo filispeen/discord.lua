@@ -5,7 +5,6 @@
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
 local class = require("core.class")
-local Shard = require("gateway.shard")
 
 -- Mock luv for testing
 local uv = {
@@ -21,6 +20,20 @@ local uv = {
 }
 package.loaded["luv"] = uv
 
+-- Mock coro-websocket for testing
+local mock_ws = {
+    on = function() end,
+    send = function() end,
+    close = function() end,
+}
+package.loaded["coro-websocket"] = {
+    connect = function()
+        return mock_ws
+    end,
+}
+
+local Shard = require("gateway.shard")
+
 -- Mock HTTP client
 local MockHTTPClient = class("MockHTTPClient")
 function MockHTTPClient.new(token)
@@ -35,7 +48,7 @@ function MockHTTPClient:get(endpoint, callback)
     if endpoint == "/gateway/bot" then
         return {
             data = {
-                shards = {0, 1, 2},
+                shards = 3,
                 heartbeat_interval = 5000,
                 max_concurrency = 2,
             }

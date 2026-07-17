@@ -59,7 +59,7 @@ function Client.new(token, ratelimiter)
 end
 
 -- Helper: parse JSON response
-function Client:parse_json(response)
+function Client.parse_json(_self, response)
     local success, result = pcall(json.decode, response)
     if not success then
         error("Failed to parse JSON: " .. response, 0)
@@ -68,7 +68,7 @@ function Client:parse_json(response)
 end
 
 -- Helper: throw appropriate error based on response
-function Client:throw_error(status, data)
+function Client.throw_error(_self, status, data)
     if status == 429 then
         local retry_after = data and data.retry_after or 0
         return errors.RateLimited.new("Rate limited by Discord", retry_after)

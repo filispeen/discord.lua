@@ -157,7 +157,7 @@ function Client:on_gateway_ready(callback)
     return self
 end
 
-function Client:on_gateway_shard_ready(shard_id, callback)
+function Client:on_gateway_shard_ready(_shard_id, callback)
     if not self.listeners["gateway_shard_ready"] then
         self.listeners["gateway_shard_ready"] = {}
     end
@@ -165,7 +165,7 @@ function Client:on_gateway_shard_ready(shard_id, callback)
     return self
 end
 
-function Client:on_gateway_shard_error(shard_id, callback)
+function Client:on_gateway_shard_error(_shard_id, callback)
     if not self.listeners["gateway_shard_error"] then
         self.listeners["gateway_shard_error"] = {}
     end
@@ -173,7 +173,7 @@ function Client:on_gateway_shard_error(shard_id, callback)
     return self
 end
 
-function Client:on_gateway_shard_disconnect(shard_id, callback)
+function Client:on_gateway_shard_disconnect(_shard_id, callback)
     if not self.listeners["gateway_shard_disconnect"] then
         self.listeners["gateway_shard_disconnect"] = {}
     end
@@ -198,7 +198,7 @@ function Client:get_user(id)
     return nil
 end
 
-function Client:get_member(id)
+function Client.get_member(_self, _id)
     -- Guild context needed
     return nil
 end
@@ -211,7 +211,7 @@ function Client:get_channel(id)
     return nil
 end
 
-function Client:get_role(id)
+function Client.get_role(_self, _id)
     -- Guild context needed
     return nil
 end

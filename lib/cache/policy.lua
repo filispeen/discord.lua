@@ -83,7 +83,7 @@ function Policy:is_expired(entry, now)
 end
 
 -- Create default policy for resource type
-function Policy:create_default(resource_type)
+function Policy.create_default(_self, resource_type)
     local policy = DEFAULT_POLICIES[resource_type]
     if policy then
         return Policy.new(policy.ttl_ms, policy.max_entries)
@@ -92,7 +92,7 @@ function Policy:create_default(resource_type)
 end
 
 -- Get all default policies
-function Policy:get_all_defaults()
+function Policy.get_all_defaults(_self)
     return DEFAULT_POLICIES
 end
 

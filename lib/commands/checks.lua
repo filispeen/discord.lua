@@ -36,7 +36,7 @@ M.Check = function(name, fn)
 end
 
 -- Owner check
-function M.owner(func)
+function M.owner(_func)
     return M.Check("owner", function(ctx)
         local author_id = extract_id_from_author(ctx)
         local member = ctx.bot:get_member(author_id)
@@ -45,7 +45,7 @@ function M.owner(func)
 end
 
 -- Admin check
-function M.admin(func)
+function M.admin(_func)
     return M.Check("admin", function(ctx)
         if not ctx.guild then
             return false
@@ -79,7 +79,7 @@ function M.admin(func)
 end
 
 -- Staff check
-function M.staff(func)
+function M.staff(_func)
     return M.Check("staff", function(ctx)
         if not ctx.guild then
             return false
@@ -111,7 +111,7 @@ function M.staff(func)
 end
 
 -- Mod check
-function M.mod(func)
+function M.mod(_func)
     return M.Check("mod", function(ctx)
         if not ctx.guild then
             return false
@@ -143,14 +143,14 @@ function M.mod(func)
 end
 
 -- User check
-function M.user(user_id, func)
+function M.user(user_id, _func)
     return M.Check("user", function(ctx)
         return extract_id_from_author(ctx) == user_id
     end)
 end
 
 -- Guild check
-function M.guild(guild_id, func)
+function M.guild(guild_id, _func)
     return M.Check("guild", function(ctx)
         if not ctx.guild then
             return false
@@ -160,7 +160,7 @@ function M.guild(guild_id, func)
 end
 
 -- Bot check
-function M.bot(func)
+function M.bot(_func)
     return M.Check("bot", function(ctx)
         if not ctx.bot then
             return false
@@ -170,7 +170,7 @@ function M.bot(func)
 end
 
 -- Raw check
-function M.raw(func)
+function M.raw(_func)
     return M.Check("raw", function()
         return true
     end)

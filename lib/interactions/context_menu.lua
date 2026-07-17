@@ -39,7 +39,7 @@ function ContextMenuCommand:matches(interaction)
 end
 
 -- Get response type
-function ContextMenuCommand:get_response_type()
+function ContextMenuCommand.get_response_type(_self)
     return "CONTEXT_MENU_RESPONSE"
 end
 

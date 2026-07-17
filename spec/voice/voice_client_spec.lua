@@ -179,6 +179,8 @@ describe("VoiceClient", function()
         end)
 
         it("should return true when connected", function()
+            client.state.connected = true
+
             local success, err = pcall(function()
                 return client:move_to(new_channel)
             end)

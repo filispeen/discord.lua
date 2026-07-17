@@ -67,7 +67,7 @@ function ApplicationCommand:exact_match(input)
 end
 
 -- Get response type for this command
-function ApplicationCommand:get_response_type()
+function ApplicationCommand.get_response_type(_self)
     return "APPLICATION_COMMAND_RESPONSE"
 end
 
