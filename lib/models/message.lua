@@ -40,7 +40,7 @@ local class = require("core.class")
 -- Message class
 local Message = class("Message")
 
-function Message.new(data)
+function Message.new(data, http)
     local self = {}
     setmetatable(self, {
         __index = Message
@@ -71,6 +71,8 @@ function Message.new(data)
     self.mention = data.mention or false
     self.role_mentions = data.role_mentions or {}
 
+    self.http = http
+
     return self
 end
 
@@ -92,6 +94,33 @@ function Message:mentions_role(role_id)
         end
     end
     return false
+end
+
+-- Sends a new message to the same channel, mirrors pycord Message.reply
+-- (as a plain channel send, discord.lua has no reply-reference field yet).
+function Message:reply(content)
+    if not self.http then
+        error("Message has no http client attached, cannot reply")
+    end
+    local payload = type(content) == "table" and content or { content = content }
+    return self.http:post("/channels/" .. self.channel_id .. "/messages", payload)
+end
+
+-- Edits this message's content via PATCH /channels/{channel_id}/messages/{id}.
+function Message:edit(content)
+    if not self.http then
+        error("Message has no http client attached, cannot edit")
+    end
+    local payload = type(content) == "table" and content or { content = content }
+    return self.http:patch("/channels/" .. self.channel_id .. "/messages/" .. self.id, payload)
+end
+
+-- Deletes this message via DELETE /channels/{channel_id}/messages/{id}.
+function Message:delete()
+    if not self.http then
+        error("Message has no http client attached, cannot delete")
+    end
+    return self.http:delete("/channels/" .. self.channel_id .. "/messages/" .. self.id)
 end
 
 return Message
