@@ -128,4 +128,79 @@ describe("Bot", function()
 
         assert.equals(3, call_count)
     end)
+
+    it("registers a command through the command shorthand", function()
+        local bot = Bot.new("token")
+        local handler = function(msg) return "pong" end
+
+        bot:command("ping", handler)
+
+        assert.equals(handler, bot.commands["ping"])
+        assert.equals("!", bot.prefixes["ping"])
+    end)
+
+    it("builds an embed", function()
+        local bot = Bot.new("token")
+        local embed = bot:embed({ title = "hello" })
+
+        assert.equals("hello", embed.title)
+    end)
+
+    it("registers a view through component", function()
+        local bot = Bot.new("token")
+        local view = { items = {} }
+
+        bot:component(view)
+
+        assert.equals(1, #bot.components)
+        assert.equals(view, bot.components[1])
+    end)
+
+    it("registers and dispatches an interaction callback by custom_id", function()
+        local bot = Bot.new("token")
+        local received = nil
+
+        bot:interaction("confirm", function(interaction) received = interaction.custom_id end)
+        local handled = bot:dispatch_interaction({ custom_id = "confirm" })
+
+        assert.is_true(handled)
+        assert.equals("confirm", received)
+    end)
+
+    it("returns false when dispatching an interaction with no matching callback", function()
+        local bot = Bot.new("token")
+
+        local handled = bot:dispatch_interaction({ custom_id = "unknown" })
+
+        assert.is_false(handled)
+    end)
+
+    it("dispatches a prefix command from an incoming message", function()
+        local bot = Bot.new("token")
+        local received_content = nil
+
+        bot:command("ping", function(msg) received_content = msg.content end)
+        local handled = bot:dispatch_message({ content = "!ping" })
+
+        assert.is_true(handled)
+        assert.equals("!ping", received_content)
+    end)
+
+    it("does not dispatch a message without the command prefix", function()
+        local bot = Bot.new("token")
+        bot:command("ping", function(msg) end)
+
+        local handled = bot:dispatch_message({ content = "ping" })
+
+        assert.is_false(handled)
+    end)
+
+    it("does not dispatch a message with an unregistered command name", function()
+        local bot = Bot.new("token")
+        bot:command("ping", function(msg) end)
+
+        local handled = bot:dispatch_message({ content = "!unknown" })
+
+        assert.is_false(handled)
+    end)
 end)
