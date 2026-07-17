@@ -142,4 +142,44 @@ describe("ShardManager", function()
 
         assert.equals(1, manager.max_concurrency)
     end)
+
+    it("should forward a dispatch payload to on_dispatch listeners by event name", function()
+        local mock_client = MockHTTPClient.new("test_token")
+        local manager = ShardManager.new(mock_client, 2)
+
+        local received = nil
+        manager:on_dispatch("MESSAGE_CREATE", function(d) received = d end)
+
+        manager:_forward_dispatch({ t = "MESSAGE_CREATE", d = { content = "hi" } })
+
+        assert.is_not_nil(received)
+        assert.equals("hi", received.content)
+    end)
+
+    it("should ignore a dispatch payload with no matching listener", function()
+        local mock_client = MockHTTPClient.new("test_token")
+        local manager = ShardManager.new(mock_client, 2)
+
+        -- Should not error even though nothing is subscribed
+        manager:_forward_dispatch({ t = "GUILD_CREATE", d = {} })
+    end)
+
+    it("should wire shards created in start() to forward dispatch events", function()
+        local mock_client = MockHTTPClient.new("test_token")
+        mock_client.get = function(...)
+            return { data = { shards = 1, max_concurrency = 1 } }
+        end
+
+        local manager = ShardManager.new(mock_client, 1)
+        manager:start()
+
+        local received = nil
+        manager:on_dispatch("MESSAGE_CREATE", function(d) received = d end)
+
+        local shard = manager:get_shard(0)
+        shard:dispatch({ op = 0, t = "MESSAGE_CREATE", s = 1, d = { content = "wired" } })
+
+        assert.is_not_nil(received)
+        assert.equals("wired", received.content)
+    end)
 end)

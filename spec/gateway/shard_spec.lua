@@ -109,13 +109,49 @@ describe("Shard", function()
         local mock_client = MockHTTPClient.new("test_token")
         local shard = Shard.new(mock_client, 0, 3)
 
-        -- Mock the ready event
-        local ready_event = { op = 10, d = { seq = 1, guilds = {} } }
+        -- READY is a DISPATCH (op 0) event with t == "READY", not its own opcode
+        local ready_event = { op = 0, t = "READY", s = 1, d = { session_id = "sess1" } }
         shard:dispatch(ready_event)
 
         -- Verify seq was updated
         assert.equals(1, shard._state.seq)
         assert.is_true(shard._state.connected)
+        assert.equals("sess1", shard._state.session_id)
+    end)
+
+    it("should start heartbeating after HELLO", function()
+        local mock_client = MockHTTPClient.new("test_token")
+        local shard = Shard.new(mock_client, 0, 3)
+
+        local hello_event = { op = 10, d = { heartbeat_interval = 41250 } }
+        shard:dispatch(hello_event)
+
+        assert.equals(41250, shard._state.heartbeat_interval)
+    end)
+
+    it("should forward dispatch events by event name", function()
+        local mock_client = MockHTTPClient.new("test_token")
+        local shard = Shard.new(mock_client, 0, 3)
+
+        local received = nil
+        shard:on_event("MESSAGE_CREATE", function(d) received = d end)
+
+        shard:dispatch({ op = 0, t = "MESSAGE_CREATE", s = 2, d = { content = "hello" } })
+
+        assert.is_not_nil(received)
+        assert.equals("hello", received.content)
+    end)
+
+    it("should call on_ready listeners when READY dispatches", function()
+        local mock_client = MockHTTPClient.new("test_token")
+        local shard = Shard.new(mock_client, 0, 3)
+
+        local fired = false
+        shard:on_ready(function() fired = true end)
+
+        shard:dispatch({ op = 0, t = "READY", s = 1, d = {} })
+
+        assert.is_true(fired)
     end)
 
     it("should track heartbeat", function()
@@ -138,5 +174,44 @@ describe("Shard", function()
 
         assert.is_false(shard._state.connected)
         assert.equals(0, shard._state.seq)
+    end)
+
+    it("should assign self.ws on connect so send/close are not silent no-ops", function()
+        -- Regression test: connect() previously only bound listeners to a local
+        -- ws variable and never assigned self.ws, so Shard:send and Shard:close
+        -- silently did nothing for the lifetime of the shard.
+        local mock_client = MockHTTPClient.new("test_token")
+        local shard = Shard.new(mock_client, 0, 3)
+
+        shard:connect()
+
+        assert.is_not_nil(shard.ws)
+    end)
+
+    it("should actually deliver identify through send after self.ws is set", function()
+        local sent = {}
+        local local_mock_ws = {
+            on = function() end,
+            send = function(_self, data) table.insert(sent, data) end,
+            close = function() end,
+        }
+        package.loaded["coro-websocket"] = {
+            connect = function() return local_mock_ws end,
+        }
+        package.loaded["gateway.shard"] = nil
+        local FreshShard = require("gateway.shard")
+
+        local mock_client = MockHTTPClient.new("test_token")
+        local shard = FreshShard.new(mock_client, 0, 3)
+        shard:connect()
+        shard:identify({ token = "test_token" })
+
+        assert.equals(1, #sent)
+
+        -- restore the shared mock for any tests that run after this one
+        package.loaded["coro-websocket"] = {
+            connect = function() return mock_ws end,
+        }
+        package.loaded["gateway.shard"] = nil
     end)
 end)
