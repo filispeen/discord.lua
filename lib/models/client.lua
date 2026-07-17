@@ -94,6 +94,15 @@ function Client:start_gateway()
         self:emit("ready")
     end)
 
+    self.gateway:on_dispatch("MESSAGE_CREATE", function(data)
+        local Message = require("models.message")
+        self:emit("message_create", Message.new(data, self.http))
+    end)
+
+    self.gateway:on_dispatch("INTERACTION_CREATE", function(data)
+        self:emit("interaction_create", data)
+    end)
+
     self.gateway:start()
 
     return self

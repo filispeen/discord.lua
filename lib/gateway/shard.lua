@@ -89,19 +89,19 @@ function Shard:connect()
 
     -- Create WebSocket connection
     local ws = require("coro-websocket").connect(gateway_url)
+    self.ws = ws
 
-    -- Handle open event
+    -- Handle open event, real identify happens after HELLO (op 10) arrives
     ws:on("open", function()
-        self:send({ op = opcodes.CONNECT, d = {} })
         self._state.connected = true
     end)
 
     -- Handle message event
     ws:on("message", function(msg)
-        local parsed = pcall(function()
+        local ok, parsed = pcall(function()
             return json.decode(msg)
         end)
-        if not parsed then
+        if not ok or type(parsed) ~= "table" then
             return
         end
 
@@ -127,9 +127,11 @@ function Shard:identify(data)
     return self
 end
 
--- Send resume packet
+-- Send resume packet (opcode 6)
 function Shard:resume(session_id, seq)
     self:send({ op = opcodes.RESUME, d = { token = self.client.token, session_id = session_id, seq = seq } })
+    self._state.session_id = session_id
+    self._state.seq = seq or self._state.seq
     return self
 end
 
@@ -164,62 +166,83 @@ function Shard:close(code, reason)
     return self
 end
 
--- Dispatch event to listeners
+-- Dispatch an incoming gateway payload to listeners.
+-- Every payload has the shape { op, d, s (sequence, dispatch only), t (event name, dispatch only) }.
 function Shard:dispatch(event)
-    if event.op == opcodes.READY then
-        self._state.seq = event.d.seq or 0
-        self._state.connected = true
-        self:emit("ready", event.d)
+    if event.s ~= nil then
+        self._state.seq = event.s
+    end
+
+    if event.op == opcodes.HELLO then
+        self._state.heartbeat_interval = event.d and event.d.heartbeat_interval
         self:start_heartbeat()
+        if self._state.session_id then
+            self:resume(self._state.session_id, self._state.seq)
+        else
+            self:identify({ token = self.client.token })
+        end
         return
     end
 
     if event.op == opcodes.HEARTBEAT_ACK then
-        self._state.last_ack = event.d.seq or 0
+        self._state.last_ack = self._state.seq
         self._state.missed_acks = 0
         return
     end
 
-    if event.op == opcodes.DISCONNECTED then
-        self:close()
+    if event.op == opcodes.HEARTBEAT then
+        -- Server is requesting an immediate heartbeat
+        self:send_heartbeat()
         return
     end
 
     if event.op == opcodes.RECONNECT then
-        self:close()
+        self:close(4000, "Reconnect requested by gateway")
         return
     end
 
-    -- Dispatch to general event listeners
+    if event.op == opcodes.INVALID_SESSION then
+        self._state.session_id = nil
+        self._state.seq = 0
+        self:emit("invalid_session", { resumable = event.d == true })
+        return
+    end
+
+    if event.op == opcodes.DISPATCH then
+        if event.t == "READY" then
+            self._state.session_id = event.d and event.d.session_id
+            self._state.connected = true
+            self:emit("ready", event.d)
+        end
+
+        -- Forward every dispatch event, including READY, to general listeners
+        -- keyed by event name so Bot/Client can route MESSAGE_CREATE, etc.
+        self:emit("event", event)
+        if event.t then
+            self:emit(event.t, event.d)
+        end
+        return
+    end
+
+    -- Unknown opcode, forward for visibility without special handling
     self:emit("event", event)
-    return self
 end
 
--- Start heartbeat timer
+-- Start heartbeat timer using the interval received from HELLO (op 10)
 function Shard:start_heartbeat()
-    local interval = self.client:get("GET /gateway/bot", function(response)
-        return response.data.hub or response.data.heartbeat_interval
-    end)
-
+    local interval = tonumber(self._state.heartbeat_interval)
     if not interval then
         return
     end
 
-    interval = tonumber(interval) or 5000
-    self._state.heartbeat_interval = interval
-
     -- Clear existing timer
     self:clear_heartbeat()
 
-    -- Start new timer
-    local heartbeat = function()
-        self:send_heartbeat()
-    end
-
     local timer = uv.timer:new(function()
-        heartbeat()
+        self:send_heartbeat()
     end)
     timer:start(interval, interval)
+    self._state.heartbeat_timer = timer
 end
 
 -- Clear heartbeat timer
@@ -242,7 +265,10 @@ end
 
 -- On ready event
 function Shard:on_ready(callback)
-    self._state.on_ready = callback
+    if not self.listeners.ready then
+        self.listeners.ready = {}
+    end
+    table.insert(self.listeners.ready, callback)
     return self
 end
 

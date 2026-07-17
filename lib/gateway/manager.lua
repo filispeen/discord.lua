@@ -79,7 +79,11 @@ function ShardManager:start()
     -- Create shards
     for i = 1, shards do
         local shard_id = i - 1
-        self._shards[shard_id] = Shard.new(self.client, shard_id, shards)
+        local shard = Shard.new(self.client, shard_id, shards)
+        shard:on_event("event", function(payload)
+            self:_forward_dispatch(payload)
+        end)
+        self._shards[shard_id] = shard
     end
 
     -- Start shards respecting max_concurrency
@@ -149,6 +153,34 @@ function ShardManager:dispatch(event)
         shard:emit(event)
     end
     return self
+end
+
+-- Subscribe to a named gateway dispatch event (e.g. "MESSAGE_CREATE").
+-- Fires with the event's d payload, mirroring Shard:emit(event.t, event.d).
+function ShardManager:on_dispatch(name, callback)
+    if not self.listeners.dispatch then
+        self.listeners.dispatch = {}
+    end
+    if not self.listeners.dispatch[name] then
+        self.listeners.dispatch[name] = {}
+    end
+    table.insert(self.listeners.dispatch[name], callback)
+    return self
+end
+
+-- Internal: routes a raw gateway payload (op/d/s/t) from any shard to
+-- listeners registered via on_dispatch, keyed by payload.t.
+function ShardManager:_forward_dispatch(payload)
+    if not payload or not payload.t then
+        return
+    end
+    local subs = self.listeners.dispatch and self.listeners.dispatch[payload.t]
+    if not subs then
+        return
+    end
+    for _, cb in ipairs(subs) do
+        cb(payload.d)
+    end
 end
 
 -- On ready event
