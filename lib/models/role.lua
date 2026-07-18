@@ -64,8 +64,8 @@ end
 
 -- Get role color as RGB string
 function Role:get_rgb()
-    local r = (self.color >> 16) % 256
-    local g = (self.color >> 8) % 256
+    local r = math.floor(self.color / 65536) % 256
+    local g = math.floor(self.color / 256) % 256
     local b = self.color % 256
     return string.format("#%02x%02x%02x", r, g, b)
 end

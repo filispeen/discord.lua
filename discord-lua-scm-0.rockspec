@@ -1,6 +1,6 @@
 package = {
     name =    "discord-lua",
-    version = "0.4.0",
+    version = "0.8.0",
     description = "Discord API wrapper written in Lua",
     license = "MIT",
     author = "filispeen",

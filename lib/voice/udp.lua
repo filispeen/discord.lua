@@ -104,9 +104,9 @@ function UDPClient:_handle_rtp(data, n)
 
     -- Parse RTP header
     local rtp_header = {
-        version = (data[1] >> 6) & 0x03,
-        padding = data[1] & 0x01,
-        marker = data[2] & 0x01,
+        version = math.floor(data[1] / 64) % 4,
+        padding = data[1] % 2,
+        marker = data[2] % 2,
         padding_length = 0,
         sequence = 0,
         timestamp = 0,
@@ -114,7 +114,7 @@ function UDPClient:_handle_rtp(data, n)
     }
 
     -- Extract RTP header fields
-    rtp_header.sequence = (data[3] >> 2) & 0x0FFF
+    rtp_header.sequence = math.floor(data[3] / 4) % 4096
     rtp_header.timestamp = data[4] * 16777216 + data[5] * 65536 + data[6] * 256 + data[7]
     rtp_header.ssrc = data[8] * 16777216 + data[9] * 65536 + data[10] * 256 + data[11]
 
@@ -205,23 +205,23 @@ function UDPClient:_construct_rtp_header(payload)
 
     -- Sequence number: 2 bytes
     local seq = self._state.sequence or 0
-    header[3] = seq >> 8
-    header[4] = seq & 0xFF
+    header[3] = math.floor(seq / 256) % 256
+    header[4] = seq % 256
     self._state.sequence = (seq + 1) % 65536
 
     -- Timestamp: 4 bytes
     local timestamp = os.time() * 1000  -- Milliseconds
-    header[5] = (timestamp >> 24) & 0xFF
-    header[6] = (timestamp >> 16) & 0xFF
-    header[7] = (timestamp >> 8) & 0xFF
-    header[8] = timestamp & 0xFF
+    header[5] = math.floor(timestamp / 16777216) % 256
+    header[6] = math.floor(timestamp / 65536) % 256
+    header[7] = math.floor(timestamp / 256) % 256
+    header[8] = timestamp % 256
 
     -- SSRC: 4 bytes (Synchronized Source ID)
     local ssrc = self._state.ssrc or 0
-    header[9] = (ssrc >> 24) & 0xFF
-    header[10] = (ssrc >> 16) & 0xFF
-    header[11] = (ssrc >> 8) & 0xFF
-    header[12] = ssrc & 0xFF
+    header[9] = math.floor(ssrc / 16777216) % 256
+    header[10] = math.floor(ssrc / 65536) % 256
+    header[11] = math.floor(ssrc / 256) % 256
+    header[12] = ssrc % 256
 
     return header
 end
