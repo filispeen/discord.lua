@@ -4,6 +4,14 @@
 -- Setup package path to find lib modules
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
+-- Mock json so Bot:connect() -> Client:_create_http() -> http.client can
+-- load without a real luvit environment; nothing in this spec's tests
+-- actually sends a request, so encode/decode are never exercised.
+package.loaded["json"] = {
+    encode = function(value) return "" end,
+    decode = function(value) return {} end,
+}
+
 -- Clear module cache to ensure fresh load
 -- Don't clear core.class - checks_spec loads it first
 package.loaded["commands.bot"] = nil
@@ -202,5 +210,204 @@ describe("Bot", function()
         local handled = bot:dispatch_message({ content = "!unknown" })
 
         assert.is_false(handled)
+    end)
+
+    it("routes a component interaction to a registered View's item callback", function()
+        local View = require("ui.view")
+        local Button = require("ui.button")
+
+        local bot = Bot.new("token")
+        local view = View.new()
+        local clicked = false
+        view:add(Button.new({
+            label = "Click me",
+            custom_id = "click",
+            callback = function() clicked = true end,
+        }))
+        bot:component(view)
+
+        local handled = bot:dispatch_interaction({ custom_id = "click" })
+
+        assert.is_true(handled)
+        assert.is_true(clicked)
+    end)
+
+    it("does not route a component interaction through a stopped View", function()
+        local View = require("ui.view")
+        local Button = require("ui.button")
+
+        local bot = Bot.new("token")
+        local view = View.new()
+        local clicked = false
+        view:add(Button.new({
+            label = "Click me",
+            custom_id = "click",
+            callback = function() clicked = true end,
+        }))
+        view:stop()
+        bot:component(view)
+
+        local handled = bot:dispatch_interaction({ custom_id = "click" })
+
+        assert.is_false(handled)
+        assert.is_false(clicked)
+    end)
+
+    it("falls back to Bot:interaction when no View claims the custom_id", function()
+        local View = require("ui.view")
+        local Button = require("ui.button")
+
+        local bot = Bot.new("token")
+        local view = View.new()
+        view:add(Button.new({ label = "Other", custom_id = "other" }))
+        bot:component(view)
+
+        local received = nil
+        bot:interaction("confirm", function(interaction) received = interaction.custom_id end)
+
+        local handled = bot:dispatch_interaction({ custom_id = "confirm" })
+
+        assert.is_true(handled)
+        assert.equals("confirm", received)
+    end)
+
+    it("dispatches an autocomplete interaction through the command tree", function()
+        local bot = Bot.new("token")
+        local received_value = nil
+
+        local cmd = bot:register_application_command("search", {
+            description = "Search",
+            options = { { name = "query", type = 3 } },
+        })
+        cmd:set_autocomplete("query", function(_interaction, value)
+            received_value = value
+        end)
+
+        local handled = bot:dispatch_interaction({
+            type = 4,
+            data = {
+                name = "search",
+                options = { { name = "query", value = "abc", focused = true } },
+            },
+        })
+
+        assert.is_true(handled)
+        assert.equals("abc", received_value)
+    end)
+
+    it("generate_help_text lists every registered command", function()
+        local bot = Bot.new("token")
+        bot:command("ping", function() end, "Replies with pong")
+        bot:command("echo", function() end, "Echoes your message")
+
+        local text = bot:generate_help_text()
+
+        assert.is_not_nil(text:find("!ping"))
+        assert.is_not_nil(text:find("Replies with pong"))
+        assert.is_not_nil(text:find("!echo"))
+    end)
+
+    it("generate_help_text describes a single command by name", function()
+        local bot = Bot.new("token")
+        bot:command("ping", function() end, "Replies with pong")
+
+        local text = bot:generate_help_text("ping")
+
+        assert.is_not_nil(text:find("!ping"))
+        assert.is_not_nil(text:find("Replies with pong"))
+    end)
+
+    it("generate_help_text reports an unknown command by name", function()
+        local bot = Bot.new("token")
+
+        local text = bot:generate_help_text("missing")
+
+        assert.is_not_nil(text:find("No command"))
+    end)
+
+    it("register_help_command is opt-in and does not run at Bot.new", function()
+        local bot = Bot.new("token")
+
+        assert.is_nil(bot.commands["help"])
+
+        bot:register_help_command()
+
+        assert.is_not_nil(bot.commands["help"])
+    end)
+
+    it("forwards shard_ready from the client to bot's own listeners", function()
+        local bot = Bot.new("token")
+        bot:connect()
+
+        local received = nil
+        bot:on("shard_ready", function(payload) received = payload end)
+
+        bot.client:emit("shard_ready", { shard_id = 0 })
+
+        assert.is_not_nil(received)
+        assert.equals(0, received.shard_id)
+    end)
+
+    it("forwards shard_error and shard_disconnect from the client", function()
+        local bot = Bot.new("token")
+        bot:connect()
+
+        local error_received, disconnect_received = false, false
+        bot:on("shard_error", function() error_received = true end)
+        bot:on("shard_disconnect", function() disconnect_received = true end)
+
+        bot.client:emit("shard_error", { shard_id = 0, error = "boom" })
+        bot.client:emit("shard_disconnect", { shard_id = 0 })
+
+        assert.is_true(error_received)
+        assert.is_true(disconnect_received)
+    end)
+
+    it("bot.user is nil before the client has received READY", function()
+        local bot = Bot.new("token")
+        bot:connect()
+
+        assert.is_nil(bot.user)
+    end)
+
+    it("bot.user reads live from the client once populated, mirrors pycord's Bot.user", function()
+        local bot = Bot.new("token")
+        bot:connect()
+
+        bot.client.user = { id = "1", username = "TestBot" }
+
+        assert.equals("TestBot", bot.user.username)
+    end)
+
+    it("bot.user is nil when the bot has never connected", function()
+        local bot = Bot.new("token")
+
+        assert.is_nil(bot.user)
+    end)
+
+    it("forwards voice_state_update from the client to bot's own listeners", function()
+        local bot = Bot.new("token")
+        bot:connect()
+
+        local received = nil
+        bot:on("voice_state_update", function(payload) received = payload end)
+
+        bot.client:emit("voice_state_update", { guild_id = "1", channel_id = "2" })
+
+        assert.is_not_nil(received)
+        assert.equals("1", received.guild_id)
+    end)
+
+    it("forwards voice_server_update from the client to bot's own listeners", function()
+        local bot = Bot.new("token")
+        bot:connect()
+
+        local received = nil
+        bot:on("voice_server_update", function(payload) received = payload end)
+
+        bot.client:emit("voice_server_update", { guild_id = "1", endpoint = "example.discord.media" })
+
+        assert.is_not_nil(received)
+        assert.equals("example.discord.media", received.endpoint)
     end)
 end)

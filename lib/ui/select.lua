@@ -62,6 +62,7 @@ function Select.new(opts)
     self.max_values = max_values
     self.options = opts.options or {}
     self.disabled = opts.disabled or false
+    self.callback = opts.callback
     self:set_row(opts.row)
 
     return self

@@ -135,4 +135,13 @@ describe("View", function()
 
         assert.equals(view, button.view)
     end)
+
+    it("finds an attached item by custom_id", function()
+        local view = View.new()
+        local button = make_button("b1")
+        view:add(button)
+
+        assert.equals(button, view:find_item("b1"))
+        assert.is_nil(view:find_item("missing"))
+    end)
 end)

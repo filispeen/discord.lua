@@ -66,6 +66,7 @@ function Button.new(opts)
     self.url = opts.url
     self.emoji = opts.emoji
     self.disabled = opts.disabled or false
+    self.callback = opts.callback
     self:set_row(opts.row)
 
     return self

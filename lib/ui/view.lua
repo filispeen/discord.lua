@@ -96,6 +96,17 @@ function View:remove(item_or_custom_id)
     return self
 end
 
+-- Finds an attached item by custom_id, used to route an incoming
+-- INTERACTION_CREATE payload to the item that should handle it.
+function View:find_item(custom_id)
+    for _, item in ipairs(self.items) do
+        if item.custom_id == custom_id then
+            return item
+        end
+    end
+    return nil
+end
+
 function View:clear()
     self.items = {}
     return self

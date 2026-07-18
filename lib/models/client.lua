@@ -43,13 +43,19 @@ local class = require("core.class")
 -- Client class
 local Client = class("Client")
 
-function Client.new(token, ratelimiter)
+function Client.new(token, ratelimiter, intents)
+    local enums = require("core.enums")
     local self = {
         token = token,
         ratelimiter = ratelimiter or {},
         events = {},
+        listeners = {},
         http = nil,
+        rest = nil,
         gateway = nil,
+        application_id = nil,
+        intents = intents or enums.default_intents(),
+        user = nil,
     }
     setmetatable(self, {
         __index = Client
@@ -57,16 +63,53 @@ function Client.new(token, ratelimiter)
     return self
 end
 
+-- Fetches and caches the application id needed for slash command sync.
+function Client:get_application_id()
+    if self.application_id then
+        return self.application_id
+    end
+    if not self.http then
+        return nil
+    end
+    local response = self.http:get("/oauth2/applications/@me")
+    if response and response.id then
+        self.application_id = response.id
+    end
+    return self.application_id
+end
+
+-- Generic GET passthrough to the underlying http client, used by
+-- ShardManager:start() to fetch /gateway/bot.
+function Client:get(endpoint)
+    if not self.http then
+        return nil
+    end
+    return self.http:get(endpoint)
+end
+
+-- Sends a voice state update (opcode 4) to join, move between, or leave
+-- a voice channel. channel_id = nil disconnects. Requires the gateway to
+-- be started (Client:start_gateway / Bot:run). This is the hook voice
+-- and Lavalink integrations use as sendPayload.
+function Client:voice_state_update(guild_id, channel_id, self_mute, self_deaf)
+    if not self.gateway then
+        error("Client:voice_state_update called before start_gateway()", 0)
+    end
+    return self.gateway:voice_state_update(guild_id, channel_id, self_mute, self_deaf)
+end
+
 -- Create HTTP client
 function Client:_create_http()
     local ratelimiter = require("http.ratelimiter")
     local client = require("http.client")
+    local Route = require("http.route")
 
     local manager = ratelimiter.Manager.new()
     self.ratelimiter = manager
 
     local http_client = client.new(self.token, manager)
     self.http = http_client
+    self.rest = Route.new(http_client)
 
     return http_client
 end
@@ -90,7 +133,10 @@ function Client:start_gateway()
         self:emit("shard_disconnect", { shard_id = shard_id, shard = shard, event = event })
     end)
 
-    self.gateway:on_ready(function()
+    self.gateway:on_ready(function(ready_payload)
+        if ready_payload and ready_payload.user then
+            self.user = ready_payload.user
+        end
         self:emit("ready")
     end)
 
@@ -101,6 +147,14 @@ function Client:start_gateway()
 
     self.gateway:on_dispatch("INTERACTION_CREATE", function(data)
         self:emit("interaction_create", data)
+    end)
+
+    self.gateway:on_dispatch("VOICE_STATE_UPDATE", function(data)
+        self:emit("voice_state_update", data)
+    end)
+
+    self.gateway:on_dispatch("VOICE_SERVER_UPDATE", function(data)
+        self:emit("voice_server_update", data)
     end)
 
     self.gateway:start()
@@ -200,9 +254,11 @@ end
 
 -- Getters (these need to be implemented with actual API calls)
 function Client:get_user(id)
+    if self.rest then
+        return self.rest:get_user(id)
+    end
     if self.http then
-        local response = self.http:get("/users/" .. id)
-        return response
+        return self.http:get("/users/" .. id)
     end
     return nil
 end
@@ -213,9 +269,11 @@ function Client.get_member(_self, _id)
 end
 
 function Client:get_channel(id)
+    if self.rest then
+        return self.rest:get_channel(id)
+    end
     if self.http then
-        local response = self.http:get("/channels/" .. id)
-        return response
+        return self.http:get("/channels/" .. id)
     end
     return nil
 end
@@ -226,9 +284,11 @@ function Client.get_role(_self, _id)
 end
 
 function Client:get_guild(id)
+    if self.rest then
+        return self.rest:get_guild(id)
+    end
     if self.http then
-        local response = self.http:get("/guilds/" .. id)
-        return response
+        return self.http:get("/guilds/" .. id)
     end
     return nil
 end
