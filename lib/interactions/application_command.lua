@@ -9,11 +9,20 @@
 --
 --   ApplicationCommand:execute(ctx) -> response
 --     Execute the command and return response.
+--
+--   ApplicationCommand:to_dict() -> table
+--     Serializes the command to the Discord API application command schema,
+--     used by interactions.command_tree for registration and diffing.
 
 local class = require("core.class")
 
 -- ApplicationCommand class
 local ApplicationCommand = class("ApplicationCommand")
+
+-- Discord application command types
+ApplicationCommand.TYPE_CHAT_INPUT = 1
+ApplicationCommand.TYPE_USER = 2
+ApplicationCommand.TYPE_MESSAGE = 3
 
 function ApplicationCommand.new(name, description, options)
     local self = {}
@@ -26,8 +35,44 @@ function ApplicationCommand.new(name, description, options)
     self.description = description
     self.options = options or {}
     self.aliases = {}
+    self.type = ApplicationCommand.TYPE_CHAT_INPUT
+    self.guild_ids = nil
+    self.autocomplete_callbacks = {}
+    self.callback = nil
 
     return self
+end
+
+-- Registers an autocomplete callback for a specific option name.
+function ApplicationCommand:set_autocomplete(option_name, callback)
+    self.autocomplete_callbacks[option_name] = callback
+    return self
+end
+
+-- Serializes to the Discord API application command schema.
+function ApplicationCommand:to_dict()
+    local dict = {
+        name = self.name,
+        description = self.description,
+        type = self.type,
+    }
+
+    if self.type == ApplicationCommand.TYPE_CHAT_INPUT and self.options and #self.options > 0 then
+        local options = {}
+        for i, opt in ipairs(self.options) do
+            options[i] = {
+                type = opt.type,
+                name = opt.name,
+                description = opt.description,
+                required = opt.required or false,
+                choices = opt.choices,
+                autocomplete = self.autocomplete_callbacks[opt.name] ~= nil or opt.autocomplete or nil,
+            }
+        end
+        dict.options = options
+    end
+
+    return dict
 end
 
 -- Add an alias

@@ -51,6 +51,8 @@ function M.new(interaction, client)
         args = {},
         options = {},
         bot = client,
+        interaction_id = interaction.id,
+        interaction_token = interaction.token,
     }
     setmetatable(ctx, {
         __index = M.SlashCommandContext
@@ -139,6 +141,65 @@ function M.SlashCommandContext:require_arg(name)
         return self.args[name]
     end
     error("Missing required argument: " .. name, 0)
+end
+
+-- Sends the initial response to this interaction, mirrors pycord's
+-- ctx.respond(content, ephemeral=False). Must be called within Discord's
+-- 3 second interaction window; after that use ctx:edit instead.
+function M.SlashCommandContext:respond(content, opts)
+    opts = opts or {}
+    if not self.bot or not self.bot.rest then
+        error("SlashCommandContext has no rest client attached, cannot respond", 0)
+    end
+
+    local data = { content = content }
+    if opts.ephemeral then
+        data.flags = 64
+    end
+    if opts.embeds then
+        data.embeds = opts.embeds
+    end
+    if opts.components then
+        data.components = opts.components
+    end
+
+    local payload = {
+        type = 4, -- CHANNEL_MESSAGE_WITH_SOURCE
+        data = data,
+    }
+
+    return self.bot.rest:create_interaction_response(
+        self.interaction_id,
+        self.interaction_token,
+        payload
+    )
+end
+
+-- Alias for respond, for familiarity with Message:reply.
+function M.SlashCommandContext:reply(content, opts)
+    return self:respond(content, opts)
+end
+
+-- Edits the original interaction response, mirrors pycord's ctx.edit.
+function M.SlashCommandContext:edit(content, opts)
+    opts = opts or {}
+    if not self.bot or not self.bot.rest then
+        error("SlashCommandContext has no rest client attached, cannot edit", 0)
+    end
+
+    local payload = { content = content }
+    if opts.embeds then
+        payload.embeds = opts.embeds
+    end
+    if opts.components then
+        payload.components = opts.components
+    end
+
+    return self.bot.rest:edit_interaction_response(
+        self.bot.application_id,
+        self.interaction_token,
+        payload
+    )
 end
 
 return M
