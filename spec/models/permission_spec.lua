@@ -33,7 +33,7 @@ describe("Permissions", function()
     end)
 
     it("has_permission works", function()
-        local perms = permission.VIEW_CHANNEL | permission.SEND_MESSAGES
+        local perms = permission.bor(permission.VIEW_CHANNEL, permission.SEND_MESSAGES)
 
         assert.is_true(permission.has_permission(perms, permission.VIEW_CHANNEL))
         assert.is_true(permission.has_permission(perms, permission.SEND_MESSAGES))
@@ -49,7 +49,7 @@ describe("Permissions", function()
     end)
 
     it("remove_permission works", function()
-        local perms = permission.VIEW_CHANNEL | permission.SEND_MESSAGES
+        local perms = permission.bor(permission.VIEW_CHANNEL, permission.SEND_MESSAGES)
         local new_perms = permission.remove_permission(perms, permission.SEND_MESSAGES)
 
         assert.is_true(permission.has_permission(new_perms, permission.VIEW_CHANNEL))
@@ -59,7 +59,7 @@ describe("Permissions", function()
     it("check_administrator works", function()
         assert.is_false(permission.check_administrator(0))
         assert.is_true(permission.check_administrator(permission.ADMINISTRATOR))
-        assert.is_true(permission.check_administrator(permission.ADMINISTRATOR | permission.VIEW_CHANNEL))
+        assert.is_true(permission.check_administrator(permission.bor(permission.ADMINISTRATOR, permission.VIEW_CHANNEL)))
     end)
 
     it("can_send_messages works", function()
