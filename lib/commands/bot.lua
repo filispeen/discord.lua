@@ -168,6 +168,27 @@ function Bot.get_role(_self, _role_id)
     return nil
 end
 
+-- Returns the voice channel id a member is currently in, built from
+-- VOICE_STATE_UPDATE dispatch events. nil if the member is not known to
+-- be in voice (never seen, since left, or the gateway hasn't been
+-- started yet). Requires the GUILD_VOICE_STATES intent.
+function Bot:get_voice_channel_id(guild_id, user_id)
+    if not self.client then
+        return nil
+    end
+    return self.client:get_voice_channel_id(guild_id, user_id)
+end
+
+-- Convenience for prefix commands: the voice channel id the message's
+-- author is currently in, in the message's guild. nil in DMs or if the
+-- author is not in a voice channel.
+function Bot:get_author_voice_channel_id(message)
+    if not message or not message.guild_id or not message.author then
+        return nil
+    end
+    return self:get_voice_channel_id(message.guild_id, message.author.id)
+end
+
 -- Registers a prefix command by name with its callback, mirrors register_command
 -- but matches the README/examples calling convention: client:command(name, fn)
 function Bot:command(name, func, description)

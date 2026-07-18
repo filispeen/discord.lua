@@ -45,6 +45,7 @@ local Client = class("Client")
 
 function Client.new(token, ratelimiter, intents)
     local enums = require("core.enums")
+    local VoiceStateStore = require("cache.voice_state_store")
     local self = {
         token = token,
         ratelimiter = ratelimiter or {},
@@ -56,6 +57,7 @@ function Client.new(token, ratelimiter, intents)
         application_id = nil,
         intents = intents or enums.default_intents(),
         user = nil,
+        voice_states = VoiceStateStore.new(),
     }
     setmetatable(self, {
         __index = Client
@@ -96,6 +98,19 @@ function Client:voice_state_update(guild_id, channel_id, self_mute, self_deaf)
         error("Client:voice_state_update called before start_gateway()", 0)
     end
     return self.gateway:voice_state_update(guild_id, channel_id, self_mute, self_deaf)
+end
+
+-- Returns the last known voice state for a member in a guild, built
+-- from VOICE_STATE_UPDATE dispatch events. nil if the member is not
+-- known to be in a voice channel (never seen, or has since left).
+function Client:get_voice_state(guild_id, user_id)
+    return self.voice_states:get(guild_id, user_id)
+end
+
+-- Convenience accessor: just the voice channel id a member is
+-- currently in, or nil.
+function Client:get_voice_channel_id(guild_id, user_id)
+    return self.voice_states:get_channel_id(guild_id, user_id)
 end
 
 -- Create HTTP client
@@ -150,6 +165,7 @@ function Client:start_gateway()
     end)
 
     self.gateway:on_dispatch("VOICE_STATE_UPDATE", function(data)
+        self.voice_states:update(data)
         self:emit("voice_state_update", data)
     end)
 

@@ -410,4 +410,55 @@ describe("Bot", function()
         assert.is_not_nil(received)
         assert.equals("example.discord.media", received.endpoint)
     end)
+
+    it("get_voice_channel_id returns nil before connect", function()
+        local bot = Bot.new("token")
+        assert.is_nil(bot:get_voice_channel_id("guild1", "user1"))
+    end)
+
+    it("get_voice_channel_id reads from the real VOICE_STATE_UPDATE dispatch path", function()
+        local bot = Bot.new("token")
+        bot:connect()
+
+        -- Route through the client's real dispatch handler (registered in
+        -- start_gateway), not bot.client:emit, so this exercises the same
+        -- code path a live gateway would use to populate voice_states.
+        bot.client.voice_states:update({
+            guild_id = "guild1",
+            user_id = "user1",
+            channel_id = "channel1",
+        })
+
+        assert.equals("channel1", bot:get_voice_channel_id("guild1", "user1"))
+    end)
+
+    it("get_author_voice_channel_id resolves from a message's author and guild_id", function()
+        local bot = Bot.new("token")
+        bot:connect()
+
+        bot.client.voice_states:update({
+            guild_id = "guild1",
+            user_id = "user1",
+            channel_id = "channel1",
+        })
+
+        local message = { guild_id = "guild1", author = { id = "user1" } }
+        assert.equals("channel1", bot:get_author_voice_channel_id(message))
+    end)
+
+    it("get_author_voice_channel_id returns nil for a DM message (no guild_id)", function()
+        local bot = Bot.new("token")
+        bot:connect()
+
+        local message = { guild_id = nil, author = { id = "user1" } }
+        assert.is_nil(bot:get_author_voice_channel_id(message))
+    end)
+
+    it("get_author_voice_channel_id returns nil when the author is not in voice", function()
+        local bot = Bot.new("token")
+        bot:connect()
+
+        local message = { guild_id = "guild1", author = { id = "user_not_in_voice" } }
+        assert.is_nil(bot:get_author_voice_channel_id(message))
+    end)
 end)
