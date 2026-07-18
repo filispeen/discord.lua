@@ -41,8 +41,11 @@ jobs:
       - name: Install luvit
         run: luarocks install luvit
 
+      - name: Install test dependencies
+        run: luarocks install busted
+
       - name: Run busted tests
-        run: busted -p "_test.lua" spec
+        run: busted -p "_test.lua" -p "_spec.lua" -r spec
 
   rockspec:
     name: Validate rockspec
@@ -55,8 +58,5 @@ jobs:
         with:
           luaVersion: "5.1"
 
-      - name: Install luvit
-        run: luarocks install luvit
-
       - name: Validate rockspec
-        run: luarocks pack discord-lua --source-only
+        run: luarocks lint discord-lua-scm-0.rockspec
