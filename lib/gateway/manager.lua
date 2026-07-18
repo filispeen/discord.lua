@@ -63,15 +63,20 @@ end
 
 -- Start all shards with auto-sharding support
 function ShardManager:start()
-    -- Get shard configuration from gateway
-    local gateway_url = self.client:get("/gateway/bot")
-    if not gateway_url then
+    -- Get shard configuration from gateway. Discord returns
+    -- { url, shards, session_start_limit = { max_concurrency, ... } },
+    -- not wrapped in a "data" key.
+    local gateway_info = self.client:get("/gateway/bot")
+    if not gateway_info then
         return self
     end
 
     -- Parse shard count and max concurrency
-    local shards = gateway_url.data.shards or 1
-    local max_concurrency = gateway_url.data.max_concurrency or 1
+    local shards = gateway_info.shards or 1
+    local max_concurrency = 1
+    if gateway_info.session_start_limit then
+        max_concurrency = gateway_info.session_start_limit.max_concurrency or 1
+    end
 
     -- Update max concurrency
     self.max_concurrency = math.min(self.max_concurrency, max_concurrency)
@@ -91,18 +96,40 @@ function ShardManager:start()
     local started_count = 0
 
     local start_next
+    local on_shard_ready
+
+    local function fire_ready_listeners_once_all_up(ready_payload)
+        if ready_count >= shards and self.listeners.ready then
+            for _, callback in ipairs(self.listeners.ready) do
+                callback(ready_payload)
+            end
+        end
+    end
+
+    on_shard_ready = function(shard_id, shard)
+        return function(ready_payload)
+            ready_count = ready_count + 1
+
+            if self.listeners["shard_ready"] then
+                for _, callback in ipairs(self.listeners["shard_ready"]) do
+                    callback(shard_id, shard, ready_payload)
+                end
+            end
+
+            fire_ready_listeners_once_all_up(ready_payload)
+            if ready_count < self.max_concurrency then
+                start_next()
+            end
+        end
+    end
+
     start_next = function()
         if ready_count >= self.max_concurrency and started_count < shards then
             for i = started_count, shards - 1 do
                 local shard = self._shards[i]
                 if shard and not shard._state.connected then
                     shard:connect()
-                    shard:on_ready(function()
-                        ready_count = ready_count + 1
-                        if ready_count < self.max_concurrency then
-                            start_next()
-                        end
-                    end)
+                    shard:on_ready(on_shard_ready(i, shard))
                     started_count = started_count + 1
                     break
                 end
@@ -115,12 +142,7 @@ function ShardManager:start()
         local shard = self._shards[i]
         if shard and not shard._state.connected then
             shard:connect()
-            shard:on_ready(function()
-                ready_count = ready_count + 1
-                if ready_count < self.max_concurrency then
-                    start_next()
-                end
-            end)
+            shard:on_ready(on_shard_ready(i, shard))
             started_count = started_count + 1
         end
     end
@@ -142,6 +164,31 @@ function ShardManager:get_shard(id)
     return self._shards[id]
 end
 
+-- Computes which shard a guild belongs to, per Discord's sharding formula:
+-- shard_id = (guild_id >> 22) % num_shards. guild_id is a snowflake, often
+-- passed as a string since it can exceed the safe integer range as text;
+-- the shift is done via division since Lua's numbers are doubles and
+-- native bitwise ops are not safe/available across all Lua 5.1/LuaJIT
+-- setups for numbers this large.
+function ShardManager:guild_shard_id(guild_id)
+    local num_shards = 0
+    for _ in pairs(self._shards) do
+        num_shards = num_shards + 1
+    end
+    if num_shards == 0 then
+        return 0
+    end
+
+    local id = tonumber(guild_id) or 0
+    local shifted = math.floor(id / 4194304) -- id >> 22
+    return shifted % num_shards
+end
+
+-- Gets the shard responsible for a given guild.
+function ShardManager:get_shard_for_guild(guild_id)
+    return self:get_shard(self:guild_shard_id(guild_id))
+end
+
 -- Get all shards
 function ShardManager:shards()
     return self._shards
@@ -153,6 +200,17 @@ function ShardManager:dispatch(event)
         shard:emit(event)
     end
     return self
+end
+
+-- Sends a voice state update (opcode 4) through the shard responsible
+-- for the given guild. channel_id = nil disconnects from voice.
+function ShardManager:voice_state_update(guild_id, channel_id, self_mute, self_deaf)
+    local shard = self:get_shard_for_guild(guild_id)
+    if not shard then
+        return false, "no shard available for guild " .. tostring(guild_id)
+    end
+    shard:voice_state_update(guild_id, channel_id, self_mute, self_deaf)
+    return true
 end
 
 -- Subscribe to a named gateway dispatch event (e.g. "MESSAGE_CREATE").

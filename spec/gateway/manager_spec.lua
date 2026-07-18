@@ -48,14 +48,17 @@ end
 function MockHTTPClient:get(endpoint, callback)
     if endpoint == "/gateway/bot" then
         return {
-            data = {
-                shards = 3,
-                heartbeat_interval = 5000,
+            url = "wss://gateway.discord.gg",
+            shards = 3,
+            session_start_limit = {
+                total = 1000,
+                remaining = 999,
+                reset_after = 0,
                 max_concurrency = 2,
-            }
+            },
         }
     end
-    return { data = { url = "wss://gateway.discord.gg" } }
+    return { url = "wss://gateway.discord.gg" }
 end
 
 describe("ShardManager", function()
@@ -131,10 +134,11 @@ describe("ShardManager", function()
         -- Mock the gateway response with lower max_concurrency
         mock_client.get = function(...)
             return {
-                data = {
-                    shards = 2,
+                url = "wss://gateway.discord.gg",
+                shards = 2,
+                session_start_limit = {
                     max_concurrency = 1,
-                }
+                },
             }
         end
 
@@ -167,7 +171,11 @@ describe("ShardManager", function()
     it("should wire shards created in start() to forward dispatch events", function()
         local mock_client = MockHTTPClient.new("test_token")
         mock_client.get = function(...)
-            return { data = { shards = 1, max_concurrency = 1 } }
+            return {
+                url = "wss://gateway.discord.gg",
+                shards = 1,
+                session_start_limit = { max_concurrency = 1 },
+            }
         end
 
         local manager = ShardManager.new(mock_client, 1)
@@ -181,5 +189,128 @@ describe("ShardManager", function()
 
         assert.is_not_nil(received)
         assert.equals("wired", received.content)
+    end)
+
+    it("fires on_ready once every started shard has dispatched READY", function()
+        local mock_client = MockHTTPClient.new("test_token")
+        mock_client.get = function(...)
+            return {
+                url = "wss://gateway.discord.gg",
+                shards = 1,
+                session_start_limit = { max_concurrency = 1 },
+            }
+        end
+
+        local manager = ShardManager.new(mock_client, 1)
+
+        local ready_payload_received = nil
+        manager:on_ready(function(ready_payload)
+            ready_payload_received = ready_payload
+        end)
+
+        manager:start()
+
+        local shard = manager:get_shard(0)
+        shard:dispatch({
+            op = 0,
+            t = "READY",
+            s = 1,
+            d = { session_id = "abc", user = { id = "1", username = "TestBot" } },
+        })
+
+        assert.is_not_nil(ready_payload_received)
+        assert.equals("TestBot", ready_payload_received.user.username)
+    end)
+
+    it("fires on_shard_ready with the shard id and READY payload", function()
+        local mock_client = MockHTTPClient.new("test_token")
+        mock_client.get = function(...)
+            return {
+                url = "wss://gateway.discord.gg",
+                shards = 1,
+                session_start_limit = { max_concurrency = 1 },
+            }
+        end
+
+        local manager = ShardManager.new(mock_client, 1)
+
+        local received_shard_id = nil
+        manager:on_shard_ready(0, function(shard_id, _shard, ready_payload)
+            received_shard_id = shard_id
+        end)
+
+        manager:start()
+
+        local shard = manager:get_shard(0)
+        shard:dispatch({ op = 0, t = "READY", s = 1, d = { session_id = "abc" } })
+
+        assert.equals(0, received_shard_id)
+    end)
+
+    it("guild_shard_id returns 0 for a single shard", function()
+        local mock_client = MockHTTPClient.new("test_token")
+        local manager = ShardManager.new(mock_client, 1)
+        manager:start()
+
+        assert.equals(0, manager:guild_shard_id("881207955029110855"))
+    end)
+
+    it("guild_shard_id distributes guilds across shards using Discord's formula", function()
+        local mock_client = MockHTTPClient.new("test_token")
+        mock_client.get = function(...)
+            return {
+                url = "wss://gateway.discord.gg",
+                shards = 4,
+                session_start_limit = { max_concurrency = 4 },
+            }
+        end
+
+        local manager = ShardManager.new(mock_client, 4)
+        manager:start()
+
+        local guild_id = "881207955029110855"
+        local expected = math.floor(tonumber(guild_id) / 4194304) % 4
+
+        assert.equals(expected, manager:guild_shard_id(guild_id))
+    end)
+
+    it("get_shard_for_guild returns the shard object for that guild's shard id", function()
+        local mock_client = MockHTTPClient.new("test_token")
+        local manager = ShardManager.new(mock_client, 1)
+        manager:start()
+
+        local shard = manager:get_shard_for_guild("881207955029110855")
+
+        assert.equals(manager:get_shard(0), shard)
+    end)
+
+    it("voice_state_update sends opcode 4 through the guild's shard", function()
+        local mock_client = MockHTTPClient.new("test_token")
+        local manager = ShardManager.new(mock_client, 1)
+        manager:start()
+
+        local shard = manager:get_shard(0)
+        local sent = nil
+        shard.ws = {
+            send = function(_self, raw)
+                sent = raw
+            end,
+        }
+
+        local ok = manager:voice_state_update("111", "222", false, true)
+
+        assert.is_true(ok)
+        assert.is_not_nil(sent)
+        assert.is_not_nil(sent:find("\"op\":4"))
+    end)
+
+    it("voice_state_update returns false when no shard is available", function()
+        local mock_client = MockHTTPClient.new("test_token")
+        local manager = ShardManager.new(mock_client, 1)
+
+        local ok, err = manager:voice_state_update("111", "222")
+
+        assert.is_false(ok)
+        assert.is_not_nil(err)
     end)
 end)

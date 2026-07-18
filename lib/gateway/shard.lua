@@ -135,6 +135,21 @@ function Shard:resume(session_id, seq)
     return self
 end
 
+-- Send voice state update (opcode 4), used to join, move between, or
+-- leave a voice channel. channel_id = nil disconnects from voice.
+function Shard:voice_state_update(guild_id, channel_id, self_mute, self_deaf)
+    self:send({
+        op = opcodes.VOICE_STATE_UPDATE,
+        d = {
+            guild_id = guild_id,
+            channel_id = channel_id,
+            self_mute = self_mute or false,
+            self_deaf = self_deaf or false,
+        },
+    })
+    return self
+end
+
 -- Send heartbeat
 function Shard:send_heartbeat()
     local heartbeat = { op = opcodes.HEARTBEAT, d = { seq = self._state.seq } }
@@ -179,7 +194,24 @@ function Shard:dispatch(event)
         if self._state.session_id then
             self:resume(self._state.session_id, self._state.seq)
         else
-            self:identify({ token = self.client.token })
+            local enums = require("core.enums")
+            local intents = self.client.intents or enums.default_intents()
+
+            local identify_data = {
+                token = self.client.token,
+                intents = intents,
+                properties = {
+                    os = "linux",
+                    browser = "discord.lua",
+                    device = "discord.lua",
+                },
+            }
+
+            if self.total_shards and self.total_shards > 1 then
+                identify_data.shard = { self.shard_id, self.total_shards }
+            end
+
+            self:identify(identify_data)
         end
         return
     end
