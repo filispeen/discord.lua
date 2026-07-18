@@ -85,13 +85,20 @@ end
 
 -- Generic request method
 function Client:request(method, endpoint, options)
-    local headers = self.headers
+    local headers = {}
+    for k, v in pairs(self.headers) do
+        headers[k] = v
+    end
 
     -- Add custom headers
     if options and options.headers then
         for k, v in pairs(options.headers) do
             headers[k] = v
         end
+    end
+
+    if options and options.reason then
+        headers["X-Audit-Log-Reason"] = options.reason
     end
 
     -- Add body if provided
@@ -148,17 +155,23 @@ end
 
 -- POST wrapper
 function Client:post(endpoint, body, options)
-    return self:request("POST", endpoint, { body = body, options = options })
+    options = options or {}
+    options.body = body
+    return self:request("POST", endpoint, options)
 end
 
 -- PUT wrapper
 function Client:put(endpoint, body, options)
-    return self:request("PUT", endpoint, { body = body, options = options })
+    options = options or {}
+    options.body = body
+    return self:request("PUT", endpoint, options)
 end
 
 -- PATCH wrapper
 function Client:patch(endpoint, body, options)
-    return self:request("PATCH", endpoint, { body = body, options = options })
+    options = options or {}
+    options.body = body
+    return self:request("PATCH", endpoint, options)
 end
 
 -- DELETE wrapper

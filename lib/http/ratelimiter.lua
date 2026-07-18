@@ -42,6 +42,9 @@ M.DEFAULTS = {
     reset_after = 1,         -- seconds until bucket resets
 }
 
+M.Bucket = {}
+M.Bucket.__index = M.Bucket
+
 -- Create a new rate limit bucket
 function M.Bucket.new()
     local self = {}
@@ -111,8 +114,8 @@ function M.Bucket:getRetryAfter()
 end
 
 -- Rate limit manager for multiple API paths
-local Manager = {}
-Manager.__index = Manager
+M.Manager = {}
+M.Manager.__index = M.Manager
 
 -- Create a new rate limit manager
 function M.Manager.new()
@@ -121,13 +124,13 @@ function M.Manager.new()
         global_remaining = 10,  -- Discord has a global rate limit of ~10 req/sec
         global_limit = 10,
         global_reset = 0,
-    }, Manager)
+    }, M.Manager)
 
     return self
 end
 
 -- Get or create a bucket for a specific path
-function Manager:get_bucket(path)
+function M.Manager:get_bucket(path)
     if not self.buckets[path] then
         self.buckets[path] = M.Bucket.new()
     end
@@ -135,25 +138,25 @@ function Manager:get_bucket(path)
 end
 
 -- Update a bucket with new rate limit headers
-function Manager:update_bucket(path, headers)
+function M.Manager:update_bucket(path, headers)
     if self.buckets[path] then
         self.buckets[path]:update(headers)
     end
 end
 
 -- Check if a path is rate limited
-function Manager:is_rate_limited(path)
+function M.Manager:is_rate_limited(path)
     local bucket = self:get_bucket(path)
     return bucket:isRateLimited()
 end
 
 -- Check if globally rate limited
-function Manager:is_global_rate_limited()
+function M.Manager:is_global_rate_limited()
     return self.global_remaining == 0 and self.global_time_remaining > 0
 end
 
 -- Get global retry after
-function Manager:get_global_retry_after()
+function M.Manager:get_global_retry_after()
     if self:is_global_rate_limited() then
         return self.global_time_remaining
     end
@@ -161,7 +164,7 @@ function Manager:get_global_retry_after()
 end
 
 -- Consume a global request (for global rate limit)
-function Manager:consume_global()
+function M.Manager:consume_global()
     if self.global_remaining > 0 then
         self.global_remaining = self.global_remaining - 1
         return true
@@ -170,19 +173,19 @@ function Manager:consume_global()
 end
 
 -- Update global rate limit from headers
-function Manager:update_global(headers)
+function M.Manager:update_global(headers)
     self.global_remaining = tonumber(headers["X-RateLimit-Global-Remaining"] or 10)
     self.global_limit = tonumber(headers["X-RateLimit-Global-Limit"] or 10)
     self.global_time_remaining = tonumber(headers["Retry-After"] or 0)
 end
 
 -- Get all buckets
-function Manager:get_all_buckets()
+function M.Manager:get_all_buckets()
     return self.buckets
 end
 
 -- Set global rate limit state (for manual control)
-function Manager:set_global_remaining(remaining, limit, reset)
+function M.Manager:set_global_remaining(remaining, limit, reset)
     self.global_remaining = remaining or self.global_remaining
     self.global_limit = limit or self.global_limit
     self.global_time_remaining = reset or 0
