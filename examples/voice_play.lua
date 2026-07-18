@@ -1,43 +1,56 @@
 -- examples/voice_play.lua
--- Example: Voice client usage
+-- Example: Voice client usage.
 --
--- Demonstrates connecting to a voice channel and playing audio.
+-- IMPORTANT: lib/voice/voice_client.lua's connect() does not yet obtain a
+-- real voice endpoint or session; VOICE_STATE_UPDATE / VOICE_SERVER_UPDATE
+-- are also not wired from the gateway to Bot/Client yet, so
+-- VoiceClient:connect() below will not actually join a voice channel on
+-- Discord's servers. This example shows the intended shape of the API
+-- and the parts that do work today (ready, bot.user, shard_ready); the
+-- VoiceClient:connect() call is left in to show the intended usage once
+-- voice gateway wiring lands, and is guarded with pcall so the rest of
+-- the bot keeps running if it fails.
 
 local Bot = require("discord.lua")
-local BotClass = Bot
+local VoiceClient = require("voice.voice_client")
 
-local client = BotClass("YOUR_BOT_TOKEN")
+local bot = Bot("YOUR_BOT_TOKEN")
 
--- Listen for voice state updates
-client:on("voice_state_update", function(before, after)
-    -- Check if someone joined a voice channel
-    if after.channel_id and after.member and not before.channel_id then
-        print("User joined voice: " .. after.member.user.username)
-
-        -- Create voice client
-        local voice_client = client.voice_client(after.member.user.id, after.channel_id)
-
-        -- Connect to voice channel
-        local success, error = pcall(function()
-            voice_client:connect()
-            print("Connected to voice!")
-        end)
-
-        if not success then
-            print("Error connecting:", error)
-        end
+bot:on("ready", function()
+    print("Bot is ready!")
+    if bot.user then
+        print("Bot ID: " .. bot.user.id)
     end
 end)
 
--- Listen for ready events
-client:on("ready", function()
-    print("Bot is ready!")
-    print("Bot ID: " .. client.user.id)
-end)
-
--- Listen for shard ready events (auto-sharding)
-client:on("shard_ready", function(shard_id)
+bot:on("shard_ready", function(shard_id)
     print("Shard " .. shard_id .. " is ready")
 end)
 
-client:run()
+-- Slash command that attempts to join the invoking user's voice channel.
+-- ctx.channel here must be a voice channel the bot can already see from
+-- cache; there is no helper yet to look up "the user's current voice
+-- channel" since VOICE_STATE_UPDATE is not tracked.
+bot:register_application_command("join", {
+    description = "Joins your voice channel",
+    callback = function(ctx)
+        if not ctx.channel or not ctx.channel.guild then
+            ctx:respond("I need a cached voice channel with its guild to join.")
+            return
+        end
+
+        local voice_client = VoiceClient.new(bot.client, ctx.channel)
+
+        local ok, err = pcall(function()
+            return voice_client:connect()
+        end)
+
+        if ok then
+            ctx:respond("Connected to voice!")
+        else
+            ctx:respond("Could not connect to voice: " .. tostring(err))
+        end
+    end,
+})
+
+bot:run()

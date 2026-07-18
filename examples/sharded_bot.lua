@@ -1,57 +1,38 @@
 -- examples/sharded_bot.lua
--- Example: Sharded bot with auto-sharding
+-- Example: Sharded bot lifecycle events.
 --
--- Demonstrates using the ShardManager for handling multiple shards.
--- The manager automatically fetches shard count and max_concurrency
--- from /gateway/bot and spawns shards accordingly.
+-- Sharding itself (how many shards, which guilds go to which shard) is
+-- handled automatically by ShardManager:start(), based on Discord's
+-- recommended shard count from GET /gateway/bot. There is nothing to
+-- configure here beyond listening to the lifecycle events below.
 
 local Bot = require("discord.lua")
-local BotClass = Bot
 
-local client = BotClass("YOUR_BOT_TOKEN")
+local bot = Bot("YOUR_BOT_TOKEN")
 
--- Shard manager handles auto-sharding automatically
-client.on_ready(function()
-    -- ShardManager manages shards internally
-    -- Just listen for shard ready events
-    client.on_shard_ready(function(shard_id)
-        print("Shard " .. shard_id .. " is ready")
-    end)
-
-    client.on_shard_error(function(shard_id, error)
-        print("Shard " .. shard_id .. " error:", error)
-    end)
-
-    client.on_shard_disconnect(function(shard_id)
-        print("Shard " .. shard_id .. " disconnected")
-    end)
-end)
-
--- Add a simple command to all shards
-client:command("ping", function(msg)
-    msg:reply("Pong! (Shard " .. msg.shard_id .. "/" .. msg.shard_count .. ")")
-end)
-
-client:command("info", function(msg)
-    local shard_info = {
-        shard = msg.shard_id,
-        total = msg.shard_count,
-        guilds = msg.guild_count or "unknown",
-        users = msg.member_count or "unknown",
-    }
-
-    msg:reply(
-        "Bot Info:\n" ..
-        "  Shard: " .. shard_info.shard .. "/" .. shard_info.total .. "\n" ..
-        "  Guilds: " .. shard_info.guilds .. "\n" ..
-        "  Users: " .. shard_info.users
-    )
-end)
-
-client:on("ready", function()
+-- Fires once every shard has reported READY.
+bot:on("ready", function()
     print("Bot is ready!")
-    print("User: " .. client.user.username .. "#" .. client.user.discriminator)
-    print("ID: " .. client.user.id)
+    if bot.user then
+        print("Logged in as " .. bot.user.username)
+    end
 end)
 
-client:run()
+-- Fires once per shard, as each one finishes its own READY handshake.
+bot:on("shard_ready", function(shard_id)
+    print("Shard " .. shard_id .. " is ready")
+end)
+
+bot:on("shard_disconnect", function(shard_id)
+    print("Shard " .. shard_id .. " disconnected")
+end)
+
+bot:on("shard_error", function(shard_id, _shard, err)
+    print("Shard " .. shard_id .. " errored: " .. tostring(err))
+end)
+
+bot:command("ping", function(msg)
+    msg:reply("Pong!")
+end, "Replies with pong")
+
+bot:run()

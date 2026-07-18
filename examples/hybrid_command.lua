@@ -1,46 +1,49 @@
 -- examples/hybrid_command.lua
--- Example: Hybrid command (prefix + slash)
+-- Example: Hybrid command (prefix + slash).
 --
 -- A hybrid command allows the same logic to be triggered via:
---   - Prefix: !hello
---   - Slash: /hello
+--   - Prefix: !ping
+--   - Slash: /ping
 --
--- This reduces code duplication and keeps logic in one place.
+-- This reduces code duplication and keeps logic in one place. There is
+-- no single "hybrid" registration helper, so the same handler is passed
+-- to both register_command and register_application_command.
 
 local Bot = require("discord.lua")
-local BotClass = Bot
+local enums = require("core.enums")
 
-local client = BotClass("YOUR_BOT_TOKEN")
+local bot = Bot("YOUR_BOT_TOKEN")
 
--- Hybrid command definition
-local hello = {
-    name = "hello",
-    description = "Greet someone!",
-    options = {
-        {
-            name = "user",
-            type = "USER",
-            required = true,
-            description = "The user to greet",
-        },
-    },
-    callback = function(ctx)
-        local user_id = ctx.options.user.id
-        local username = ctx.options.user.username
-        local mention = "<@" .. user_id .. ">"
-
-        -- Send DM to user
-        client:send_dm_message(user_id, "Hello, " .. username .. "!")
-
-        -- Reply to interaction or message
-        ctx:reply("Hello, " .. mention .. "!")
-    end,
-}
-
-client:add_command(hello)
-
-client:on("ready", function()
+bot:on("ready", function()
     print("Bot is ready!")
 end)
 
-client:run()
+local function ping(ctx)
+    ctx:reply("Pong!")
+end
+
+bot:register_command("ping", ping, "!", "Replies with pong")
+bot:register_application_command("ping", {
+    description = "Replies with pong",
+    callback = ping,
+})
+
+-- A slash-only command with an option.
+-- ctx.args.user holds the parsed User option.
+bot:register_application_command("greet", {
+    description = "Greet someone",
+    options = {
+        {
+            name = "user",
+            type = enums.OPTION_TYPE.USER,
+            description = "The user to greet",
+            required = true,
+        },
+    },
+    callback = function(ctx)
+        local user = ctx:require_arg("user")
+        ctx:respond("Hello, <@" .. user.id .. ">!")
+    end,
+})
+
+bot:run()

@@ -1,95 +1,52 @@
 -- examples/view_button.lua
--- Example: Button with View timeout
+-- Example: Buttons with a View.
 --
--- Demonstrates using Buttons with a View that auto-removes after timeout.
+-- Component callbacks receive a ComponentContext (ctx) with
+-- respond/update/defer for answering the interaction.
 
 local Bot = require("discord.lua")
-local BotClass = Bot
+local View = require("ui.view")
+local Button = require("ui.button")
 
-local view = require("ui.view")
-local button = require("ui.button")
+local bot = Bot("YOUR_BOT_TOKEN")
 
-local client = BotClass("YOUR_BOT_TOKEN")
+local votes = { up = 0, down = 0 }
 
--- Create a view with a button
-local vote_view = view:new()
+local vote_view = View.new({ timeout = 30000 })
 
-vote_view:add(button:new({
+vote_view:add(Button.new({
     label = "Upvote",
     style = "success",
     custom_id = "vote_up",
-    disabled = false,
 }))
 
-vote_view:add(button:new({
+vote_view:add(Button.new({
     label = "Downvote",
     style = "danger",
     custom_id = "vote_down",
-    disabled = false,
 }))
 
--- Set timeout (30 seconds)
-vote_view:timeout(30000)
-
--- Register the view with the client
-client:component(vote_view)
-
--- Handle button interactions
-local _ = client:interaction("vote_up", function(interaction)
-    local original = interaction:original_message()
-    original.content = original.content:gsub("([+])", function()
-        return "+" .. string.rep("+", 2)
-    end)
-    interaction:edit_message(original)
-    vote_view:remove(interaction)
+bot:interaction("vote_up", function(ctx)
+    votes.up = votes.up + 1
+    ctx:update("Votes: +" .. votes.up .. " / -" .. votes.down)
 end)
 
-local _ = client:interaction("vote_down", function(interaction)
-    local original = interaction:original_message()
-    original.content = original.content:gsub("(-)", function()
-        return "-" .. string.rep("-", 2)
-    end)
-    interaction:edit_message(original)
-    vote_view:remove(interaction)
+bot:interaction("vote_down", function(ctx)
+    votes.down = votes.down + 1
+    ctx:update("Votes: +" .. votes.up .. " / -" .. votes.down)
 end)
 
-client:on("ready", function()
+bot:component(vote_view)
+
+bot:register_application_command("poll", {
+    description = "Starts a simple upvote/downvote poll",
+    callback = function(ctx)
+        ctx:respond("Votes: +0 / -0", { components = vote_view:to_components() })
+    end,
+})
+
+bot:on("ready", function()
     print("Bot is ready!")
-
-    local guild_id = "123456789"
-    local channel_id = "987654321"
-    local message_id = "111222333"
-
-    client:edit_message(guild_id, channel_id, message_id, {
-        content = "Vote on this!",
-        embeds = {
-            client:embed({
-                title = "My Poll",
-                description = "What do you think?",
-            }),
-        },
-        components = {
-            {
-                type = "ACTION_ROW",
-                components = {
-                    {
-                        type = "BUTTON",
-                        style = "SUCCESS",
-                        label = "Upvote",
-                        custom_id = "vote_up",
-                        disabled = false,
-                    },
-                    {
-                        type = "BUTTON",
-                        style = "DANGER",
-                        label = "Downvote",
-                        custom_id = "vote_down",
-                        disabled = false,
-                    },
-                },
-            },
-        },
-    })
 end)
 
-client:run()
+bot:run()
