@@ -16,7 +16,7 @@ jobs:
       - name: Setup Lua
         uses: leafo/gh-actions-lua@v10
         with:
-          luaVersion: "5.1"
+          luaVersion: "luajit-2.1"
 
       - name: Setup luarocks
         uses: leafo/gh-actions-luarocks@v4
@@ -42,7 +42,7 @@ jobs:
       - name: Setup Lua
         uses: leafo/gh-actions-lua@v10
         with:
-          luaVersion: "5.1"
+          luaVersion: "luajit-2.1"
 
       - name: Setup luarocks
         uses: leafo/gh-actions-luarocks@v4
@@ -65,7 +65,7 @@ jobs:
       - name: Setup Lua
         uses: leafo/gh-actions-lua@v10
         with:
-          luaVersion: "5.1"
+          luaVersion: "luajit-2.1"
 
       - name: Setup luarocks
         uses: leafo/gh-actions-luarocks@v4
