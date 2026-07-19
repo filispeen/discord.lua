@@ -17,8 +17,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y luajit libluajit-5.1-dev luarocks
-          sudo luarocks config lua_interpreter luajit
-          sudo luarocks config variables.LUA_INCDIR /usr/include/luajit-2.1
+          sudo luarocks config --system lua_interpreter luajit
+          sudo luarocks config --system variables.LUA_INCDIR /usr/include/luajit-2.1
 
       - name: Install luvit
         run: sudo luarocks install luvit
@@ -42,8 +42,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y luajit libluajit-5.1-dev luarocks
-          sudo luarocks config lua_interpreter luajit
-          sudo luarocks config variables.LUA_INCDIR /usr/include/luajit-2.1
+          sudo luarocks config --system lua_interpreter luajit
+          sudo luarocks config --system variables.LUA_INCDIR /usr/include/luajit-2.1
 
       - name: Install luvit
         run: sudo luarocks install luvit
@@ -64,8 +64,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y luajit libluajit-5.1-dev luarocks
-          sudo luarocks config lua_interpreter luajit
-          sudo luarocks config variables.LUA_INCDIR /usr/include/luajit-2.1
+          sudo luarocks config --system lua_interpreter luajit
+          sudo luarocks config --system variables.LUA_INCDIR /usr/include/luajit-2.1
 
       - name: Validate rockspec
         run: luarocks lint discord-lua-scm-0.rockspec
