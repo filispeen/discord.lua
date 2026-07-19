@@ -16,15 +16,7 @@ jobs:
       - name: Install Lua/LuaRocks
         run: |
           sudo apt-get update
-          sudo apt-get install -y luajit libluajit-5.1-dev luarocks
-          sudo luarocks config --scope system lua_interpreter luajit
-          sudo luarocks config --scope system variables.LUA_INCDIR /usr/include/luajit-2.1
-
-      - name: Install luvit
-        run: sudo luarocks install luvit
-
-      - name: Install dependencies
-        run: sudo luarocks install coro-http coro-websocket secure-socket json
+          sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks
 
       - name: Install luacheck
         run: sudo luarocks install luacheck
@@ -41,18 +33,21 @@ jobs:
       - name: Install Lua/LuaRocks
         run: |
           sudo apt-get update
-          sudo apt-get install -y luajit libluajit-5.1-dev luarocks
-          sudo luarocks config --scope system lua_interpreter luajit
-          sudo luarocks config --scope system variables.LUA_INCDIR /usr/include/luajit-2.1
+          sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks
 
-      - name: Install luvit
-        run: sudo luarocks install luvit
+      - name: Install lit/luvi/luvit
+        run: |
+          curl -L https://github.com/luvit/lit/raw/master/get-lit.sh | sh
+          sudo install lit luvi luvit /usr/local/bin/
 
-      - name: Install test dependencies
+      - name: Install luvit dependencies
+        run: lit install luvit/coro-http luvit/coro-websocket luvit/secure-socket luvit/json
+
+      - name: Install busted
         run: sudo luarocks install busted
 
       - name: Run busted tests
-        run: busted -p "_test.lua" -p "_spec.lua" -r spec
+        run: LUA_PATH="./deps/?.lua;./deps/?/init.lua;;" busted -p "_test.lua" -p "_spec.lua" -r spec
 
   rockspec:
     name: Validate rockspec
@@ -63,9 +58,7 @@ jobs:
       - name: Install Lua/LuaRocks
         run: |
           sudo apt-get update
-          sudo apt-get install -y luajit libluajit-5.1-dev luarocks
-          sudo luarocks config --scope system lua_interpreter luajit
-          sudo luarocks config --scope system variables.LUA_INCDIR /usr/include/luajit-2.1
+          sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks
 
       - name: Validate rockspec
         run: luarocks lint discord-lua-scm-0.rockspec
