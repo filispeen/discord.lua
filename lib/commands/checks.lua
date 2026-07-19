@@ -64,9 +64,7 @@ function M.admin(_func)
             end
         end
 
-        print("DEBUG checks.lua: role_ids:", role_ids)
         for _, role_id in ipairs(role_ids) do
-            print("DEBUG checks.lua: role_id:", role_id, "type:", type(role_id))
             local role = ctx.bot:get_role(role_id)
             if role then
                 if role.admin or role.permissions and permission.has_permission(role.permissions, permission.ADMINISTRATOR) then

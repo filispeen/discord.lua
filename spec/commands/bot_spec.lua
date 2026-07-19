@@ -212,6 +212,48 @@ describe("Bot", function()
         assert.is_false(handled)
     end)
 
+    it("runs registered checks before invoking a prefix command's callback", function()
+        local bot = Bot.new("token")
+        local invoked = false
+        local passing_check = { name = "always", func = function() return true end }
+
+        bot:register_command("ping", function() invoked = true end, "!", "", { passing_check })
+        bot:dispatch_message({ content = "!ping" })
+
+        assert.is_true(invoked)
+    end)
+
+    it("blocks a prefix command's callback when a check fails", function()
+        local bot = Bot.new("token")
+        local invoked = false
+        local failing_check = { name = "blocked", func = function() return false end }
+
+        bot:register_command("ping", function() invoked = true end, "!", "", { failing_check })
+        bot:dispatch_message({ content = "!ping" })
+
+        assert.is_false(invoked)
+    end)
+
+    it("enforces cooldown checks on a prefix command and emits command_error", function()
+        local cooldown = require("commands.cooldown")
+        local bot = Bot.new("token")
+        local invoke_count = 0
+        local error_received = nil
+
+        bot:on("command_error", function(_msg, err) error_received = err end)
+        bot:register_command("ping", function() invoke_count = invoke_count + 1 end, "!", "", {
+            cooldown.cooldown(1, 5, cooldown.BucketType.user),
+        })
+
+        local message = { content = "!ping", author = { id = "1" } }
+        bot:dispatch_message(message)
+        bot:dispatch_message(message)
+
+        assert.are.equal(1, invoke_count)
+        assert.is_not_nil(error_received)
+        assert.are.equal("CommandOnCooldown", error_received._name)
+    end)
+
     it("routes a component interaction to a registered View's item callback", function()
         local View = require("ui.view")
         local Button = require("ui.button")

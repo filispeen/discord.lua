@@ -26,6 +26,7 @@ function Bot.new(token, ratelimiter, intents)
     self.intents = intents
     self.commands = {}
     self.command_descriptions = {}
+    self.command_checks = {}
     self.cogs = {}
     self.listeners = {}
     self.http = nil
@@ -56,12 +57,15 @@ end
 
 -- Registers a prefix command. description is optional and only used to
 -- populate the generated help command; existing callers that only pass
--- (name, func, prefix) keep working unchanged.
-function Bot:register_command(name, func, prefix, description)
+-- (name, func, prefix) keep working unchanged. checks is an optional list
+-- of check tables (see commands.checks / commands.cooldown), each with a
+-- .func(ctx) that returns true/false or raises (e.g. CommandOnCooldown).
+function Bot:register_command(name, func, prefix, description, checks)
     if not self.commands[name] then
         self.commands[name] = func
         self.prefixes[name] = prefix
         self.command_descriptions[name] = description or ""
+        self.command_checks[name] = checks or {}
     end
 end
 
@@ -84,6 +88,7 @@ function Bot:register_application_command(name, options)
     local cmd = ApplicationCommand.new(name, options.description or name, options.options)
     cmd.guild_ids = options.guild_ids
     cmd.callback = options.callback
+    cmd.checks = options.checks or {}
 
     self.command_tree:add(cmd)
     return cmd
@@ -109,6 +114,24 @@ function Bot:unregister_command(name)
     self.commands[name] = nil
     self.prefixes[name] = nil
     self.command_descriptions[name] = nil
+    self.command_checks[name] = nil
+end
+
+-- Runs every registered check for a command against ctx, in order.
+-- Returns true if all checks pass. Lets check errors (e.g. CommandOnCooldown)
+-- propagate to the caller, matching pycord's check-raises-on-failure model.
+function Bot:run_checks(name, ctx)
+    local checks = self.command_checks[name]
+    if not checks then
+        return true
+    end
+
+    for _, check in ipairs(checks) do
+        if not check.func(ctx) then
+            return false
+        end
+    end
+    return true
 end
 
 function Bot:on(event, callback)
@@ -233,7 +256,21 @@ function Bot:dispatch_interaction(interaction)
         if cmd and cmd.callback then
             local slash = require("interactions.slash")
             local ctx = slash.new(interaction, self.client)
-            cmd.callback(ctx)
+
+            local ok, err = pcall(function()
+                if cmd.checks then
+                    for _, check in ipairs(cmd.checks) do
+                        if not check.func(ctx) then
+                            return
+                        end
+                    end
+                end
+                cmd.callback(ctx)
+            end)
+
+            if not ok then
+                self:emit("application_command_error", ctx, err)
+            end
             return true
         end
     end
@@ -383,7 +420,17 @@ function Bot:dispatch_message(message)
         return false
     end
 
-    func(message)
+    local ok, err = pcall(function()
+        if not self:run_checks(name, message) then
+            return
+        end
+        func(message)
+    end)
+
+    if not ok then
+        self:emit("command_error", message, err)
+    end
+
     return true
 end
 
