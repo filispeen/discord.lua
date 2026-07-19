@@ -2,8 +2,10 @@
 -- Channel model for Discord API
 --
 -- Public Contract:
---   Channel.new(data) -> Channel
---     Creates a new Channel from API data.
+--   Channel.new(data, guild) -> Channel
+--     Creates a new Channel from API data. guild is optional, if provided
+--     it is stored on self.guild for Channel:connect() and any other
+--     guild-scoped behavior.
 --
 --   Channel:id -> string
 --     Channel's unique ID.
@@ -31,13 +33,21 @@
 --
 --   Channel:recipient_count -> number
 --     Number of recipients (for group DMs).
+--
+--   Channel:connect(client) -> VoiceClient
+--     Connects to this channel's voice gateway, mirrors pycord's
+--     voice_channel.connect(). Requires self.guild to be set (the Guild
+--     this channel belongs to) and a Client instance to drive the voice
+--     gateway/UDP session. Errors if self.guild is missing, or if the
+--     channel is not a voice channel. Lazily requires voice.voice_client
+--     so core has no hard dependency on the optional voice module.
 
 local class = require("core.class")
 
 -- Channel class
 local Channel = class("Channel")
 
-function Channel.new(data)
+function Channel.new(data, guild)
     local self = {}
     setmetatable(self, {
         __index = Channel
@@ -52,6 +62,7 @@ function Channel.new(data)
     self.nsfw = data.nsfw or false
     self.rate_limit_per_user = data.rate_limit_per_user or 0
     self.recipient_count = data.recipient_count or 0
+    self.guild = guild
 
     -- Type-specific fields
     if data.topic then
@@ -88,6 +99,40 @@ function Channel:get_type_name()
         [15] = "private_thread",
     }
     return types[self.type] or "unknown"
+end
+
+-- Returns true if this channel is a voice channel. Discord's actual voice
+-- channel type is 2 in the API, distinct from the placeholder mapping in
+-- get_type_name above (kept as-is to avoid disturbing existing behavior).
+function Channel:is_voice()
+    return self.type == 2
+end
+
+-- Connects to this channel's voice gateway, mirrors pycord's
+-- voice_channel.connect(). client must be a Client instance (drives
+-- the underlying voice gateway/UDP session); self.guild must already be
+-- set to the Guild this channel belongs to.
+function Channel:connect(client)
+    if not self:is_voice() then
+        error("Channel:connect() called on a non-voice channel", 0)
+    end
+
+    if not self.guild then
+        error("Channel:connect() requires channel.guild to be set", 0)
+    end
+
+    if not client then
+        error("Channel:connect() requires a client argument", 0)
+    end
+
+    local VoiceClient = require("voice.voice_client")
+    local voice_client = VoiceClient.new(client, self)
+    local ok, err = voice_client:connect()
+    if not ok then
+        error(err, 0)
+    end
+
+    return voice_client
 end
 
 return Channel
