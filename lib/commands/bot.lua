@@ -247,7 +247,7 @@ function Bot:dispatch_interaction(interaction)
     end
 
     if interaction.type == 4 then
-        return self.command_tree:dispatch_autocomplete(interaction)
+        return self.command_tree:dispatch_autocomplete(interaction, self.client)
     end
 
     if interaction.type == 2 and interaction.data then

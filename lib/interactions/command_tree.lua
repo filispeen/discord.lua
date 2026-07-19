@@ -177,7 +177,9 @@ end
 
 -- Dispatches an APPLICATION_COMMAND_AUTOCOMPLETE interaction to the
 -- matching command's autocomplete callback for the focused option.
-function CommandTree:dispatch_autocomplete(interaction)
+-- The callback receives an AutocompleteContext (ctx.value, ctx.options),
+-- mirroring pycord's AutocompleteContext contract.
+function CommandTree:dispatch_autocomplete(interaction, client)
     local data = interaction and interaction.data
     if not data or not data.options then
         return false
@@ -204,7 +206,9 @@ function CommandTree:dispatch_autocomplete(interaction)
         return false
     end
 
-    callback(interaction, focused.value)
+    local AutocompleteContext = require("interactions.autocomplete_context")
+    local ctx = AutocompleteContext.new(interaction, client, focused.name, cmd)
+    callback(ctx)
     return true
 end
 

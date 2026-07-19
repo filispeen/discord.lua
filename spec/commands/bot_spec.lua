@@ -321,8 +321,8 @@ describe("Bot", function()
             description = "Search",
             options = { { name = "query", type = 3 } },
         })
-        cmd:set_autocomplete("query", function(_interaction, value)
-            received_value = value
+        cmd:set_autocomplete("query", function(ctx)
+            received_value = ctx.value
         end)
 
         local handled = bot:dispatch_interaction({
@@ -335,6 +335,36 @@ describe("Bot", function()
 
         assert.is_true(handled)
         assert.equals("abc", received_value)
+    end)
+
+    it("gives the autocomplete callback access to other options via ctx.options", function()
+        local bot = Bot.new("token")
+        local received_color = nil
+
+        local cmd = bot:register_application_command("ac_example", {
+            description = "Autocomplete example",
+            options = {
+                { name = "color", type = 3 },
+                { name = "animal", type = 3 },
+            },
+        })
+        cmd:set_autocomplete("animal", function(ctx)
+            received_color = ctx.options["color"]
+        end)
+
+        local handled = bot:dispatch_interaction({
+            type = 4,
+            data = {
+                name = "ac_example",
+                options = {
+                    { name = "color", value = "red" },
+                    { name = "animal", value = "car", focused = true },
+                },
+            },
+        })
+
+        assert.is_true(handled)
+        assert.equals("red", received_color)
     end)
 
     it("generate_help_text lists every registered command", function()

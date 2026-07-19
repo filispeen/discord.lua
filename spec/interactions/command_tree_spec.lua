@@ -102,8 +102,8 @@ describe("CommandTree", function()
         })
 
         local received_value
-        cmd:set_autocomplete("query", function(_interaction, value)
-            received_value = value
+        cmd:set_autocomplete("query", function(ctx)
+            received_value = ctx.value
         end)
         tree:add(cmd)
 
