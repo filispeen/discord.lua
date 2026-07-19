@@ -18,11 +18,17 @@ jobs:
         with:
           luaVersion: "5.1"
 
+      - name: Setup luarocks
+        uses: leafo/gh-actions-luarocks@v4
+
       - name: Install luvit
         run: luarocks install luvit
 
       - name: Install dependencies
         run: luarocks install coro-http coro-websocket secure-socket json
+
+      - name: Install luacheck
+        run: luarocks install luacheck
 
       - name: Run luacheck
         run: luacheck --no-unused-args .
@@ -37,6 +43,9 @@ jobs:
         uses: leafo/gh-actions-lua@v10
         with:
           luaVersion: "5.1"
+
+      - name: Setup luarocks
+        uses: leafo/gh-actions-luarocks@v4
 
       - name: Install luvit
         run: luarocks install luvit
@@ -57,6 +66,9 @@ jobs:
         uses: leafo/gh-actions-lua@v10
         with:
           luaVersion: "5.1"
+
+      - name: Setup luarocks
+        uses: leafo/gh-actions-luarocks@v4
 
       - name: Validate rockspec
         run: luarocks lint discord-lua-scm-0.rockspec
