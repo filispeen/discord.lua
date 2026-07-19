@@ -1,0 +1,37 @@
+name: Publish to Lit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    tags:
+      - "*.*.*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.LIT_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Install lit
+        run: |
+          curl -L https://github.com/luvit/lit/raw/master/get-lit.sh | sh
+          echo "$PWD" >> $GITHUB_PATH
+
+      - name: Authenticate with lit
+        run: ./lit auth ${{ secrets.LIT_GITHUB_USERNAME }} "${{ secrets.LIT_GITHUB_USERNAME }}" ""
+
+      - name: Go online
+        run: ./lit up
+
+      - name: Publish package
+        run: ./lit publish .
