@@ -1,25 +1,21 @@
-package = {
-    name =    "discord-lua",
-    version = "0.8.0",
-    description = "Discord API wrapper written in Lua",
-    license = "MIT",
-    author = "filispeen",
-    url = "https://github.com/filispeen/discord.lua",
-}
+rockspec_format = "3.0"
+
+package = "discord-lua"
+version = "scm-0"
 
 source = {
-    files = {
-        "lib/",
-        "spec/",
-        "examples/",
-    },
+    url = "git+https://github.com/filispeen/discord.lua.git",
 }
 
-build = {
-    type = "builtin",
+description = {
+    summary = "Discord API wrapper written in Lua",
+    homepage = "https://github.com/filispeen/discord.lua",
+    license = "MIT",
+    maintainer = "filispeen",
 }
 
 dependencies = {
+    "lua >= 5.1",
     "luvit >= 2.16.0-0",
     "coro-http >= 2020.0.2-0",
     "coro-websocket >= 2021.0.1-0",
@@ -27,7 +23,6 @@ dependencies = {
     "json >= 2021.0.1-0",
 }
 
-test = {
-    pattern = "spec/*_test.lua",
-    main = "spec.main",
+build = {
+    type = "builtin",
 }
