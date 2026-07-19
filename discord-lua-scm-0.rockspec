@@ -27,8 +27,6 @@ dependencies = {
     "json >= 2021.0.1-0",
 }
 
-local_lua = true
-
 test = {
     pattern = "spec/*_test.lua",
     main = "spec.main",

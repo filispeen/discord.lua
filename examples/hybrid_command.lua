@@ -43,7 +43,7 @@ bot:register_application_command("greet", {
     options = {
         {
             name = "user",
-            type = enums.OPTION_TYPE.USER,
+            type = Bot.enums.OPTION_TYPE.USER,
             description = "The user to greet",
             required = true,
         },
