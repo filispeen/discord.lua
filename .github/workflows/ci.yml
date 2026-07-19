@@ -13,22 +13,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Lua
-        uses: leafo/gh-actions-lua@v10
-        with:
-          luaVersion: "luajit-2.1"
-
-      - name: Setup luarocks
-        uses: leafo/gh-actions-luarocks@v4
+      - name: Install Lua/LuaRocks
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y luajit libluajit-5.1-dev luarocks
+          sudo luarocks config lua_interpreter luajit
+          sudo luarocks config variables.LUA_INCDIR /usr/include/luajit-2.1
 
       - name: Install luvit
-        run: luarocks install luvit
+        run: sudo luarocks install luvit
 
       - name: Install dependencies
-        run: luarocks install coro-http coro-websocket secure-socket json
+        run: sudo luarocks install coro-http coro-websocket secure-socket json
 
       - name: Install luacheck
-        run: luarocks install luacheck
+        run: sudo luarocks install luacheck
 
       - name: Run luacheck
         run: luacheck --no-unused-args .
@@ -39,19 +38,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Lua
-        uses: leafo/gh-actions-lua@v10
-        with:
-          luaVersion: "luajit-2.1"
-
-      - name: Setup luarocks
-        uses: leafo/gh-actions-luarocks@v4
+      - name: Install Lua/LuaRocks
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y luajit libluajit-5.1-dev luarocks
+          sudo luarocks config lua_interpreter luajit
+          sudo luarocks config variables.LUA_INCDIR /usr/include/luajit-2.1
 
       - name: Install luvit
-        run: luarocks install luvit
+        run: sudo luarocks install luvit
 
       - name: Install test dependencies
-        run: luarocks install busted
+        run: sudo luarocks install busted
 
       - name: Run busted tests
         run: busted -p "_test.lua" -p "_spec.lua" -r spec
@@ -62,13 +60,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Lua
-        uses: leafo/gh-actions-lua@v10
-        with:
-          luaVersion: "luajit-2.1"
-
-      - name: Setup luarocks
-        uses: leafo/gh-actions-luarocks@v4
+      - name: Install Lua/LuaRocks
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y luajit libluajit-5.1-dev luarocks
+          sudo luarocks config lua_interpreter luajit
+          sudo luarocks config variables.LUA_INCDIR /usr/include/luajit-2.1
 
       - name: Validate rockspec
         run: luarocks lint discord-lua-scm-0.rockspec
