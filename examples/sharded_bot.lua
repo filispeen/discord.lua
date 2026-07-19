@@ -8,7 +8,16 @@
 
 local Bot = require("discord.lua")
 
-local bot = Bot("YOUR_BOT_TOKEN")
+-- bot:command("ping", ...) below is a prefix command, so it needs
+-- GUILD_MESSAGES to see the message and MESSAGE_CONTENT (privileged,
+-- enable it on the dev portal too) to read the text.
+local intents = Bot.enums.combine_intents(
+    Bot.enums.INTENTS.GUILDS,
+    Bot.enums.INTENTS.GUILD_MESSAGES,
+    Bot.enums.INTENTS.MESSAGE_CONTENT
+)
+
+local bot = Bot(nil, intents)
 
 -- Fires once every shard has reported READY.
 bot:on("ready", function()
@@ -35,4 +44,4 @@ bot:command("ping", function(msg)
     msg:reply("Pong!")
 end, "Replies with pong")
 
-bot:run()
+bot:run("YOUR_BOT_TOKEN")

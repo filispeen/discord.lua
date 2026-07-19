@@ -22,6 +22,7 @@
 -- luvit/LuaJIT expose a global `bit` module (bit.bor); plain Lua 5.1 does
 -- not, so bor() below falls back to pure arithmetic in that case.
 local has_bit_lib = rawget(_G, "bit") ~= nil
+local unpack = rawget(table, "unpack") or unpack
 
 local M = {}
 

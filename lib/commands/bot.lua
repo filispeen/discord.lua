@@ -119,6 +119,12 @@ function Bot:on(event, callback)
     return self
 end
 
+-- Sugar for bot:on("message_create", callback). Fires for every message
+-- the gateway sees, prefix commands included, not just unmatched ones.
+function Bot:on_message(callback)
+    return self:on("message_create", callback)
+end
+
 function Bot:emit(event, ...)
     if self.listeners[event] then
         for _, callback in ipairs(self.listeners[event]) do
@@ -293,6 +299,7 @@ function Bot:connect()
 
     self.client:on("message_create", function(message)
         self:dispatch_message(message)
+        self:emit("message_create", message)
     end)
 
     -- Forward voice gateway events, needed by voice/Lavalink integrations
@@ -380,8 +387,11 @@ function Bot:dispatch_message(message)
     return true
 end
 
--- Connects and starts the gateway loop, mirrors client:run() in README/examples.
-function Bot:run()
+-- Connects and starts the gateway loop, mirrors client:run(token) in README/examples.
+function Bot:run(token)
+    if token then
+        self.token = token
+    end
     self:connect()
     self.client:start_gateway()
     return self

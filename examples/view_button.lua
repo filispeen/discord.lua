@@ -8,7 +8,9 @@ local Bot = require("discord.lua")
 local View = require("ui.view")
 local Button = require("ui.button")
 
-local bot = Bot("YOUR_BOT_TOKEN")
+-- Only slash commands and component interactions here, no prefix
+-- commands reading message content, so GUILDS alone is enough.
+local bot = Bot(nil, Bot.enums.INTENTS.GUILDS)
 
 local votes = { up = 0, down = 0 }
 
@@ -49,4 +51,4 @@ bot:on("ready", function()
     print("Bot is ready!")
 end)
 
-bot:run()
+bot:run("YOUR_BOT_TOKEN")

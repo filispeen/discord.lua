@@ -10,9 +10,17 @@
 -- to both register_command and register_application_command.
 
 local Bot = require("discord.lua")
-local enums = require("core.enums")
 
-local bot = Bot("YOUR_BOT_TOKEN")
+-- Prefix command below needs GUILD_MESSAGES to see the message and
+-- MESSAGE_CONTENT (privileged, enable it on the dev portal too) to read
+-- message.content. Slash commands alone would only need GUILDS.
+local intents = Bot.enums.combine_intents(
+    Bot.enums.INTENTS.GUILDS,
+    Bot.enums.INTENTS.GUILD_MESSAGES,
+    Bot.enums.INTENTS.MESSAGE_CONTENT
+)
+
+local bot = Bot(nil, intents)
 
 bot:on("ready", function()
     print("Bot is ready!")
@@ -46,4 +54,4 @@ bot:register_application_command("greet", {
     end,
 })
 
-bot:run()
+bot:run("YOUR_BOT_TOKEN")

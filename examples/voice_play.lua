@@ -14,7 +14,14 @@
 local Bot = require("discord.lua")
 local VoiceClient = require("voice.voice_client")
 
-local bot = Bot("YOUR_BOT_TOKEN")
+-- GUILD_VOICE_STATES is needed to track who is in which voice channel,
+-- on top of GUILDS for basic guild/channel caching.
+local intents = Bot.enums.combine_intents(
+    Bot.enums.INTENTS.GUILDS,
+    Bot.enums.INTENTS.GUILD_VOICE_STATES
+)
+
+local bot = Bot(nil, intents)
 
 bot:on("ready", function()
     print("Bot is ready!")
@@ -53,4 +60,4 @@ bot:register_application_command("join", {
     end,
 })
 
-bot:run()
+bot:run("YOUR_BOT_TOKEN")

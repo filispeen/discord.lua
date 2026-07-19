@@ -35,7 +35,7 @@ function Item:set_row(row)
     return self
 end
 
-function Item:to_component()
+function Item.to_component(_)
     error("to_component must be implemented by subclass")
 end
 

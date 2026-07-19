@@ -26,7 +26,7 @@ luarocks install discord.lua
 ```lua
 local Bot = require("discord.lua")
 
-local client = Bot("YOUR_TOKEN")
+local client = Bot()
 
 client:on("ready", function()
     print("Bot is ready!")
@@ -36,7 +36,7 @@ client:command("ping", function(msg)
     msg:reply("Pong!")
 end)
 
-client:run()
+client:run("YOUR_TOKEN")
 ```
 
 ## Modules
@@ -114,7 +114,7 @@ client:run()
 
 ```lua
 local Bot = require("discord.lua")
-local client = Bot("YOUR_TOKEN")
+local client = Bot()
 
 client:on("ready", function()
     print("Bot is ready!")
@@ -124,14 +124,14 @@ client:command("ping", function(msg)
     msg:reply("Pong!")
 end)
 
-client:run()
+client:run("YOUR_TOKEN")
 ```
 
 ### Cog System
 
 ```lua
 local Bot = require("discord.lua")
-local client = Bot("YOUR_TOKEN")
+local client = Bot()
 
 local MyCog = require("commands.cog")
 local MyCommand = require("commands.command")
@@ -149,14 +149,14 @@ local MyCogInstance = MyCog.new()
 MyCogInstance.commands = { MyCommandInstance }
 
 client:add_cog(MyCogInstance)
-client:run()
+client:run("YOUR_TOKEN")
 ```
 
 ### UI Components
 
 ```lua
 local Bot = require("discord.lua")
-local client = Bot("YOUR_TOKEN")
+local client = Bot()
 
 local view = require("ui.view")
 local button = require("ui.button")
@@ -183,14 +183,14 @@ client:interaction("my_button", function(interaction)
 end)
 
 client:component(my_view)
-client:run()
+client:run("YOUR_TOKEN")
 ```
 
 ### Voice
 
 ```lua
 local Bot = require("discord.lua")
-local client = Bot("YOUR_TOKEN")
+local client = Bot()
 
 client:on("voice_state_update", function(before, after)
     if after.channel_id and after.member and not before.channel_id then
@@ -200,7 +200,7 @@ client:on("voice_state_update", function(before, after)
     end
 end)
 
-client:run()
+client:run("YOUR_TOKEN")
 ```
 
 ### Sharding
@@ -208,7 +208,7 @@ client:run()
 ```lua
 local Bot = require("discord.lua")
 
-local client = Bot("YOUR_TOKEN")
+local client = Bot()
 
 client.on_ready(function()
     -- Shard manager handles auto-sharding automatically
@@ -218,7 +218,7 @@ client.on_ready(function()
     end)
 end)
 
-client:run()
+client:run("YOUR_TOKEN")
 ```
 
 ## Examples
