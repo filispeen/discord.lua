@@ -129,4 +129,115 @@ describe("CommandTree", function()
 
         assert.is_false(handled)
     end)
+
+    describe("CommandTree:resolve", function()
+        local SlashCommandGroup = require("interactions.slash_command_group")
+
+        it("resolves a plain ApplicationCommand and its own checks", function()
+            local tree = CommandTree.new(make_http({}))
+            local check = { name = "owner", func = function() return true end }
+            local cmd = ApplicationCommand.new("ping", "Replies with pong")
+            cmd.callback = function() end
+            cmd.checks = { check }
+            tree:add(cmd)
+
+            local resolved, checks = tree:resolve({
+                data = { name = "ping", options = {} },
+            })
+
+            assert.equals(cmd, resolved)
+            assert.equals(1, #checks)
+            assert.equals(check, checks[1])
+        end)
+
+        it("returns nil, {} when no command matches", function()
+            local tree = CommandTree.new(make_http({}))
+            local resolved, checks = tree:resolve({
+                data = { name = "missing", options = {} },
+            })
+            assert.is_nil(resolved)
+            assert.same({}, checks)
+        end)
+
+        it("resolves a one level subcommand under a group", function()
+            local tree = CommandTree.new(make_http({}))
+            local group = SlashCommandGroup.new("math", "Math commands")
+            local callback = function() end
+            group:command("add", "Adds numbers", callback)
+            tree:add(group)
+
+            local resolved, _checks = tree:resolve({
+                data = {
+                    name = "math",
+                    options = { { name = "add", type = 1, options = {} } },
+                },
+            })
+
+            assert.is_not_nil(resolved)
+            assert.equals(callback, resolved.callback)
+        end)
+
+        it("resolves a two level subcommand under a subgroup", function()
+            local tree = CommandTree.new(make_http({}))
+            local group = SlashCommandGroup.new("greetings", "Greetings")
+            local subgroup = group:create_subgroup("international", "International greetings")
+            local callback = function() end
+            subgroup:command("aloha", "Says aloha", callback)
+            tree:add(group)
+
+            local resolved = tree:resolve({
+                data = {
+                    name = "greetings",
+                    options = {
+                        {
+                            name = "international",
+                            type = 2,
+                            options = { { name = "aloha", type = 1, options = {} } },
+                        },
+                    },
+                },
+            })
+
+            assert.is_not_nil(resolved)
+            assert.equals(callback, resolved.callback)
+        end)
+
+        it("collects group checks before the subcommand's own checks", function()
+            local tree = CommandTree.new(make_http({}))
+            local group_check = { name = "group_check", func = function() return true end }
+            local cmd_check = { name = "cmd_check", func = function() return true end }
+            local group = SlashCommandGroup.new("math", "Math", { checks = { group_check } })
+            local cmd = group:command("add", "Adds numbers", function() end, { checks = { cmd_check } })
+            tree:add(group)
+
+            local resolved, checks = tree:resolve({
+                data = {
+                    name = "math",
+                    options = { { name = "add", type = 1, options = {} } },
+                },
+            })
+
+            assert.equals(cmd, resolved)
+            assert.equals(2, #checks)
+            assert.equals(group_check, checks[1])
+            assert.equals(cmd_check, checks[2])
+        end)
+
+        it("returns nil, {} when the subcommand path doesn't resolve", function()
+            local tree = CommandTree.new(make_http({}))
+            local group = SlashCommandGroup.new("math", "Math commands")
+            group:command("add", "Adds numbers", function() end)
+            tree:add(group)
+
+            local resolved, checks = tree:resolve({
+                data = {
+                    name = "math",
+                    options = { { name = "subtract", type = 1, options = {} } },
+                },
+            })
+
+            assert.is_nil(resolved)
+            assert.same({}, checks)
+        end)
+    end)
 end)

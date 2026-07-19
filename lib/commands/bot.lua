@@ -94,6 +94,14 @@ function Bot:register_application_command(name, options)
     return cmd
 end
 
+-- Registers a SlashCommandGroup (see interactions.slash_command_group) so
+-- its subcommands/subgroups are synced and dispatched the same way plain
+-- application commands are.
+function Bot:register_slash_command_group(group)
+    self.command_tree:add(group)
+    return group
+end
+
 -- Fetches the application id if needed, then registers all pending
 -- application commands with Discord. Must be called after connect().
 function Bot:sync_commands()
@@ -251,18 +259,15 @@ function Bot:dispatch_interaction(interaction)
     end
 
     if interaction.type == 2 and interaction.data then
-        local guild_id = interaction.guild_id
-        local cmd = self.command_tree:get(interaction.data.name, guild_id)
+        local cmd, checks = self.command_tree:resolve(interaction)
         if cmd and cmd.callback then
             local slash = require("interactions.slash")
             local ctx = slash.new(interaction, self.client)
 
             local ok, err = pcall(function()
-                if cmd.checks then
-                    for _, check in ipairs(cmd.checks) do
-                        if not check.func(ctx) then
-                            return
-                        end
+                for _, check in ipairs(checks or {}) do
+                    if not check.func(ctx) then
+                        return
                     end
                 end
                 cmd.callback(ctx)

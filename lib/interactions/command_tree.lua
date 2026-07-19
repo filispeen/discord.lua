@@ -212,4 +212,56 @@ function CommandTree:dispatch_autocomplete(interaction, client)
     return true
 end
 
+-- Resolves an APPLICATION_COMMAND interaction (type 2) down to the actual
+-- ApplicationCommand that should run, and the ordered list of checks that
+-- must pass first (group checks before subgroup checks before the command's
+-- own checks, outermost first). Handles plain commands, one level of
+-- subcommand nesting, and two levels (group -> subgroup -> subcommand).
+-- Returns nil, {} if nothing matches.
+function CommandTree:resolve(interaction)
+    local data = interaction and interaction.data
+    if not data then
+        return nil, {}
+    end
+
+    local top = self:get(data.name, interaction.guild_id)
+    if not top then
+        return nil, {}
+    end
+
+    -- Plain ApplicationCommand: no group traversal needed.
+    if not top.find then
+        return top, top.checks or {}
+    end
+
+    -- SlashCommandGroup: walk interaction.data.options to find the
+    -- SUB_COMMAND (1) or SUB_COMMAND_GROUP (2) path down to the command.
+    local path = {}
+    local options = data.options
+    while options and #options > 0 do
+        local opt = options[1]
+        if opt.type == 1 or opt.type == 2 then
+            table.insert(path, opt.name)
+            options = opt.options
+        else
+            break
+        end
+    end
+
+    local resolved = top:find(path)
+    if not resolved then
+        return nil, {}
+    end
+
+    local checks = {}
+    for _, check in ipairs(top:collect_checks()) do
+        table.insert(checks, check)
+    end
+    for _, check in ipairs(resolved.checks or {}) do
+        table.insert(checks, check)
+    end
+
+    return resolved, checks
+end
+
 return CommandTree
