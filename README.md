@@ -8,7 +8,9 @@
 
 ![Lit](https://img.shields.io/badge/lit-324FFF?style=for-the-badge&logo=lit&logoColor=white)
 ![Lua](https://img.shields.io/badge/Lua-%232C2D72.svg?style=for-the-badge&logo=lit&logoColor=white)
-[![Publish to Lit](https://github.com/filispeen/discord.lua/actions/workflows/lit-publish.yml/badge.svg)](https://github.com/filispeen/discord.lua/actions/workflows/lit-publish.yml)
+[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/filispeen/discord.lua/lit-publish.yml?branch=master&style=for-the-badge&logo=LIT&label=Publish%20to%20lit)](https://github.com/filispeen/discord.lua/actions/workflows/lit-publish.yml)
+
+
 </div>
 
 ---
@@ -87,14 +89,14 @@ client:run("YOUR_TOKEN")
 
 ## Full Examples
 
-See more examples in <a href="/tree/main/examples/">`examples/`</a> directory:
-- <a href="/blob/main/examples/basic_bot.lua">`basic_bot.lua`</a> - Basic bot with some functions
-- <a href="/blob/main/examples/on_message.lua">`on_message.lua`</a> - Bot with on_message event
-- <a href="/blob/main/examples/interaction_bot.lua">`interaction_bot.lua`</a> - Bot with interactions
-- <a href="/blob/main/examples/view_button.lua">`view_button.lua`</a> - Button with View timeout
-- <a href="/blob/main/examples/hybrid_command.lua">`hybrid_command.lua`</a> - Hybrid command (prefix + slash)
-- <a href="/blob/main/examples/voice_play.lua">`voice_play.lua`</a> - Voice client usage
-- <a href="/blob/main/examples/sharded_bot.lua">`sharded_bot.lua`</a> - Sharded bot with auto-sharding
+See more examples in <a href="/tree/master/examples/">`examples/`</a> directory:
+- <a href="/blob/master/examples/basic_bot.lua">`basic_bot.lua`</a> - Basic bot with some functions
+- <a href="/blob/master/examples/on_message.lua">`on_message.lua`</a> - Bot with on_message event
+- <a href="/blob/master/examples/interaction_bot.lua">`interaction_bot.lua`</a> - Bot with interactions
+- <a href="/blob/master/examples/view_button.lua">`view_button.lua`</a> - Button with View timeout
+- <a href="/blob/master/examples/hybrid_command.lua">`hybrid_command.lua`</a> - Hybrid command (prefix + slash)
+- <a href="/blob/master/examples/voice_play.lua">`voice_play.lua`</a> - Voice client usage
+- <a href="/blob/master/examples/sharded_bot.lua">`sharded_bot.lua`</a> - Sharded bot with auto-sharding
 
 ## Reference
 - <a href="https://github.com/Pycord-Development/pycord/">pycord</a>
