@@ -3,18 +3,22 @@
 <div align="center">Discord.lua is a modern, easy to use, feature-rich, and async ready API wrapper for Discord written in Lua for the Luvit runtime.</div>
 
 ---
+
 <div align="center">
-<div align="center" style="margin: 1px; width: 70%; align=center;">
+<div align="center" style="width: 70%;">
 
 ![Lit](https://img.shields.io/badge/lit-324FFF?style=for-the-badge&logo=lit&logoColor=white)
 ![Lua](https://img.shields.io/badge/Lua-%232C2D72.svg?style=for-the-badge&logo=lit&logoColor=white)
+<br>
+---
 
 ![Lint](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/filispeen/b673d810ff3949b6298d705c5fad191a/raw/lint-badge.json&style=for-the-badge)
-![Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/filispeen/b673d810ff3949b6298d705c5fad191a/raw/tests-badge.json&style=for-the-badge)
+![Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/filispeen/b673d810ff3949b6298d705c5fad191a/raw/test-badge.json&style=for-the-badge)
 ![Rockspec](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/filispeen/b673d810ff3949b6298d705c5fad191a/raw/rockspec-badge.json&style=for-the-badge)
+<br>
+---
 
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/filispeen/discord.lua/lit-publish.yml?event=push&style=for-the-badge&label=Publish%20to%20LIT)
-
+![Rockspec](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/filispeen/b673d810ff3949b6298d705c5fad191a/raw/lit-badge.json&style=for-the-badge)
 </div>
 </div>
 

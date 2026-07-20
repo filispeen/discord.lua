@@ -32,3 +32,14 @@ jobs:
 
       - name: Publish package
         run: ./lit publish .
+
+      - name: Update lint badge
+        uses: schneegans/dynamic-badges-action@v1.9.0
+        if: always()
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: ${{ secrets.GIST_ID}}
+          filename: lit-badge.json
+          label: Publish to LIT
+          message: ${{ job.status }}
+          color: ${{ job.status == 'success' && 'green' || 'red' }}
