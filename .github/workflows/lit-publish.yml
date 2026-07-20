@@ -1,12 +1,9 @@
 name: Publish to Lit
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - master
     tags:
-      - "v*.*.*"
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
 jobs:
   publish:
