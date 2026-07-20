@@ -109,7 +109,3 @@ See more examples in <a href="/examples/">`examples/`</a> directory:
 
 ## Reference
 - <a href="https://github.com/Pycord-Development/pycord/">pycord</a>
-
-## License
-
-MIT License
