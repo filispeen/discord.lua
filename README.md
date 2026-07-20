@@ -5,6 +5,9 @@
 ---
 
 <div align="center">
+
+![Lit](https://img.shields.io/badge/lit-324FFF?style=for-the-badge&logo=lit&logoColor=white)
+![Lua](https://img.shields.io/badge/Lua-%232C2D72.svg?style=for-the-badge&logo=lit&logoColor=white)
 [![Publish to Lit](https://github.com/filispeen/discord.lua/actions/workflows/lit-publish.yml/badge.svg)](https://github.com/filispeen/discord.lua/actions/workflows/lit-publish.yml)
 </div>
 
