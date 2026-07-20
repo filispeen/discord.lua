@@ -98,14 +98,14 @@ bot:run("YOUR_TOKEN")
 
 ## Full Examples
 
-See more examples in <a href="/tree/master/examples/">`examples/`</a> directory:
-- <a href="/blob/master/examples/basic_bot.lua">`basic_bot.lua`</a> - Basic bot with some functions
-- <a href="/blob/master/examples/on_message.lua">`on_message.lua`</a> - Bot with on_message event
-- <a href="/blob/master/examples/interaction_bot.lua">`interaction_bot.lua`</a> - Bot with interactions
-- <a href="/blob/master/examples/view_button.lua">`view_button.lua`</a> - Button with View timeout
-- <a href="/blob/master/examples/hybrid_command.lua">`hybrid_command.lua`</a> - Hybrid command (prefix + slash)
-- <a href="/blob/master/examples/voice_play.lua">`voice_play.lua`</a> - Voice client usage
-- <a href="/blob/master/examples/sharded_bot.lua">`sharded_bot.lua`</a> - Sharded bot with auto-sharding
+See more examples in <a href="/examples/">`examples/`</a> directory:
+- <a href="/examples/basic_bot.lua">`basic_bot.lua`</a> - Basic bot with some functions
+- <a href="/examples/on_message.lua">`on_message.lua`</a> - Bot with on_message event
+- <a href="/examples/interaction_bot.lua">`interaction_bot.lua`</a> - Bot with interactions
+- <a href="/examples/view_button.lua">`view_button.lua`</a> - Button with View timeout
+- <a href="/examples/hybrid_command.lua">`hybrid_command.lua`</a> - Hybrid command (prefix + slash)
+- <a href="/examples/voice_play.lua">`voice_play.lua`</a> - Voice client usage
+- <a href="/examples/sharded_bot.lua">`sharded_bot.lua`</a> - Sharded bot with auto-sharding
 
 ## Reference
 - <a href="https://github.com/Pycord-Development/pycord/">pycord</a>
