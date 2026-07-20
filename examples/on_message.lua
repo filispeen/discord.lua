@@ -23,22 +23,22 @@ bot:on("ready", function()
 end)
 
 -- Fires for every message, prefix commands included.
-bot:on_message(function(message)
-    if message.author and message.author.bot then
+bot:on_message(function(ctx)
+    if ctx.author and ctx.author.bot then
         return
     end
-    print(message.author and message.author.username or "unknown", "said:", message.content)
+    print(ctx.author and ctx.author.username or "unknown", "said:", ctx.content)
 end)
 
 -- Simple keyword auto-reply, separate from the command system below.
-bot:on_message(function(message)
-    if message.content == "hello" then
-        message:reply("Hey there!")
+bot:on_message(function(ctx)
+    if ctx.content == "hello" then
+        ctx:reply("Hey there!")
     end
 end)
 
-bot:register_command("ping", function(message)
-    message:reply("Pong!")
+bot:register_command("ping", function(ctx)
+    ctx:reply("Pong!")
 end, "!", "Replies with pong")
 
 bot:run("YOUR_BOT_TOKEN")

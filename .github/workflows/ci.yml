@@ -17,12 +17,22 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks
-
       - name: Install luacheck
         run: sudo luarocks install luacheck
 
       - name: Run luacheck
         run: luacheck --no-unused-args .
+
+      - name: Update lint badge
+        uses: schneegans/dynamic-badges-action@v1.9.0
+        if: always()
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: ${{ secrets.GIST_ID}}
+          filename: lint-badge.json
+          label: Lint with luacheck
+          message: ${{ job.status }}
+          color: ${{ job.status == 'success' && 'green' || 'red' }}
 
   test:
     name: Run busted tests
@@ -34,12 +44,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks
-
       - name: Install lit/luvi/luvit
         run: |
           curl -L https://github.com/luvit/lit/raw/master/get-lit.sh | sh
           sudo install lit luvi luvit /usr/local/bin/
-
       - name: Install luvit dependencies
         run: lit install luvit/coro-http luvit/coro-websocket luvit/secure-socket luvit/json
 
@@ -48,6 +56,17 @@ jobs:
 
       - name: Run busted tests
         run: LUA_PATH="./deps/?.lua;./deps/?/init.lua;;" busted -p "_test.lua" -p "_spec.lua" -r spec
+
+      - name: Update test badge
+        uses: schneegans/dynamic-badges-action@v1.9.0
+        if: always()
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: ${{ secrets.GIST_ID}}
+          filename: test-badge.json
+          label: Run busted tests
+          message: ${{ job.status }}
+          color: ${{ job.status == 'success' && 'green' || 'red' }}
 
   rockspec:
     name: Validate rockspec
@@ -59,6 +78,16 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks
-
       - name: Validate rockspec
         run: luarocks lint discord-lua-scm-0.rockspec
+
+      - name: Update rockspec badge
+        uses: schneegans/dynamic-badges-action@v1.9.0
+        if: always()
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: ${{ secrets.GIST_ID}}
+          filename: rockspec-badge.json
+          label: Validate rockspec
+          message: ${{ job.status }}
+          color: ${{ job.status == 'success' && 'green' || 'red' }}

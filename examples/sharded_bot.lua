@@ -40,8 +40,8 @@ bot:on("shard_error", function(shard_id, _shard, err)
     print("Shard " .. shard_id .. " errored: " .. tostring(err))
 end)
 
-bot:command("ping", function(msg)
-    msg:reply("Pong!")
+bot:command("ping", function(ctx)
+    ctx:reply("Pong!")
 end, "Replies with pong")
 
 bot:run("YOUR_BOT_TOKEN")

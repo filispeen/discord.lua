@@ -26,8 +26,8 @@ bot:on("ready", function()
     end
 end)
 
-bot:register_command("ping", function(message)
-    message:reply("Pong!")
+bot:register_command("ping", function(ctx)
+    ctx:reply("Pong!")
 end, "!", "Replies with pong")
 
 bot:run("YOUR_BOT_TOKEN")

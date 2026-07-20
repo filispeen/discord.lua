@@ -3,14 +3,19 @@
 <div align="center">Discord.lua is a modern, easy to use, feature-rich, and async ready API wrapper for Discord written in Lua for the Luvit runtime.</div>
 
 ---
-
 <div align="center">
+<div align="center" style="margin: 1px; width: 70%; align=center;">
 
 ![Lit](https://img.shields.io/badge/lit-324FFF?style=for-the-badge&logo=lit&logoColor=white)
 ![Lua](https://img.shields.io/badge/Lua-%232C2D72.svg?style=for-the-badge&logo=lit&logoColor=white)
-[![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/filispeen/discord.lua/lit-publish.yml?branch=master&style=for-the-badge&logo=LIT&label=Publish%20to%20lit)](https://github.com/filispeen/discord.lua/actions/workflows/lit-publish.yml)
 
+![Lint](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/filispeen/b673d810ff3949b6298d705c5fad191a/raw/lint-badge.json&style=for-the-badge)
+![Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/filispeen/b673d810ff3949b6298d705c5fad191a/raw/tests-badge.json&style=for-the-badge)
+![Rockspec](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/filispeen/b673d810ff3949b6298d705c5fad191a/raw/rockspec-badge.json&style=for-the-badge)
 
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/filispeen/discord.lua/lit-publish.yml?event=push&style=for-the-badge&label=Publish%20to%20LIT)
+
+</div>
 </div>
 
 ---
@@ -44,8 +49,8 @@ bot:on("ready", function()
     print("Bot is ready!")
 end)
 
-bot:command("ping", function(msg)
-    msg:reply("Pong!")
+bot:command("ping", function(ctx)
+    ctx:reply("Pong!")
 end)
 
 bot:run("YOUR_TOKEN")
@@ -72,7 +77,7 @@ bot:register_application_command("roll", {
     options = {
         {
             name = "sides",
-            type = enums.OPTION_TYPE.INTEGER,
+            type = discord.enums.OPTION_TYPE.INTEGER,
             description = "Number of sides, defaults to 6",
             required = false,
         },
