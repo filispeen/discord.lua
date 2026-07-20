@@ -1,13 +1,35 @@
-# discord.lua
+![Logo](md/wd.svg)
+
+<div align="center">Discord.lua is a modern, easy to use, feature-rich, and async ready API wrapper for Discord written in Lua for the Luvit runtime.</div>
+
+---
+
+<div align="center">
+[![Publish to Lit](https://github.com/filispeen/discord.lua/actions/workflows/lit-publish.yml/badge.svg)](https://github.com/filispeen/discord.lua/actions/workflows/lit-publish.yml)
+</div>
+
+---
+
+## Key Features
+- Asynchronous
+- Proper rate limit handling.
+- Optimised for both speed and memory usage.
+- Full application API support.
+
 
 ## Installation
-
+### luvit
+```bash
+lit install filispeen/discord.lua
+```
+<!--
+### luarocks
 ```bash
 luarocks install discord.lua
-```
+```-->
 
-## Quick Start
-
+## Quick example
+Traditional bot
 ```lua
 local Bot = require("discord.lua")
 
@@ -23,137 +45,44 @@ end)
 
 client:run("YOUR_TOKEN")
 ```
-
-## Modules
-
-### Core
-
-- `core.class` - Class system
-- `core.emitter` - Event emitter
-- `core.enums` - Enum constants
-- `core.errors` - Error classes
-
-### HTTP
-
-- `http.client` - HTTP client with rate limiting
-- `http.ratelimiter` - Rate limit bucket manager
-
-### Gateway
-
-- `gateway.shard` - Single shard WebSocket connection
-- `gateway.manager` - Shard manager with auto-sharding
-- `gateway.opcodes` - Gateway opcodes
-
-### Models
-
-- `models.client` - Bot client
-- `models.guild` - Guild model
-- `models.channel` - Channel model
-- `models.message` - Message model
-- `models.user` - User model
-- `models.member` - Member model
-- `models.role` - Role model
-- `models.embed` - Embed builder
-- `models.emoji` - Emoji model
-- `models.webhook` - Webhook model
-- `models.permission` - Permission bitmath
-
-### Commands
-
-- `commands.bot` - Bot class with prefix commands
-- `commands.cog` - Cog class
-- `commands.command` - Command class
-- `commands.group` - Group class
-- `commands.converters` - Type converters
-- `commands.checks` - Command checks
-
-### Interactions
-
-- `interactions.application_command` - Application command
-- `interactions.slash` - Slash command context
-- `interactions.context_menu` - Context menu commands
-- `interactions.hybrid` - Hybrid commands
-
-### UI
-
-- `ui.view` - View class
-- `ui.button` - Button component
-- `ui.select` - SelectMenu component
-- `ui.modal` - Modal component
-
-### Cache
-
-- `cache.store` - Cache store
-- `cache.policy` - Cache policies
-
-### Voice
-
-- `voice.voice_client` - Voice client
-- `voice.voice_gateway` - Voice gateway
-- `voice.udp` - UDP handling
-- `voice.opus` - Opus encoder/decoder
-
-## Examples
- 
-### Basic Bot
- 
+Interactions bot
 ```lua
 local Bot = require("discord.lua")
- 
-local bot = Bot(nil, Bot.enums.combine_intents(
-    Bot.enums.INTENTS.GUILDS,
-    Bot.enums.INTENTS.GUILD_MESSAGES,
-    Bot.enums.INTENTS.MESSAGE_CONTENT
-))
- 
-bot:on("ready", function()
-    print("Bot is ready!")
-    if bot.user then
-        print("Logged in as " .. bot.user.username)
-    end
-end)
- 
-bot:register_command("ping", function(message)
-    message:reply("Pong!")
-end, "!", "Replies with pong")
- 
-bot:run("YOUR_TOKEN")
-```
- 
-### Interaction Bot
- 
-```lua
-local Bot = require("discord.lua")
- 
--- Interactions arrive over the same gateway connection, but reading them
--- does not need a privileged intent. GUILDS is enough.
-local bot = Bot(nil, Bot.enums.INTENTS.GUILDS)
- 
-bot:on("ready", function()
+
+local client = Bot()
+
+client:on("ready", function()
     print("Bot is ready!")
 end)
- 
-bot:register_application_command("echo", {
-    description = "Repeats back what you typed",
+
+bot:register_application_command("ping", {
+    description = "Repeats back pong",
+    callback = function(ctx)
+        ctx:respond("Pong!")
+    end,
+})
+
+bot:register_application_command("roll", {
+    description = "Rolls a die",
     options = {
         {
-            name = "text",
-            type = Bot.enums.OPTION_TYPE.STRING,
-            description = "Text to repeat",
-            required = true,
+            name = "sides",
+            type = enums.OPTION_TYPE.INTEGER,
+            description = "Number of sides, defaults to 6",
+            required = false,
         },
     },
     callback = function(ctx)
-        local text = ctx:require_arg("text")
-        ctx:respond(text)
+        local sides = ctx:get_arg("sides", 6)
+        ctx:respond("Rolled: " .. math.random(1, sides))
     end,
 })
- 
-bot:run("YOUR_TOKEN")
-```
- 
 
-## Examples
+client:run("YOUR_TOKEN")
+```
+
+
+## Full Examples
 
 See more examples in <a href="/tree/main/examples/">`examples/`</a> directory:
 - <a href="/blob/main/examples/basic_bot.lua">`basic_bot.lua`</a> - Basic bot with some functions
@@ -163,6 +92,9 @@ See more examples in <a href="/tree/main/examples/">`examples/`</a> directory:
 - <a href="/blob/main/examples/hybrid_command.lua">`hybrid_command.lua`</a> - Hybrid command (prefix + slash)
 - <a href="/blob/main/examples/voice_play.lua">`voice_play.lua`</a> - Voice client usage
 - <a href="/blob/main/examples/sharded_bot.lua">`sharded_bot.lua`</a> - Sharded bot with auto-sharding
+
+## Reference
+- <a href="https://github.com/Pycord-Development/pycord/">pycord</a>
 
 ## License
 
