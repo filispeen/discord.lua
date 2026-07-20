@@ -21,7 +21,7 @@ bot:register_application_command("echo", {
     options = {
         {
             name = "text",
-            type = enums.OPTION_TYPE.STRING,
+            type = discord.enums.OPTION_TYPE.STRING,
             description = "Text to repeat",
             required = true,
         },
@@ -37,7 +37,7 @@ bot:register_application_command("roll", {
     options = {
         {
             name = "sides",
-            type = enums.OPTION_TYPE.INTEGER,
+            type = discord.enums.OPTION_TYPE.INTEGER,
             description = "Number of sides, defaults to 6",
             required = false,
         },
@@ -53,7 +53,7 @@ bot:register_application_command("note", {
     options = {
         {
             name = "message",
-            type = enums.OPTION_TYPE.STRING,
+            type = discord.enums.OPTION_TYPE.STRING,
             description = "The note content",
             required = true,
         },
