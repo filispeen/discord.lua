@@ -5,13 +5,12 @@
 -- options. ctx:respond/reply must be called within Discord's 3 second
 -- interaction window; ctx:edit can update the response afterward.
 
-local Bot = require("discord.lua")
-local enums = Bot.enums
+local discord = require("discord.lua")
 
 -- Interactions arrive over the same gateway connection, but reading them
 -- does not need a privileged intent. GUILDS is enough to cache the guild
 -- the interaction came from.
-local bot = Bot(nil, enums.INTENTS.GUILDS)
+local bot = discord.Bot(nil, discord.enums.INTENTS.GUILDS)
 
 bot:on("ready", function()
     print("Bot is ready!")

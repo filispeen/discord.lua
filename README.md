@@ -36,27 +36,27 @@ luarocks install discord.lua
 ## Quick example
 Traditional bot
 ```lua
-local Bot = require("discord.lua")
+local discord = require("discord.lua")
 
-local client = Bot()
+local bot = discord.Bot()
 
-client:on("ready", function()
+bot:on("ready", function()
     print("Bot is ready!")
 end)
 
-client:command("ping", function(msg)
+bot:command("ping", function(msg)
     msg:reply("Pong!")
 end)
 
-client:run("YOUR_TOKEN")
+bot:run("YOUR_TOKEN")
 ```
 Interactions bot
 ```lua
-local Bot = require("discord.lua")
+local discord = require("discord.lua")
 
-local client = Bot()
+local bot = discord.Bot()
 
-client:on("ready", function()
+bot:on("ready", function()
     print("Bot is ready!")
 end)
 
@@ -83,7 +83,7 @@ bot:register_application_command("roll", {
     end,
 })
 
-client:run("YOUR_TOKEN")
+bot:run("YOUR_TOKEN")
 ```
 
 

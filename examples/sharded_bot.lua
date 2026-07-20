@@ -6,18 +6,18 @@
 -- recommended shard count from GET /gateway/bot. There is nothing to
 -- configure here beyond listening to the lifecycle events below.
 
-local Bot = require("discord.lua")
+local discord = require("discord.lua")
 
 -- bot:command("ping", ...) below is a prefix command, so it needs
 -- GUILD_MESSAGES to see the message and MESSAGE_CONTENT (privileged,
 -- enable it on the dev portal too) to read the text.
-local intents = Bot.enums.combine_intents(
-    Bot.enums.INTENTS.GUILDS,
-    Bot.enums.INTENTS.GUILD_MESSAGES,
-    Bot.enums.INTENTS.MESSAGE_CONTENT
+local intents = discord.enums.combine_intents(
+    discord.enums.INTENTS.GUILDS,
+    discord.enums.INTENTS.GUILD_MESSAGES,
+    discord.enums.INTENTS.MESSAGE_CONTENT
 )
 
-local bot = Bot(nil, intents)
+local bot = discord.Bot(nil, intents)
 
 -- Fires once every shard has reported READY.
 bot:on("ready", function()

@@ -5,19 +5,19 @@
 -- command. Good starting point to copy for a new bot before adding
 -- slash commands, buttons, or voice.
 
-local Bot = require("discord.lua")
+local discord = require("discord.lua")
 
 -- The ping command below is a prefix command, so it needs GUILD_MESSAGES
 -- to see the message and MESSAGE_CONTENT (privileged, enable it on the
 -- dev portal too) to read the text. default_intents() alone is not
 -- enough since MESSAGE_CONTENT is privileged and excluded from it.
-local intents = Bot.enums.combine_intents(
-    Bot.enums.INTENTS.GUILDS,
-    Bot.enums.INTENTS.GUILD_MESSAGES,
-    Bot.enums.INTENTS.MESSAGE_CONTENT
+local intents = discord.enums.combine_intents(
+    discord.enums.INTENTS.GUILDS,
+    discord.enums.INTENTS.GUILD_MESSAGES,
+    discord.enums.INTENTS.MESSAGE_CONTENT
 )
 
-local bot = Bot(nil, intents)
+local bot = discord.Bot(nil, intents)
 
 bot:on("ready", function()
     print("Bot is ready!")

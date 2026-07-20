@@ -4,13 +4,13 @@
 -- Component callbacks receive a ComponentContext (ctx) with
 -- respond/update/defer for answering the interaction.
 
-local Bot = require("discord.lua")
+local discord = require("discord.lua")
 local View = require("ui.view")
 local Button = require("ui.button")
 
 -- Only slash commands and component interactions here, no prefix
 -- commands reading message content, so GUILDS alone is enough.
-local bot = Bot(nil, Bot.enums.INTENTS.GUILDS)
+local bot = discord.Bot(nil, discord.enums.INTENTS.GUILDS)
 
 local votes = { up = 0, down = 0 }
 
