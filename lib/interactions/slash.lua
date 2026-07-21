@@ -2,7 +2,14 @@
 -- Slash command context for application commands
 --
 -- Public Contract:
---   SlashCommandContext.new(interaction, client) -> SlashCommandContext
+--   SlashCommandContext.new(interaction, client, context_class) -> SlashCommandContext
+--     context_class: optional table to use as the context's metatable
+--     __index instead of M.SlashCommandContext, for custom context
+--     subclasses (see Bot:get_application_context). Should set its own
+--     __index chain back to M.SlashCommandContext (or a compatible table)
+--     to keep the built-in methods (respond/edit/parse_option/etc)
+--     available, the same way pycord's ApplicationContext subclasses do
+--     via normal Python inheritance.
 --
 --   SlashCommandContext:author -> User
 --     Interaction author.
@@ -42,7 +49,7 @@ M.SlashCommandContext = {
 }
 
 -- Create a new context
-function M.new(interaction, client)
+function M.new(interaction, client, context_class)
     local ctx = {
         author = interaction.user,
         guild = interaction.guild,
@@ -55,7 +62,7 @@ function M.new(interaction, client)
         interaction_token = interaction.token,
     }
     setmetatable(ctx, {
-        __index = M.SlashCommandContext
+        __index = context_class or M.SlashCommandContext
     })
 
     -- Parse arguments from interaction data

@@ -38,6 +38,8 @@ function Bot.new(token, ratelimiter, intents)
     self.interactions = {}
     self.client = nil
     self.auto_sync_commands = true
+    self.context_class = nil
+    self.application_context_class = nil
     return self
 end
 
@@ -231,6 +233,45 @@ function Bot:run_checks(name, ctx)
         end
     end
     return true
+end
+
+-- Builds the context passed to prefix command callbacks, mirrors pycord's
+-- Bot.get_context(message, cls=Context). By default this is just the raw
+-- Message, unchanged (matching every existing dispatch_message caller).
+-- Override by setting self.context_class to a table whose __index chain
+-- ultimately falls back to reading straight from the message, or pass cls
+-- explicitly to use a one-off class for a single call. cls is applied via
+-- setmetatable's __index, so it can add new methods (e.g. ctx:tick()) while
+-- existing fields (ctx.author, ctx.content, ...) keep reading through to
+-- the underlying message.
+function Bot:get_context(message, cls)
+    cls = cls or self.context_class
+    if not cls then
+        return message
+    end
+
+    return setmetatable({}, {
+        __index = function(_table, key)
+            local from_cls = cls[key]
+            if from_cls ~= nil then
+                return from_cls
+            end
+            return message[key]
+        end,
+        __newindex = message,
+    })
+end
+
+-- Builds the context passed to application (slash/context menu) command
+-- callbacks, mirrors pycord's Bot.get_application_context(interaction,
+-- cls=ApplicationContext). By default this is the standard
+-- SlashCommandContext built by interactions.slash. Override by setting
+-- self.application_context_class to a table (see interactions/slash.lua's
+-- M.new contract for how context_class is applied) or pass cls explicitly.
+function Bot:get_application_context(interaction, cls)
+    cls = cls or self.application_context_class
+    local slash = require("interactions.slash")
+    return slash.new(interaction, self.client, cls)
 end
 
 function Bot:on(event, callback)
@@ -443,8 +484,7 @@ function Bot:dispatch_interaction(interaction)
     if interaction.type == 2 and interaction.data then
         local cmd, checks = self.command_tree:resolve(interaction)
         if cmd and cmd.callback then
-            local slash = require("interactions.slash")
-            local ctx = slash.new(interaction, self.client)
+            local ctx = self:get_application_context(interaction)
 
             local ok, err = pcall(function()
                 for _, check in ipairs(checks or {}) do
@@ -619,10 +659,11 @@ function Bot:dispatch_message(message)
     end
 
     local ok, err = pcall(function()
-        if not self:run_checks(name, message) then
+        local ctx = self:get_context(message)
+        if not self:run_checks(name, ctx) then
             return
         end
-        func(message)
+        func(ctx)
     end)
 
     if not ok then

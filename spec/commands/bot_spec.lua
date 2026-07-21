@@ -830,4 +830,100 @@ describe("Bot", function()
             package.loaded["luv"] = original_luv
         end)
     end)
+
+    describe("Bot:get_context", function()
+        it("returns the raw message unchanged when no context_class is set", function()
+            local bot = Bot.new("token")
+            local message = { content = "!ping", author = { id = "1" } }
+
+            local ctx = bot:get_context(message)
+
+            assert.equals(message, ctx)
+        end)
+
+        it("applies self.context_class methods while still reading message fields", function()
+            local bot = Bot.new("token")
+            bot.context_class = {
+                tick = function(_self) return "ticked" end,
+            }
+            local message = { content = "!ping", author = { id = "1" } }
+
+            local ctx = bot:get_context(message)
+
+            assert.equals("!ping", ctx.content)
+            assert.equals("1", ctx.author.id)
+            assert.equals("ticked", ctx:tick())
+        end)
+
+        it("accepts a one-off cls argument overriding self.context_class", function()
+            local bot = Bot.new("token")
+            bot.context_class = { tick = function() return "default" end }
+            local message = { content = "!ping" }
+
+            local ctx = bot:get_context(message, { tick = function() return "override" end })
+
+            assert.equals("override", ctx:tick())
+        end)
+
+        it("dispatch_message passes the get_context result to the command callback", function()
+            local bot = Bot.new("token")
+            bot.context_class = {
+                tick = function(_self) return "ticked" end,
+            }
+            local received_ctx = nil
+
+            bot:command("ping", function(ctx) received_ctx = ctx end)
+            bot:dispatch_message({ content = "!ping" })
+
+            assert.is_not_nil(received_ctx)
+            assert.equals("ticked", received_ctx:tick())
+            assert.equals("!ping", received_ctx.content)
+        end)
+    end)
+
+    describe("Bot:get_application_context", function()
+        it("returns a standard SlashCommandContext when no application_context_class is set", function()
+            local bot = Bot.new("token")
+            local interaction = { id = "int1", token = "tok1", data = { name = "ping", options = {} } }
+
+            local ctx = bot:get_application_context(interaction)
+
+            assert.is_not_nil(ctx)
+            assert.equals("int1", ctx.interaction_id)
+        end)
+
+        it("applies self.application_context_class methods on top of SlashCommandContext", function()
+            local bot = Bot.new("token")
+            bot.application_context_class = {
+                success = function(_self, message) return "success: " .. message end,
+            }
+            local interaction = { id = "int1", token = "tok1", data = { name = "ping", options = {} } }
+
+            local ctx = bot:get_application_context(interaction)
+
+            assert.equals("success: done", ctx:success("done"))
+        end)
+
+        it("dispatch_interaction passes the get_application_context result to the command callback", function()
+            local bot = Bot.new("token")
+            bot.application_context_class = {
+                success = function(_self, message) return "success: " .. message end,
+            }
+            local received_ctx = nil
+
+            bot:register_application_command("ping", {
+                description = "Ping",
+                callback = function(ctx) received_ctx = ctx end,
+            })
+            bot:dispatch_interaction({
+                type = 2,
+                id = "int1",
+                token = "tok1",
+                data = { name = "ping", options = {} },
+            })
+
+            assert.is_not_nil(received_ctx)
+            assert.equals("success: done", received_ctx:success("done"))
+        end)
+    end)
 end)
