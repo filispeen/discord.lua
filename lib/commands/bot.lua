@@ -256,6 +256,77 @@ function Bot:emit(event, ...)
     return self
 end
 
+-- Waits for the next occurrence of event_name matching check, mirrors
+-- pycord's bot.wait_for(event, check, timeout). This codebase has no
+-- async/await or coroutine-driven event loop, so unlike pycord this is
+-- callback-based rather than awaitable: opts.callback(...) fires with the
+-- event's arguments once check(...) returns true, and opts.on_timeout()
+-- fires (with a TimeoutError) if opts.timeout seconds pass first with no
+-- match. check is optional (defaults to always matching); timeout is
+-- optional (defaults to no timeout, waits forever). Returns a cancel()
+-- function that removes the listener and any pending timer early.
+function Bot:wait_for(event_name, opts)
+    opts = opts or {}
+    local check = opts.check or function() return true end
+    local callback = opts.callback
+    local on_timeout = opts.on_timeout
+
+    if not self.listeners[event_name] then
+        self.listeners[event_name] = {}
+    end
+
+    local done = false
+    local listener
+    local timer_handle
+
+    local function cleanup()
+        done = true
+        for i, l in ipairs(self.listeners[event_name]) do
+            if l == listener then
+                table.remove(self.listeners[event_name], i)
+                break
+            end
+        end
+        if timer_handle then
+            timer_handle:stop()
+            timer_handle:close()
+            timer_handle = nil
+        end
+    end
+
+    listener = function(...)
+        if done then
+            return
+        end
+        if check(...) then
+            cleanup()
+            if callback then
+                callback(...)
+            end
+        end
+    end
+    table.insert(self.listeners[event_name], listener)
+
+    if opts.timeout then
+        local ok, luv = pcall(require, "luv")
+        if ok and luv then
+            timer_handle = luv.new_timer()
+            timer_handle:start(math.floor(opts.timeout * 1000), 0, function()
+                if done then
+                    return
+                end
+                cleanup()
+                if on_timeout then
+                    local errors = require("core.errors")
+                    on_timeout(errors.TimeoutError.new("Timed out waiting for " .. event_name))
+                end
+            end)
+        end
+    end
+
+    return cleanup
+end
+
 function Bot:add_cog(cog)
     if not self.cogs[cog.name] then
         self.cogs[cog.name] = cog

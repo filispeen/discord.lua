@@ -121,6 +121,20 @@ function Forbidden:__tostring()
     return "Forbidden: " .. self.message
 end
 
+-- TimeoutError: raised by Bot:wait_for when no matching event arrives
+-- before the timeout elapses, mirrors pycord's asyncio.TimeoutError.
+local TimeoutError = class("TimeoutError", DiscordException)
+
+function TimeoutError.new(message)
+    local self = setmetatable({}, TimeoutError)
+    self.message = message or "Timed out waiting for event"
+    return self
+end
+
+function TimeoutError:__tostring()
+    return "TimeoutError: " .. self.message
+end
+
 -- Factory functions for convenience
 function DiscordException.create(message)
     return DiscordException.new(message)
@@ -146,6 +160,10 @@ function Forbidden.create(message)
     return Forbidden.new(message)
 end
 
+function TimeoutError.create(message)
+    return TimeoutError.new(message)
+end
+
 return {
     DiscordException = DiscordException,
     HTTPException = HTTPException,
@@ -153,4 +171,5 @@ return {
     GatewayError = GatewayError,
     NotFound = NotFound,
     Forbidden = Forbidden,
+    TimeoutError = TimeoutError,
 }

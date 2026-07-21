@@ -691,4 +691,143 @@ describe("Bot", function()
         assert.equals("boop", sounds[1].name)
         assert.is_nil(sounds[1].guild_id)
     end)
+
+    describe("Bot:wait_for", function()
+        it("fires the callback with the event's arguments once check matches", function()
+            local bot = Bot.new("token")
+            local received = nil
+
+            bot:wait_for("message", {
+                check = function(msg) return msg.content == "hello" end,
+                callback = function(msg) received = msg end,
+            })
+
+            bot:emit("message", { content = "not it" })
+            assert.is_nil(received)
+
+            bot:emit("message", { content = "hello" })
+            assert.is_not_nil(received)
+            assert.equals("hello", received.content)
+        end)
+
+        it("does not fire the callback again after the first match", function()
+            local bot = Bot.new("token")
+            local call_count = 0
+
+            bot:wait_for("message", {
+                check = function() return true end,
+                callback = function() call_count = call_count + 1 end,
+            })
+
+            bot:emit("message", { content = "one" })
+            bot:emit("message", { content = "two" })
+
+            assert.equals(1, call_count)
+        end)
+
+        it("defaults check to always matching when not given", function()
+            local bot = Bot.new("token")
+            local received = false
+
+            bot:wait_for("ready", { callback = function() received = true end })
+            bot:emit("ready")
+
+            assert.is_true(received)
+        end)
+
+        it("removes the listener from bot.listeners once matched", function()
+            local bot = Bot.new("token")
+            bot:wait_for("message", { callback = function() end })
+
+            assert.equals(1, #bot.listeners["message"])
+            bot:emit("message", {})
+            assert.equals(0, #bot.listeners["message"])
+        end)
+
+        it("the returned cancel function removes the listener early", function()
+            local bot = Bot.new("token")
+            local received = false
+
+            local cancel = bot:wait_for("message", { callback = function() received = true end })
+            cancel()
+            bot:emit("message", {})
+
+            assert.is_false(received)
+            assert.equals(0, #bot.listeners["message"])
+        end)
+
+        it("does not register a timer when opts.timeout is not given", function()
+            local bot = Bot.new("token")
+            assert.has_no.errors(function()
+                bot:wait_for("message", { callback = function() end })
+            end)
+        end)
+
+        it("fires on_timeout with a TimeoutError when the timer elapses before a match", function()
+            local original_luv = package.loaded["luv"]
+            local timer_callback = nil
+            package.loaded["luv"] = {
+                new_timer = function()
+                    return {
+                        start = function(_self, _ms, _repeat, cb) timer_callback = cb end,
+                        stop = function() end,
+                        close = function() end,
+                    }
+                end,
+            }
+
+            local bot = Bot.new("token")
+            local received_err = nil
+
+            bot:wait_for("message", {
+                check = function() return false end,
+                callback = function() end,
+                on_timeout = function(err) received_err = err end,
+                timeout = 5,
+            })
+
+            assert.is_not_nil(timer_callback)
+            timer_callback()
+
+            assert.is_not_nil(received_err)
+            assert.equals("TimeoutError", received_err._name)
+
+            package.loaded["luv"] = original_luv
+        end)
+
+        it("does not fire on_timeout if a match already happened before the timer elapses", function()
+            local original_luv = package.loaded["luv"]
+            local timer_callback = nil
+            local stopped = false
+            package.loaded["luv"] = {
+                new_timer = function()
+                    return {
+                        start = function(_self, _ms, _repeat, cb) timer_callback = cb end,
+                        stop = function() stopped = true end,
+                        close = function() end,
+                    }
+                end,
+            }
+
+            local bot = Bot.new("token")
+            local timeout_fired = false
+
+            bot:wait_for("message", {
+                check = function() return true end,
+                callback = function() end,
+                on_timeout = function() timeout_fired = true end,
+                timeout = 5,
+            })
+
+            bot:emit("message", {})
+            assert.is_true(stopped)
+
+            if timer_callback then
+                timer_callback()
+            end
+            assert.is_false(timeout_fired)
+
+            package.loaded["luv"] = original_luv
+        end)
+    end)
 end)
