@@ -4,10 +4,16 @@
 -- Public Contract:
 --   UDPClient:new(endpoint, token) - Create UDP client
 --   udp:connect() - Connect to voice endpoint
---   udp:send(packet) - Send RTP packet
+--   udp:send(payload) - Send RTP packet, payload is a raw byte string
 --   udp:receive() - Receive RTP packets
 --   RTP header construction (12 bytes)
 --   IP discovery packet parsing
+--
+-- Wire format note: everything that touches the network in this module is
+-- a raw Lua byte string, never a table of byte-value numbers. luv.onread
+-- delivers received datagrams as a string, and luv.sendto expects a
+-- string too, so RTP headers and discovery packets are built with
+-- string.char()/table.concat() into strings rather than as number arrays.
 
 local luv = require("luv")
 
@@ -36,6 +42,8 @@ function UDPClient.new(endpoint, token)
             port = nil,
             buffer = nil,
             read_timer = nil,
+            sequence = 0,
+            ssrc = 0,
         },
     }
     setmetatable(self, { __index = UDPClient })
@@ -94,6 +102,21 @@ function UDPClient:read_loop(sock, buffer_size)
     end)
 end
 
+-- Parse a 12 byte RTP header from a raw byte string
+local function parse_rtp_header(data)
+    local b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12 = data:byte(1, 12)
+
+    return {
+        version = math.floor(b1 / 64) % 4,
+        padding = math.floor(b1 / 32) % 2 == 1,
+        marker = math.floor(b2 / 128) % 2 == 1,
+        payload_type = b2 % 128,
+        sequence = b3 * 256 + b4,
+        timestamp = b5 * 16777216 + b6 * 65536 + b7 * 256 + b8,
+        ssrc = b9 * 16777216 + b10 * 65536 + b11 * 256 + b12,
+    }
+end
+
 -- Handle incoming RTP packet
 function UDPClient:_handle_rtp(data, n)
     local state = self._state
@@ -102,34 +125,21 @@ function UDPClient:_handle_rtp(data, n)
         return  -- Too small for RTP header
     end
 
-    -- Parse RTP header
-    local rtp_header = {
-        version = math.floor(data[1] / 64) % 4,
-        padding = data[1] % 2,
-        marker = data[2] % 2,
-        padding_length = 0,
-        sequence = 0,
-        timestamp = 0,
-        ssrc = 0,
-    }
+    local rtp_header = parse_rtp_header(data)
 
-    -- Extract RTP header fields
-    rtp_header.sequence = math.floor(data[3] / 4) % 4096
-    rtp_header.timestamp = data[4] * 16777216 + data[5] * 65536 + data[6] * 256 + data[7]
-    rtp_header.ssrc = data[8] * 16777216 + data[9] * 65536 + data[10] * 256 + data[11]
+    -- Calculate payload bounds
+    local payload_start = 13  -- 1-indexed, first byte after the 12 byte header
+    local payload_end = n
 
-    -- Calculate payload size
-    local payload_start = 12
     if rtp_header.padding then
-        rtp_header.padding_length = data[n - 1]
-        payload_start = n - rtp_header.padding_length
+        local padding_length = data:byte(n)
+        payload_end = n - padding_length
     end
 
-    local payload = table.pack(data, payload_start)
+    local payload = data:sub(payload_start, payload_end)
 
     -- Dispatch to packet decoder
     if state.ip and state.port then
-        -- Send to packet decoder
         local decoded = self:_decode_packet(rtp_header, payload)
         if decoded then
             self:_dispatch_packet(decoded)
@@ -148,9 +158,10 @@ function UDPClient:_handle_rtp(data, n)
     end
 end
 
--- Decode RTP packet (strip header)
+-- Decode RTP packet (strip header, decrypt if a decrypt callback is set)
 function UDPClient:_decode_packet(rtp_header, payload)
-    -- For now, just return payload
+    -- For now, just return payload. Decryption is wired in separately
+    -- once a secret_key is available (see VoiceGateway:send_session_description).
     return payload
 end
 
@@ -160,8 +171,8 @@ function UDPClient:_dispatch_packet(packet)
     -- This would be dispatched to the client
 end
 
--- Send RTP packet
-function UDPClient:send(packet)
+-- Send RTP packet. payload must be a raw byte string.
+function UDPClient:send(payload)
     local state = self._state
 
     if not state.ip or not state.port then
@@ -172,20 +183,10 @@ function UDPClient:send(packet)
         error("UDP socket not initialized")
     end
 
-    -- Construct RTP header
-    local rtp_header = self:_construct_rtp_header(packet)
+    local rtp_header = self:_construct_rtp_header(payload)
+    local full_packet = rtp_header .. payload
 
-    -- Combine header and payload
-    local full_packet = {}
-    for i = 1, 12 do
-        table.insert(full_packet, rtp_header[i])
-    end
-    for i = 1, #packet do
-        table.insert(full_packet, packet[i])
-    end
-
-    -- Send via UDP socket
-    local success, err = luv.sendto(state.udp, table.concat(full_packet), state.ip, state.port)
+    local success, err = luv.sendto(state.udp, full_packet, state.ip, state.port)
     if not success then
         error("Failed to send UDP packet: " .. tostring(err))
     end
@@ -193,37 +194,33 @@ function UDPClient:send(packet)
     return true
 end
 
--- Construct RTP header (12 bytes)
+-- Construct RTP header (12 bytes), returned as a raw byte string
 function UDPClient:_construct_rtp_header(payload)
-    local header = {}
+    local state = self._state
 
-    -- Version: 2 bits
-    header[1] = 0x80  -- Version 2, no padding
+    local version_flags = 0x80  -- Version 2, no padding, no extension, no CSRC
+    local payload_type = 0x78   -- Marker bit 0, payload type 120 (Opus)
 
-    -- Payload type: 1 byte (Opus is typically 111 = 0x6F)
-    header[2] = 0x7F  -- Payload type for Opus
+    local seq = state.sequence or 0
+    state.sequence = (seq + 1) % 65536
 
-    -- Sequence number: 2 bytes
-    local seq = self._state.sequence or 0
-    header[3] = math.floor(seq / 256) % 256
-    header[4] = seq % 256
-    self._state.sequence = (seq + 1) % 65536
+    local timestamp = math.floor(os.clock() * 48000) % 4294967296
+    local ssrc = state.ssrc or 0
 
-    -- Timestamp: 4 bytes
-    local timestamp = os.time() * 1000  -- Milliseconds
-    header[5] = math.floor(timestamp / 16777216) % 256
-    header[6] = math.floor(timestamp / 65536) % 256
-    header[7] = math.floor(timestamp / 256) % 256
-    header[8] = timestamp % 256
-
-    -- SSRC: 4 bytes (Synchronized Source ID)
-    local ssrc = self._state.ssrc or 0
-    header[9] = math.floor(ssrc / 16777216) % 256
-    header[10] = math.floor(ssrc / 65536) % 256
-    header[11] = math.floor(ssrc / 256) % 256
-    header[12] = ssrc % 256
-
-    return header
+    return string.char(
+        version_flags,
+        payload_type,
+        math.floor(seq / 256) % 256,
+        seq % 256,
+        math.floor(timestamp / 16777216) % 256,
+        math.floor(timestamp / 65536) % 256,
+        math.floor(timestamp / 256) % 256,
+        timestamp % 256,
+        math.floor(ssrc / 16777216) % 256,
+        math.floor(ssrc / 65536) % 256,
+        math.floor(ssrc / 256) % 256,
+        ssrc % 256
+    )
 end
 
 -- Receive RTP packets (blocking or non-blocking)
@@ -270,24 +267,27 @@ end
 function UDPClient:discover_ip()
     local state = self._state
 
-    -- Send discovery packet to voice server
-    -- This is a UDP packet with specific format
-    local discovery_packet = {}
+    -- Discovery packet: 74 bytes total.
+    -- Byte 1-2: packet type (0x1 = request)
+    -- Byte 3-4: packet length (70)
+    -- Byte 5-8: SSRC
+    -- Byte 9-72: address (zero filled for a request)
+    -- Byte 73-74: port (zero filled for a request)
+    local ssrc = state.ssrc or 0
+    local header = string.char(
+        0x00, 0x01,
+        0x00, 0x46,
+        math.floor(ssrc / 16777216) % 256,
+        math.floor(ssrc / 65536) % 256,
+        math.floor(ssrc / 256) % 256,
+        ssrc % 256
+    )
+    local padding = string.rep("\0", 66)
+    local discovery_packet = header .. padding
 
-    -- First 8 bytes: reserved (set to 0)
-    for i = 1, 8 do
-        table.insert(discovery_packet, 0)
-    end
-
-    -- Next 70 bytes: random/padding (set to 0xFF)
-    for i = 1, 70 do
-        table.insert(discovery_packet, 0xFF)
-    end
-
-    -- Send discovery packet
     local success, err = luv.sendto(
         state.udp,
-        table.concat(discovery_packet),
+        discovery_packet,
         state.ip,
         state.port
     )
@@ -320,20 +320,32 @@ function UDPClient:discover_ip()
     return false, "Timeout waiting for discovery response"
 end
 
--- Parse discovery response
+-- Parse discovery response (raw byte string, 74 bytes)
+-- Byte 1-4: header (type + length)
+-- Byte 5-8: SSRC
+-- Byte 9-72: null terminated IP address string
+-- Byte 73-74: port (big endian)
 function UDPClient:_parse_discovery_response(data)
-    -- Discord discovery response format:
-    -- First 8 bytes: reserved
-    -- Next 4 bytes: port (big endian)
-    -- Next 4 bytes: flags (big endian)
-    -- Rest: random
-
-    if #data < 12 then
+    if #data < 74 then
         return nil, nil
     end
 
-    local port = data[9] * 16777216 + data[10] * 65536 + data[11] * 256 + data[12]
-    local ip = data[13] .. "." .. data[14] .. "." .. data[15] .. "." .. data[16]
+    local ip_bytes = { data:byte(9, 72) }
+    local ip_chars = {}
+    for _, b in ipairs(ip_bytes) do
+        if b == 0 then
+            break
+        end
+        table.insert(ip_chars, string.char(b))
+    end
+    local ip = table.concat(ip_chars)
+
+    local port_hi, port_lo = data:byte(73, 74)
+    local port = port_hi * 256 + port_lo
+
+    if ip == "" then
+        return nil, nil
+    end
 
     return ip, port
 end
