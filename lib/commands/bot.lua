@@ -102,6 +102,44 @@ function Bot:register_slash_command_group(group)
     return group
 end
 
+-- Registers a bridge command: one callback that works as both a prefix
+-- command and a slash command, mirrors pycord's ext.bridge bridge_command.
+-- callback receives a BridgeContext (ctx.is_app, ctx:respond, ctx.followup)
+-- instead of a raw Message or SlashCommandContext, so the same body works
+-- either way. options.description, options.options, options.guild_ids and
+-- options.checks are forwarded to the slash side; the prefix side shares
+-- the same name/description and checks.
+function Bot:bridge_command(name, options)
+    options = options or {}
+    local BridgeContext = require("ext.bridge.bridge_context")
+    local callback = options.callback
+
+    self:register_command(name, function(message)
+        local ctx = BridgeContext.new(message, "prefix")
+        callback(ctx)
+    end, self.prefix, options.description, options.checks)
+
+    return self:register_application_command(name, {
+        description = options.description,
+        options = options.options,
+        guild_ids = options.guild_ids,
+        checks = options.checks,
+        callback = function(slash_ctx)
+            local ctx = BridgeContext.new(slash_ctx, "app")
+            callback(ctx)
+        end,
+    })
+end
+
+-- Registers a bridge command group: a set of subcommands that work as both
+-- "prefix groupname sub" and "/groupname sub", mirrors pycord's ext.bridge
+-- bridge_group. options.callback, if given, is the group's own bare
+-- invocation (see BridgeGroup:map_to to expose it as a slash subcommand too).
+function Bot:bridge_group(name, options)
+    local BridgeGroup = require("ext.bridge.bridge_group")
+    return BridgeGroup.new(self, name, options)
+end
+
 -- Fetches the application id if needed, then registers all pending
 -- application commands with Discord. Must be called after connect().
 function Bot:sync_commands()
@@ -406,6 +444,8 @@ end
 -- Parses a prefix command out of an incoming Message and invokes its callback.
 -- Requires the gateway to emit a message_create event with a Message-shaped
 -- payload; see PROGRESS.md, gateway MESSAGE_CREATE dispatch is not wired yet.
+-- Tries a two word "group sub" match first (for Bot:bridge_group subcommands,
+-- registered as "group sub"), falling back to a single word match.
 function Bot:dispatch_message(message)
     if type(message.content) ~= "string" then
         return false
@@ -415,7 +455,16 @@ function Bot:dispatch_message(message)
         return false
     end
 
-    local name = message.content:sub(#self.prefix + 1):match("^(%S+)")
+    local rest = message.content:sub(#self.prefix + 1)
+    local first, second = rest:match("^(%S+)%s+(%S+)")
+    local name
+
+    if first and second and self.commands[first .. " " .. second] then
+        name = first .. " " .. second
+    else
+        name = rest:match("^(%S+)")
+    end
+
     if not name then
         return false
     end

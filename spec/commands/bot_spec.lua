@@ -533,4 +533,43 @@ describe("Bot", function()
         local message = { guild_id = "guild1", author = { id = "user_not_in_voice" } }
         assert.is_nil(bot:get_author_voice_channel_id(message))
     end)
+
+    it("bridge_command registers both a prefix command and a slash command", function()
+        local bot = Bot.new("token")
+        bot:bridge_command("ping", {
+            description = "Replies with pong",
+            callback = function(_ctx) end,
+        })
+
+        assert.is_not_nil(bot.commands["ping"])
+        assert.is_not_nil(bot.command_tree:get("ping"))
+    end)
+
+    it("bridge_command's callback receives a BridgeContext with is_app false on the prefix path", function()
+        local bot = Bot.new("token")
+        local received_is_app = nil
+
+        bot:bridge_command("ping", {
+            callback = function(ctx) received_is_app = ctx.is_app end,
+        })
+        bot:dispatch_message({ content = "!ping", author = { id = "1" } })
+
+        assert.is_false(received_is_app)
+    end)
+
+    it("bridge_command's callback receives a BridgeContext with is_app true on the slash path", function()
+        local bot = Bot.new("token")
+        local received_is_app = nil
+
+        bot:bridge_command("ping", {
+            callback = function(ctx) received_is_app = ctx.is_app end,
+        })
+        bot:dispatch_interaction({
+            type = 2,
+            data = { name = "ping", options = {} },
+            user = { id = "1" },
+        })
+
+        assert.is_true(received_is_app)
+    end)
 end)
