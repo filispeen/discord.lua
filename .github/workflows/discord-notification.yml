@@ -1,0 +1,148 @@
+name: Discord Commit Notification
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  notify-discord:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get commit info
+        id: commit_info
+        run: |
+          # Get commit information
+          COMMIT_MESSAGE=$(git log -1 --pretty=%B)
+          COMMIT_AUTHOR=$(git log -1 --pretty=%an)
+          COMMIT_AUTHOR_USERNAME=$(git log -1 --pretty=%ae | cut -d'@' -f1)
+          COMMIT_SHORT_SHA=$(git log -1 --pretty=%h)
+          COMMIT_URL="${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
+          AUTHOR_URL="${{ github.server_url }}/$COMMIT_AUTHOR_USERNAME"
+          BRANCH_URL="${{ github.server_url }}/${{ github.repository }}/tree/${{ github.ref_name }}"
+
+          # Get change statistics using GitHub context
+          LINES_ADDED=$(git diff --numstat ${{ github.event.before }} ${{ github.sha }} | awk '{added+=$1} END {print added+0}')
+          LINES_REMOVED=$(git diff --numstat ${{ github.event.before }} ${{ github.sha }} | awk '{removed+=$2} END {print removed+0}')
+          FILES_CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | wc -l)
+
+          # Get file changes (limit to 10 files)
+          FILE_LIST=$(git diff --numstat ${{ github.event.before }} ${{ github.sha }} | head -10 | while read added removed file; do
+            FILE_URL="${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/${file}"
+            if [ "$added" = "-" ]; then
+              echo "• [**${file}**](${FILE_URL}) (binary)"
+            else
+              echo "• [**${file}**](${FILE_URL}) → +${added} -${removed}"
+            fi
+          done)
+
+          # Add "more files" note if needed
+          TOTAL_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | wc -l)
+          if [ $TOTAL_FILES -gt 10 ]; then
+            MORE_FILES=$((TOTAL_FILES - 10))
+            FILE_LIST="${FILE_LIST}"$'\n'"_...and ${MORE_FILES} more file(s)_"
+          fi
+
+          # Truncate commit message if too long
+          if [ ${#COMMIT_MESSAGE} -gt 500 ]; then
+            COMMIT_MESSAGE="${COMMIT_MESSAGE:0:497}..."
+          fi
+
+          # Save to outputs
+          {
+            echo "message<<EOF"
+            echo "$COMMIT_MESSAGE"
+            echo "EOF"
+            echo "author=$COMMIT_AUTHOR"
+            echo "author_url=$AUTHOR_URL"
+            echo "branch_url=$BRANCH_URL"
+            echo "sha=$COMMIT_SHORT_SHA"
+            echo "url=$COMMIT_URL"
+            echo "files=$FILES_CHANGED"
+            echo "lines_added=$LINES_ADDED"
+            echo "lines_removed=$LINES_REMOVED"
+            echo "file_list<<EOF"
+            echo "$FILE_LIST"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          # Create JSON payload using jq
+          jq -n \
+            --arg repo "${{ github.repository }}" \
+            --arg url "${{ steps.commit_info.outputs.url }}" \
+            --arg message "${{ steps.commit_info.outputs.message }}" \
+            --arg author "${{ steps.commit_info.outputs.author }}" \
+            --arg author_url "${{ steps.commit_info.outputs.author_url }}" \
+            --arg branch "${{ github.ref_name }}" \
+            --arg branch_url "${{ steps.commit_info.outputs.branch_url }}" \
+            --arg sha "${{ steps.commit_info.outputs.sha }}" \
+            --arg files "${{ steps.commit_info.outputs.files }}" \
+            --arg added "${{ steps.commit_info.outputs.lines_added }}" \
+            --arg removed "${{ steps.commit_info.outputs.lines_removed }}" \
+            --arg file_list "${{ steps.commit_info.outputs.file_list }}" \
+            --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" \
+            '{
+              avatar_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png",
+              embeds: [{
+                title: ("New commit in " + $repo),
+                url: $url,
+                description: $message,
+                color: 5814783,
+                fields: [
+                  {
+                    name: "Author",
+                    value: ("[" + $author + "](" + $author_url + ")"),
+                    inline: true
+                  },
+                  {
+                    name: "Branch",
+                    value: ("[" + $branch + "](" + $branch_url + ")"),
+                    inline: true
+                  },
+                  {
+                    name: "Commit",
+                    value: ("[`" + $sha + "`](" + $url + ")"),
+                    inline: true
+                  },
+                  {
+                    name: "Files Changed",
+                    value: ($files + " file(s)"),
+                    inline: true
+                  },
+                  {
+                    name: "Lines Added",
+                    value: ("```diff\n+" + $added + "\n```"),
+                    inline: true
+                  },
+                  {
+                    name: "Lines Removed",
+                    value: ("```diff\n-" + $removed + "\n```"),
+                    inline: true
+                  },
+                  {
+                    name: "Changed Files",
+                    value: $file_list,
+                    inline: false
+                  }
+                ],
+                timestamp: $timestamp,
+                footer: {
+                  text: "GitHub Actions",
+                  icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+                }
+              }]
+            }' | curl -X POST \
+            -H "Content-Type: application/json" \
+            -d @- \
+            "$DISCORD_WEBHOOK" \
+            --fail-with-body || echo "Failed to send Discord notification"
