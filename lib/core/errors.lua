@@ -35,12 +35,11 @@ local class = require("core.class")
 local DiscordException = class("DiscordException")
 
 -- Base DiscordException
-local function DiscordException_new(self, message)
+function DiscordException.new(message)
+    local self = setmetatable({}, DiscordException)
     self.message = message
     return self
 end
-
-DiscordException.new = DiscordException_new
 
 function DiscordException:__tostring()
     return self.message
@@ -49,14 +48,13 @@ end
 -- HTTPException: errors from HTTP requests
 local HTTPException = class("HTTPException", DiscordException)
 
-local function HTTPException_new(self, message, status_code, data)
+function HTTPException.new(message, status_code, data)
+    local self = setmetatable({}, HTTPException)
     self.message = message
     self.status_code = status_code
     self.data = data or nil
     return self
 end
-
-HTTPException.new = HTTPException_new
 
 function HTTPException:__tostring()
     return "HTTPException: " .. self.message .. " (status: " .. self.status_code .. ")"
@@ -65,13 +63,12 @@ end
 -- RateLimited: rate limit errors
 local RateLimited = class("RateLimited", DiscordException)
 
-local function RateLimited_new(self, message, retry_after)
+function RateLimited.new(message, retry_after)
+    local self = setmetatable({}, RateLimited)
     self.message = message
     self.retry_after = retry_after or 0
     return self
 end
-
-RateLimited.new = RateLimited_new
 
 function RateLimited:__tostring()
     return "RateLimited: " .. self.message .. " (retry_after: " .. self.retry_after .. "s)"
@@ -80,13 +77,12 @@ end
 -- GatewayError: WebSocket gateway errors
 local GatewayError = class("GatewayError", DiscordException)
 
-local function GatewayError_new(self, message, code)
+function GatewayError.new(message, code)
+    local self = setmetatable({}, GatewayError)
     self.message = message
     self.code = code
     return self
 end
-
-GatewayError.new = GatewayError_new
 
 function GatewayError:__tostring()
     return "GatewayError: " .. self.message .. " (code: " .. tostring(self.code) .. ")"
@@ -95,13 +91,12 @@ end
 -- NotFound: resource not found
 local NotFound = class("NotFound", DiscordException)
 
-local function NotFound_new(self, message, id)
+function NotFound.new(message, id)
+    local self = setmetatable({}, NotFound)
     self.message = message
     self.id = id
     return self
 end
-
-NotFound.new = NotFound_new
 
 function NotFound:__tostring()
     return "NotFound: " .. self.message .. " (id: " .. tostring(self.id) .. ")"
@@ -110,12 +105,11 @@ end
 -- Forbidden: permission denied
 local Forbidden = class("Forbidden", DiscordException)
 
-local function Forbidden_new(self, message)
+function Forbidden.new(message)
+    local self = setmetatable({}, Forbidden)
     self.message = message
     return self
 end
-
-Forbidden.new = Forbidden_new
 
 function Forbidden:__tostring()
     return "Forbidden: " .. self.message
