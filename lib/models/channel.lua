@@ -2,10 +2,12 @@
 -- Channel model for Discord API
 --
 -- Public Contract:
---   Channel.new(data, guild) -> Channel
+--   Channel.new(data, guild, http) -> Channel
 --     Creates a new Channel from API data. guild is optional, if provided
 --     it is stored on self.guild for Channel:connect() and any other
---     guild-scoped behavior.
+--     guild-scoped behavior. http is optional, an http.client instance
+--     used by Channel:send_soundboard_sound; falls back to guild.http
+--     when omitted but a guild is given.
 --
 --   Channel:id -> string
 --     Channel's unique ID.
@@ -41,13 +43,19 @@
 --     gateway/UDP session. Errors if self.guild is missing, or if the
 --     channel is not a voice channel. Lazily requires voice.voice_client
 --     so core has no hard dependency on the optional voice module.
+--
+--   channel:send_soundboard_sound(sound) -> nil
+--     sound: a Sound (from models.sound) or a plain table with sound_id
+--     and optional source_guild_id. POST /channels/{id}/send-soundboard-sound,
+--     mirrors pycord's VoiceChannel.send_soundboard_sound(). Only valid for
+--     voice channels.
 
 local class = require("core.class")
 
 -- Channel class
 local Channel = class("Channel")
 
-function Channel.new(data, guild)
+function Channel.new(data, guild, http)
     local self = {}
     setmetatable(self, {
         __index = Channel
@@ -63,6 +71,7 @@ function Channel.new(data, guild)
     self.rate_limit_per_user = data.rate_limit_per_user or 0
     self.recipient_count = data.recipient_count or 0
     self.guild = guild
+    self.http = http or (guild and guild.http)
 
     -- Type-specific fields
     if data.topic then
@@ -133,6 +142,29 @@ function Channel:connect(client)
     end
 
     return voice_client
+end
+
+function Channel:send_soundboard_sound(sound)
+    if not self:is_voice() then
+        error("Channel:send_soundboard_sound() called on a non-voice channel", 0)
+    end
+    if not self.http then
+        error("Channel has no http client attached, cannot send a soundboard sound", 0)
+    end
+    if not sound then
+        error("Channel:send_soundboard_sound() requires a sound", 0)
+    end
+
+    local Route = require("http.route")
+    local route = Route.new(self.http)
+
+    local payload = { sound_id = sound.id or sound.sound_id }
+    local source_guild_id = sound.guild_id or sound.source_guild_id
+    if source_guild_id and self.guild and source_guild_id ~= self.guild.id then
+        payload.source_guild_id = source_guild_id
+    end
+
+    return route:send_soundboard_sound(self.id, payload)
 end
 
 return Channel

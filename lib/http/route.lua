@@ -247,4 +247,41 @@ function Route:edit_interaction_response(application_id, interaction_token, payl
     )
 end
 
+-- Soundboard
+
+function Route:get_default_sounds()
+    return self.http:get("/soundboard-default-sounds")
+end
+
+function Route:get_guild_sounds(guild_id)
+    return self.http:get("/guilds/" .. guild_id .. "/soundboard-sounds")
+end
+
+function Route:get_guild_sound(guild_id, sound_id)
+    return self.http:get("/guilds/" .. guild_id .. "/soundboard-sounds/" .. sound_id)
+end
+
+function Route:create_guild_sound(guild_id, payload, reason)
+    return self.http:post("/guilds/" .. guild_id .. "/soundboard-sounds", payload, opts_with_reason(reason))
+end
+
+function Route:edit_guild_sound(guild_id, sound_id, payload, reason)
+    return self.http:patch(
+        "/guilds/" .. guild_id .. "/soundboard-sounds/" .. sound_id,
+        payload,
+        opts_with_reason(reason)
+    )
+end
+
+function Route:delete_guild_sound(guild_id, sound_id, reason)
+    return self.http:delete(
+        "/guilds/" .. guild_id .. "/soundboard-sounds/" .. sound_id,
+        opts_with_reason(reason)
+    )
+end
+
+function Route:send_soundboard_sound(channel_id, payload)
+    return self.http:post("/channels/" .. channel_id .. "/send-soundboard-sound", payload)
+end
+
 return Route

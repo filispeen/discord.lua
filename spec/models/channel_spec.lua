@@ -45,6 +45,18 @@ describe("Channel", function()
             local channel = Channel.new({ id = "1", type = 2 })
             assert.is_nil(channel.guild)
         end)
+
+        it("stores an explicit http client", function()
+            local http = {}
+            local channel = Channel.new({ id = "1", type = 2 }, nil, http)
+            assert.equals(http, channel.http)
+        end)
+
+        it("falls back to guild.http when no explicit http is given", function()
+            local guild = { id = "guild1", http = {} }
+            local channel = Channel.new({ id = "1", type = 2 }, guild)
+            assert.equals(guild.http, channel.http)
+        end)
     end)
 
     describe("Channel:is_voice", function()
@@ -111,6 +123,78 @@ describe("Channel", function()
             assert.equals(client, voice_client.client)
             assert.equals(channel, voice_client.channel)
             assert.equals(guild, voice_client.guild)
+        end)
+    end)
+
+    describe("Channel:send_soundboard_sound", function()
+        it("errors when the channel is not a voice channel", function()
+            local channel = Channel.new({ id = "1", type = 1 }, nil, {})
+            assert.has_error(function()
+                channel:send_soundboard_sound({ id = "sound1" })
+            end)
+        end)
+
+        it("errors when no http client is attached", function()
+            local channel = Channel.new({ id = "1", type = 2 })
+            assert.has_error(function()
+                channel:send_soundboard_sound({ id = "sound1" })
+            end)
+        end)
+
+        it("errors when no sound is given", function()
+            local channel = Channel.new({ id = "1", type = 2 }, nil, {})
+            assert.has_error(function()
+                channel:send_soundboard_sound(nil)
+            end)
+        end)
+
+        it("POSTs to send-soundboard-sound with the sound's id", function()
+            local calls = {}
+            local http = {
+                post = function(_self, endpoint, payload)
+                    table.insert(calls, { endpoint = endpoint, payload = payload })
+                    return {}
+                end,
+            }
+            local channel = Channel.new({ id = "channel1", type = 2 }, nil, http)
+
+            channel:send_soundboard_sound({ id = "sound1" })
+
+            assert.equals(1, #calls)
+            assert.equals("/channels/channel1/send-soundboard-sound", calls[1].endpoint)
+            assert.equals("sound1", calls[1].payload.sound_id)
+        end)
+
+        it("includes source_guild_id when the sound belongs to a different guild", function()
+            local calls = {}
+            local http = {
+                post = function(_self, endpoint, payload)
+                    table.insert(calls, { endpoint = endpoint, payload = payload })
+                    return {}
+                end,
+            }
+            local guild = { id = "guild1", http = http }
+            local channel = Channel.new({ id = "channel1", type = 2 }, guild)
+
+            channel:send_soundboard_sound({ id = "sound1", guild_id = "other_guild" })
+
+            assert.equals("other_guild", calls[1].payload.source_guild_id)
+        end)
+
+        it("omits source_guild_id when the sound belongs to the same guild", function()
+            local calls = {}
+            local http = {
+                post = function(_self, endpoint, payload)
+                    table.insert(calls, { endpoint = endpoint, payload = payload })
+                    return {}
+                end,
+            }
+            local guild = { id = "guild1", http = http }
+            local channel = Channel.new({ id = "channel1", type = 2 }, guild)
+
+            channel:send_soundboard_sound({ id = "sound1", guild_id = "guild1" })
+
+            assert.is_nil(calls[1].payload.source_guild_id)
         end)
     end)
 end)

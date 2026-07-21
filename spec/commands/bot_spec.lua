@@ -668,4 +668,27 @@ describe("Bot", function()
             bot:message_command({ callback = function() end })
         end)
     end)
+
+    it("fetch_default_sounds errors when the bot has no http client", function()
+        local bot = Bot.new("token")
+        assert.has_error(function()
+            bot:fetch_default_sounds()
+        end)
+    end)
+
+    it("fetch_default_sounds GETs soundboard-default-sounds and returns Sound instances", function()
+        local bot = Bot.new("token")
+        bot.http = {
+            get = function(_self, endpoint)
+                assert.equals("/soundboard-default-sounds", endpoint)
+                return { { sound_id = "1", name = "boop" } }
+            end,
+        }
+
+        local sounds = bot:fetch_default_sounds()
+
+        assert.equals(1, #sounds)
+        assert.equals("boop", sounds[1].name)
+        assert.is_nil(sounds[1].guild_id)
+    end)
 end)

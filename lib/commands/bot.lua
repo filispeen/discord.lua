@@ -296,6 +296,26 @@ function Bot.get_role(_self, _role_id)
     return nil
 end
 
+-- Fetches Discord's built-in default soundboard sounds (not guild-specific),
+-- mirrors pycord's Bot.fetch_default_sounds(). GET /soundboard-default-sounds.
+function Bot:fetch_default_sounds()
+    if not self.http then
+        error("Bot has no http client, call Bot:run() or Bot:connect() first", 0)
+    end
+
+    local Route = require("http.route")
+    local Sound = require("models.sound")
+    local route = Route.new(self.http)
+    local response = route:get_default_sounds()
+
+    local items = response and response.items or response or {}
+    local sounds = {}
+    for i, sound_data in ipairs(items) do
+        sounds[i] = Sound.new(sound_data, nil, self.http)
+    end
+    return sounds
+end
+
 -- Returns the voice channel id a member is currently in, built from
 -- VOICE_STATE_UPDATE dispatch events. nil if the member is not known to
 -- be in voice (never seen, since left, or the gateway hasn't been
