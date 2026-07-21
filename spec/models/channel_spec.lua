@@ -197,4 +197,62 @@ describe("Channel", function()
             assert.is_nil(calls[1].payload.source_guild_id)
         end)
     end)
+
+    describe("Channel:create_invite", function()
+        it("errors when no http client is attached", function()
+            local channel = Channel.new({ id = "1", type = 1 })
+            assert.has_error(function()
+                channel:create_invite()
+            end)
+        end)
+
+        it("POSTs to the channel invites endpoint and returns an Invite", function()
+            local calls = {}
+            local http = {
+                post = function(_self, endpoint, payload, opts)
+                    table.insert(calls, { endpoint = endpoint, payload = payload, opts = opts })
+                    return { code = "abc123" }
+                end,
+            }
+            local channel = Channel.new({ id = "channel1", type = 1 }, nil, http)
+
+            local invite = channel:create_invite({ max_age = 3600, max_uses = 1 })
+
+            assert.equals(1, #calls)
+            assert.equals("/channels/channel1/invites", calls[1].endpoint)
+            assert.equals(3600, calls[1].payload.max_age)
+            assert.equals(1, calls[1].payload.max_uses)
+            assert.equals("abc123", invite.code)
+        end)
+
+        it("includes target_users_file in the payload when given", function()
+            local calls = {}
+            local http = {
+                post = function(_self, endpoint, payload)
+                    table.insert(calls, payload)
+                    return { code = "abc123" }
+                end,
+            }
+            local channel = Channel.new({ id = "channel1", type = 1 }, nil, http)
+
+            channel:create_invite({ target_users_file = "111\n222" })
+
+            assert.equals("111\n222", calls[1].target_users_file)
+        end)
+
+        it("omits target_users_file from the payload when not given", function()
+            local calls = {}
+            local http = {
+                post = function(_self, endpoint, payload)
+                    table.insert(calls, payload)
+                    return { code = "abc123" }
+                end,
+            }
+            local channel = Channel.new({ id = "channel1", type = 1 }, nil, http)
+
+            channel:create_invite()
+
+            assert.is_nil(calls[1].target_users_file)
+        end)
+    end)
 end)

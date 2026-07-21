@@ -284,4 +284,36 @@ function Route:send_soundboard_sound(channel_id, payload)
     return self.http:post("/channels/" .. channel_id .. "/send-soundboard-sound", payload)
 end
 
+-- Invites
+
+function Route:create_channel_invite(channel_id, payload, reason)
+    return self.http:post("/channels/" .. channel_id .. "/invites", payload, opts_with_reason(reason))
+end
+
+function Route:get_invite(invite_code, params)
+    local query = ""
+    if params then
+        local parts = {}
+        for key, value in pairs(params) do
+            table.insert(parts, key .. "=" .. tostring(value))
+        end
+        if #parts > 0 then
+            query = "?" .. table.concat(parts, "&")
+        end
+    end
+    return self.http:get("/invites/" .. invite_code .. query)
+end
+
+function Route:delete_invite(invite_code, reason)
+    return self.http:delete("/invites/" .. invite_code, opts_with_reason(reason))
+end
+
+function Route:get_invite_target_users_job_status(invite_code)
+    return self.http:get("/invites/" .. invite_code .. "/target-users-job")
+end
+
+function Route:edit_invite_target_users(invite_code, payload)
+    return self.http:patch("/invites/" .. invite_code .. "/target-users", payload)
+end
+
 return Route

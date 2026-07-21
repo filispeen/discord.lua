@@ -112,4 +112,81 @@ describe("Invite", function()
 
         assert.is_false(invite:is_full())
     end)
+
+    describe("target_users", function()
+        it("is nil when the invite has no target_users_file", function()
+            local invite = Invite.new({ code = "abc123" })
+            assert.is_nil(invite.target_users)
+        end)
+
+        it("as_user_ids parses a CSV of user ids", function()
+            local invite = Invite.new({ code = "abc123", target_users_file = "111\n222\n333" })
+            assert.same({ "111", "222", "333" }, invite.target_users:as_user_ids())
+        end)
+
+        it("as_user_ids skips blank lines", function()
+            local invite = Invite.new({ code = "abc123", target_users_file = "111\n\n222\n" })
+            assert.same({ "111", "222" }, invite.target_users:as_user_ids())
+        end)
+    end)
+
+    describe("Invite:fetch_target_users_job_status", function()
+        it("errors when no http client is attached", function()
+            local invite = Invite.new({ code = "abc123" })
+            assert.has_error(function()
+                invite:fetch_target_users_job_status()
+            end)
+        end)
+
+        it("GETs the target-users-job endpoint", function()
+            local calls = {}
+            local http = {
+                get = function(_self, endpoint)
+                    table.insert(calls, endpoint)
+                    return { status = "completed" }
+                end,
+            }
+            local invite = Invite.new({ code = "abc123" }, http)
+
+            local status = invite:fetch_target_users_job_status()
+
+            assert.equals(1, #calls)
+            assert.equals("/invites/abc123/target-users-job", calls[1])
+            assert.equals("completed", status.status)
+        end)
+    end)
+
+    describe("Invite:edit_target_users", function()
+        it("errors when no http client is attached", function()
+            local invite = Invite.new({ code = "abc123" })
+            assert.has_error(function()
+                invite:edit_target_users({ target_users_file = "111" })
+            end)
+        end)
+
+        it("requires opts.target_users_file", function()
+            local http = { patch = function() return {} end }
+            local invite = Invite.new({ code = "abc123" }, http)
+            assert.has_error(function()
+                invite:edit_target_users({})
+            end)
+        end)
+
+        it("PATCHes the target-users endpoint and returns an updated Invite", function()
+            local calls = {}
+            local http = {
+                patch = function(_self, endpoint, payload)
+                    table.insert(calls, { endpoint = endpoint, payload = payload })
+                    return { code = "abc123", target_users_file = payload.target_users_file }
+                end,
+            }
+            local invite = Invite.new({ code = "abc123" }, http)
+
+            local updated = invite:edit_target_users({ target_users_file = "111\n222" })
+
+            assert.equals(1, #calls)
+            assert.equals("/invites/abc123/target-users", calls[1].endpoint)
+            assert.same({ "111", "222" }, updated.target_users:as_user_ids())
+        end)
+    end)
 end)

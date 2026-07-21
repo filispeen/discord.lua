@@ -49,6 +49,15 @@
 --     and optional source_guild_id. POST /channels/{id}/send-soundboard-sound,
 --     mirrors pycord's VoiceChannel.send_soundboard_sound(). Only valid for
 --     voice channels.
+--
+--   channel:create_invite(opts) -> Invite
+--     opts.max_age / opts.max_uses / opts.temporary / opts.unique: standard
+--     invite options, all optional.
+--     opts.target_users_file: string or nil - CSV content listing target
+--     user ids, restricts the invite to only those users. Mirrors pycord's
+--     create_invite(target_users_file=...), see models.invite for the
+--     JSON-vs-multipart caveat.
+--     POST /channels/{id}/invites.
 
 local class = require("core.class")
 
@@ -165,6 +174,30 @@ function Channel:send_soundboard_sound(sound)
     end
 
     return route:send_soundboard_sound(self.id, payload)
+end
+
+function Channel:create_invite(opts)
+    opts = opts or {}
+    if not self.http then
+        error("Channel has no http client attached, cannot create an invite", 0)
+    end
+
+    local Route = require("http.route")
+    local Invite = require("models.invite")
+    local route = Route.new(self.http)
+
+    local payload = {
+        max_age = opts.max_age,
+        max_uses = opts.max_uses,
+        temporary = opts.temporary or false,
+        unique = opts.unique or false,
+    }
+    if opts.target_users_file then
+        payload.target_users_file = opts.target_users_file
+    end
+
+    local created = route:create_channel_invite(self.id, payload, opts.reason)
+    return Invite.new(created, self.http)
 end
 
 return Channel
