@@ -572,4 +572,100 @@ describe("Bot", function()
 
         assert.is_true(received_is_app)
     end)
+
+    it("user_command registers a USER type application command dispatched with the resolved member", function()
+        local ApplicationCommand = require("interactions.application_command")
+        local bot = Bot.new("token")
+        local received_ctx, received_member = nil, nil
+
+        local cmd = bot:user_command({
+            name = "mention",
+            callback = function(ctx, member)
+                received_ctx = ctx
+                received_member = member
+            end,
+        })
+
+        assert.equals(ApplicationCommand.TYPE_USER, cmd.type)
+
+        bot:dispatch_interaction({
+            type = 2,
+            data = {
+                name = "mention",
+                target_id = "42",
+                resolved = {
+                    members = { ["42"] = { id = "42", nick = "Someone" } },
+                },
+            },
+            user = { id = "1" },
+        })
+
+        assert.is_not_nil(received_ctx)
+        assert.equals("42", received_member.id)
+    end)
+
+    it("user_command falls back to resolved.users when no member is present (DM context)", function()
+        local bot = Bot.new("token")
+        local received_member = nil
+
+        bot:user_command({
+            name = "mention",
+            callback = function(_ctx, member) received_member = member end,
+        })
+
+        bot:dispatch_interaction({
+            type = 2,
+            data = {
+                name = "mention",
+                target_id = "42",
+                resolved = {
+                    users = { ["42"] = { id = "42", username = "someone" } },
+                },
+            },
+            user = { id = "1" },
+        })
+
+        assert.equals("42", received_member.id)
+    end)
+
+    it("user_command requires options.name", function()
+        local bot = Bot.new("token")
+        assert.has_error(function()
+            bot:user_command({ callback = function() end })
+        end)
+    end)
+
+    it("message_command registers a MESSAGE type application command dispatched with the resolved message", function()
+        local ApplicationCommand = require("interactions.application_command")
+        local bot = Bot.new("token")
+        local received_message = nil
+
+        local cmd = bot:message_command({
+            name = "Show ID",
+            callback = function(_ctx, message) received_message = message end,
+        })
+
+        assert.equals(ApplicationCommand.TYPE_MESSAGE, cmd.type)
+
+        bot:dispatch_interaction({
+            type = 2,
+            data = {
+                name = "Show ID",
+                target_id = "99",
+                resolved = {
+                    messages = { ["99"] = { id = "99", content = "hi" } },
+                },
+            },
+            user = { id = "1" },
+        })
+
+        assert.equals("99", received_message.id)
+    end)
+
+    it("message_command requires options.name", function()
+        local bot = Bot.new("token")
+        assert.has_error(function()
+            bot:message_command({ callback = function() end })
+        end)
+    end)
 end)

@@ -65,6 +65,22 @@ function M.new(interaction, client)
         end
     end
 
+    -- Resolve a context menu command's target (user or message command),
+    -- mirrors pycord passing member/message as the second callback argument.
+    -- interaction.data.target_id points into interaction.data.resolved.
+    local data = interaction.data
+    if data and data.target_id and data.resolved then
+        if data.resolved.members and data.resolved.members[data.target_id] then
+            ctx.target_user = data.resolved.members[data.target_id]
+        elseif data.resolved.users and data.resolved.users[data.target_id] then
+            ctx.target_user = data.resolved.users[data.target_id]
+        end
+
+        if data.resolved.messages and data.resolved.messages[data.target_id] then
+            ctx.target_message = data.resolved.messages[data.target_id]
+        end
+    end
+
     return ctx
 end
 

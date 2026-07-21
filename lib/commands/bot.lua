@@ -140,6 +140,59 @@ function Bot:bridge_group(name, options)
     return BridgeGroup.new(self, name, options)
 end
 
+-- Registers a global (or guild-scoped) user context menu command, mirrors
+-- pycord's @bot.user_command(). callback receives (ctx, member) where
+-- member is the resolved target user/member from the interaction, matching
+-- pycord's "User commands give a member param" contract.
+function Bot:user_command(options)
+    options = options or {}
+    local ApplicationCommand = require("interactions.application_command")
+
+    local name = options.name
+    if not name then
+        error("Bot:user_command requires options.name", 0)
+    end
+
+    local cmd = ApplicationCommand.new(name, name)
+    cmd.type = ApplicationCommand.TYPE_USER
+    cmd.guild_ids = options.guild_ids
+    cmd.checks = options.checks or {}
+
+    local user_callback = options.callback
+    cmd.callback = function(ctx)
+        user_callback(ctx, ctx.target_user)
+    end
+
+    self.command_tree:add(cmd)
+    return cmd
+end
+
+-- Registers a global (or guild-scoped) message context menu command,
+-- mirrors pycord's @bot.message_command(). callback receives (ctx, message)
+-- where message is the resolved target message from the interaction.
+function Bot:message_command(options)
+    options = options or {}
+    local ApplicationCommand = require("interactions.application_command")
+
+    local name = options.name
+    if not name then
+        error("Bot:message_command requires options.name", 0)
+    end
+
+    local cmd = ApplicationCommand.new(name, name)
+    cmd.type = ApplicationCommand.TYPE_MESSAGE
+    cmd.guild_ids = options.guild_ids
+    cmd.checks = options.checks or {}
+
+    local message_callback = options.callback
+    cmd.callback = function(ctx)
+        message_callback(ctx, ctx.target_message)
+    end
+
+    self.command_tree:add(cmd)
+    return cmd
+end
+
 -- Fetches the application id if needed, then registers all pending
 -- application commands with Discord. Must be called after connect().
 function Bot:sync_commands()
