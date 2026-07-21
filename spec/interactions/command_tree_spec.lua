@@ -240,4 +240,153 @@ describe("CommandTree", function()
             assert.same({}, checks)
         end)
     end)
+
+    describe("CommandTree:dispatch_autocomplete with SlashCommandGroup", function()
+        local SlashCommandGroup = require("interactions.slash_command_group")
+
+        it("dispatches autocomplete for a subcommand one level under a group", function()
+            local tree = CommandTree.new(make_http({}))
+            local group = SlashCommandGroup.new("math", "Math commands")
+            local received_value
+            local cmd = group:command("add", "Adds numbers", function() end, {
+                options = { { name = "query", type = 3 } },
+            })
+            cmd:set_autocomplete("query", function(ctx)
+                received_value = ctx.value
+            end)
+            tree:add(group)
+
+            local handled = tree:dispatch_autocomplete({
+                type = 4,
+                data = {
+                    name = "math",
+                    options = {
+                        {
+                            name = "add",
+                            type = 1,
+                            options = { { name = "query", value = "abc", focused = true } },
+                        },
+                    },
+                },
+            })
+
+            assert.is_true(handled)
+            assert.equals("abc", received_value)
+        end)
+
+        it("dispatches autocomplete for a subcommand two levels under a subgroup", function()
+            local tree = CommandTree.new(make_http({}))
+            local group = SlashCommandGroup.new("greetings", "Greetings")
+            local subgroup = group:create_subgroup("international", "International greetings")
+            local received_value
+            local cmd = subgroup:command("aloha", "Says aloha", function() end, {
+                options = { { name = "name", type = 3 } },
+            })
+            cmd:set_autocomplete("name", function(ctx)
+                received_value = ctx.value
+            end)
+            tree:add(group)
+
+            local handled = tree:dispatch_autocomplete({
+                type = 4,
+                data = {
+                    name = "greetings",
+                    options = {
+                        {
+                            name = "international",
+                            type = 2,
+                            options = {
+                                {
+                                    name = "aloha",
+                                    type = 1,
+                                    options = { { name = "name", value = "world", focused = true } },
+                                },
+                            },
+                        },
+                    },
+                },
+            })
+
+            assert.is_true(handled)
+            assert.equals("world", received_value)
+        end)
+
+        it("gives the autocomplete callback access to sibling options via ctx.options inside a group", function()
+            local tree = CommandTree.new(make_http({}))
+            local group = SlashCommandGroup.new("ac_example", "Autocomplete example group")
+            local received_color
+            local cmd = group:command("pick", "Pick an animal", function() end, {
+                options = {
+                    { name = "color", type = 3 },
+                    { name = "animal", type = 3 },
+                },
+            })
+            cmd:set_autocomplete("animal", function(ctx)
+                received_color = ctx.options["color"]
+            end)
+            tree:add(group)
+
+            local handled = tree:dispatch_autocomplete({
+                type = 4,
+                data = {
+                    name = "ac_example",
+                    options = {
+                        {
+                            name = "pick",
+                            type = 1,
+                            options = {
+                                { name = "color", value = "red" },
+                                { name = "animal", value = "car", focused = true },
+                            },
+                        },
+                    },
+                },
+            })
+
+            assert.is_true(handled)
+            assert.equals("red", received_color)
+        end)
+
+        it("returns false when the subcommand path doesn't resolve to any command", function()
+            local tree = CommandTree.new(make_http({}))
+            local group = SlashCommandGroup.new("math", "Math commands")
+            group:command("add", "Adds numbers", function() end)
+            tree:add(group)
+
+            local handled = tree:dispatch_autocomplete({
+                type = 4,
+                data = {
+                    name = "math",
+                    options = { { name = "subtract", type = 1, options = {} } },
+                },
+            })
+
+            assert.is_false(handled)
+        end)
+
+        it("returns false when the resolved subcommand has no matching autocomplete callback", function()
+            local tree = CommandTree.new(make_http({}))
+            local group = SlashCommandGroup.new("math", "Math commands")
+            group:command("add", "Adds numbers", function() end, {
+                options = { { name = "query", type = 3 } },
+            })
+            tree:add(group)
+
+            local handled = tree:dispatch_autocomplete({
+                type = 4,
+                data = {
+                    name = "math",
+                    options = {
+                        {
+                            name = "add",
+                            type = 1,
+                            options = { { name = "query", value = "abc", focused = true } },
+                        },
+                    },
+                },
+            })
+
+            assert.is_false(handled)
+        end)
+    end)
 end)

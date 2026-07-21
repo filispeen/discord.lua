@@ -175,23 +175,60 @@ function CommandTree:sync(application_id)
     return result
 end
 
+-- Walks interaction.data.options collecting SUB_COMMAND (1) / SUB_COMMAND_GROUP
+-- (2) names in order, stopping at the first non-group option node. Shared by
+-- both dispatch_autocomplete and resolve so a nested "math add" or
+-- "greetings international aloha" style path is parsed identically for both.
+-- Returns the path (array of names) and the innermost options list (the
+-- flat list belonging to whichever subcommand the path bottomed out at).
+local function walk_group_path(options)
+    local path = {}
+    while options and #options > 0 do
+        local opt = options[1]
+        if opt.type == 1 or opt.type == 2 then
+            table.insert(path, opt.name)
+            options = opt.options
+        else
+            break
+        end
+    end
+    return path, options
+end
+
 -- Dispatches an APPLICATION_COMMAND_AUTOCOMPLETE interaction to the
 -- matching command's autocomplete callback for the focused option.
 -- The callback receives an AutocompleteContext (ctx.value, ctx.options),
--- mirroring pycord's AutocompleteContext contract.
+-- mirroring pycord's AutocompleteContext contract. Handles autocomplete on
+-- a plain command as well as one fired from inside a SlashCommandGroup
+-- subcommand or subgroup subcommand, walking the same SUB_COMMAND (1) /
+-- SUB_COMMAND_GROUP (2) nesting that resolve() does for real invocations.
 function CommandTree:dispatch_autocomplete(interaction, client)
     local data = interaction and interaction.data
     if not data or not data.options then
         return false
     end
 
-    local cmd = self:get(data.name, interaction.guild_id)
-    if not cmd then
+    local top = self:get(data.name, interaction.guild_id)
+    if not top then
+        return false
+    end
+
+    local cmd, focused_options
+    if top.find then
+        local path, options = walk_group_path(data.options)
+        cmd = top:find(path)
+        focused_options = options
+    else
+        cmd = top
+        focused_options = data.options
+    end
+
+    if not cmd or not cmd.autocomplete_callbacks then
         return false
     end
 
     local focused
-    for _, opt in ipairs(data.options) do
+    for _, opt in ipairs(focused_options or {}) do
         if opt.focused then
             focused = opt
             break
@@ -236,17 +273,7 @@ function CommandTree:resolve(interaction)
 
     -- SlashCommandGroup: walk interaction.data.options to find the
     -- SUB_COMMAND (1) or SUB_COMMAND_GROUP (2) path down to the command.
-    local path = {}
-    local options = data.options
-    while options and #options > 0 do
-        local opt = options[1]
-        if opt.type == 1 or opt.type == 2 then
-            table.insert(path, opt.name)
-            options = opt.options
-        else
-            break
-        end
-    end
+    local path = walk_group_path(data.options)
 
     local resolved = top:find(path)
     if not resolved then
