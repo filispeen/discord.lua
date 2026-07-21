@@ -295,4 +295,91 @@ describe("VoiceClient", function()
             assert.is_not_nil(success)
         end)
     end)
+
+    describe("Recording", function()
+        local client
+        local Sink = require("voice.sinks.sink")
+
+        before_each(function()
+            client = VoiceClient.new(mock_client, mock_channel)
+        end)
+
+        it("start_recording fails when not connected", function()
+            local sink = Sink.new()
+            local ok, err = client:start_recording(sink, function() end)
+
+            assert.is_false(ok)
+            assert.equals("Not connected", err)
+        end)
+
+        it("start_recording succeeds when connected and sets sink.vc", function()
+            client.state.connected = true
+            local sink = Sink.new()
+
+            local ok = client:start_recording(sink, function() end)
+
+            assert.is_true(ok)
+            assert.equals(client, sink.vc)
+        end)
+
+        it("start_recording fails when already recording", function()
+            client.state.connected = true
+            client:start_recording(Sink.new(), function() end)
+
+            local ok, err = client:start_recording(Sink.new(), function() end)
+
+            assert.is_false(ok)
+            assert.equals("Already recording", err)
+        end)
+
+        it("_feed_recording writes into the active sink", function()
+            client.state.connected = true
+            local sink = Sink.new()
+            client:start_recording(sink, function() end)
+
+            client:_feed_recording("user1", "opusdata")
+
+            assert.equals(1, sink.audio_data["user1"].packets)
+        end)
+
+        it("_feed_recording fails when not recording", function()
+            local ok, err = client:_feed_recording("user1", "data")
+            assert.is_false(ok)
+            assert.equals("Not recording", err)
+        end)
+
+        it("stop_recording calls sink:cleanup and the finished_callback with extra args", function()
+            client.state.connected = true
+            local sink = Sink.new()
+            local received_sink, received_arg1, received_arg2 = nil, nil, nil
+
+            client:start_recording(sink, function(s, arg1, arg2)
+                received_sink = s
+                received_arg1 = arg1
+                received_arg2 = arg2
+            end, "channel1", "extra")
+
+            local ok = client:stop_recording()
+
+            assert.is_true(ok)
+            assert.equals(sink, received_sink)
+            assert.equals("channel1", received_arg1)
+            assert.equals("extra", received_arg2)
+        end)
+
+        it("stop_recording fails when not recording", function()
+            local ok, err = client:stop_recording()
+            assert.is_false(ok)
+            assert.equals("Not recording", err)
+        end)
+
+        it("stop_recording allows starting a new recording afterward", function()
+            client.state.connected = true
+            client:start_recording(Sink.new(), function() end)
+            client:stop_recording()
+
+            local ok = client:start_recording(Sink.new(), function() end)
+            assert.is_true(ok)
+        end)
+    end)
 end)

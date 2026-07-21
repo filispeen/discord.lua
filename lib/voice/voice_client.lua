@@ -14,6 +14,20 @@
 --   client:resume() - Resume playback
 --   client:elapsed() - Get elapsed playback time
 --   client:send_audio_packet(data, encode?) - Send raw audio packet
+--
+--   client:start_recording(sink, finished_callback, ...) -> boolean, string?
+--     sink: a Sink instance (see lib/voice/sinks/), e.g. WaveSink.new()
+--     finished_callback: function(sink, ...) called from stop_recording
+--     ...: extra arguments forwarded to finished_callback, mirrors pycord's
+--     vc.start_recording(sink, callback, ctx.channel).
+--     Sets sink.vc = self so finished_callback can call sink.vc:disconnect().
+--     See lib/voice/sinks/sink.lua for the RTP-receive-pipeline limitation:
+--     this starts bookkeeping and calls sink:write() for any audio pushed
+--     through client:_feed_recording(user_id, data), but there is no
+--     automatic RTP decode loop yet feeding real call audio into it.
+--
+--   client:stop_recording() -> boolean, string?
+--     Calls sink:cleanup() then the finished_callback with (sink, ...).
 
 local class = require("core.class")
 local emitter = require("core.emitter")
@@ -50,6 +64,7 @@ function VoiceClient.new(client, channel)
         gateway = nil,
         udp = nil,
         _timer = nil,
+        _recording = nil,
     }
     setmetatable(self, VoiceClient)
     self:setup()
@@ -370,6 +385,60 @@ function VoiceClient:_process_source(source, options)
 
     -- Continue reading
     -- This would be handled by the playback timer
+end
+
+-- Starts recording with the given sink, mirrors pycord's
+-- vc.start_recording(sink, callback, *args). See this file's module
+-- header for the RTP-receive-pipeline limitation: recording state is
+-- tracked and sink:write() is available via _feed_recording, but nothing
+-- calls it automatically yet without a real RTP decode loop.
+function VoiceClient:start_recording(sink, finished_callback, ...)
+    if not self.state.connected then
+        return false, "Not connected"
+    end
+    if self._recording then
+        return false, "Already recording"
+    end
+
+    sink.vc = self
+
+    self._recording = {
+        sink = sink,
+        finished_callback = finished_callback,
+        args = { ... },
+    }
+
+    return true
+end
+
+-- Feeds one Opus RTP payload for user_id into the active recording sink,
+-- the manual entry point described in start_recording's doc comment
+-- until a real RTP receive loop exists to call this automatically.
+function VoiceClient:_feed_recording(user_id, opus_data)
+    if not self._recording then
+        return false, "Not recording"
+    end
+    self._recording.sink:write(user_id, opus_data)
+    return true
+end
+
+-- Stops recording, finalizes the sink, and invokes finished_callback,
+-- mirrors pycord's vc.stop_recording().
+function VoiceClient:stop_recording()
+    if not self._recording then
+        return false, "Not recording"
+    end
+
+    local recording = self._recording
+    self._recording = nil
+
+    recording.sink:cleanup()
+
+    if recording.finished_callback then
+        recording.finished_callback(recording.sink, table.unpack(recording.args))
+    end
+
+    return true
 end
 
 -- Internal: on ready event
