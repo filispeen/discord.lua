@@ -143,9 +143,10 @@ describe("UDP", function()
             local payload = byte_string(9, 9, 9)
             local packet = header .. payload
 
-            local captured
-            client._dispatch_packet = function(self, decoded)
-                captured = decoded
+            local captured_header, captured_payload
+            client._dispatch_packet = function(self, rtp_header, decoded)
+                captured_header = rtp_header
+                captured_payload = decoded
             end
 
             local success = pcall(function()
@@ -153,8 +154,10 @@ describe("UDP", function()
             end)
 
             assert.is_true(success)
-            assert.is_string(captured)
-            assert.equals(payload, captured)
+            assert.is_string(captured_payload)
+            assert.equals(payload, captured_payload)
+            assert.equals(42, captured_header.ssrc)
+            assert.equals(1, captured_header.sequence)
         end)
 
         it("should store packets before IP discovery", function()
@@ -240,6 +243,87 @@ describe("UDP", function()
             end)
 
             assert.is_true(success)
+        end)
+
+        it("should send unencrypted when no secret_key is set", function()
+            sent_packets = {}
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
+            client:connect()
+            client._state.ip = "1.2.3.4"
+            client._state.port = 5555
+
+            local payload = byte_string(1, 2, 3)
+            client:send(payload)
+
+            assert.equals(12 + #payload, #sent_packets[1].data)
+            assert.equals(payload, sent_packets[1].data:sub(13))
+        end)
+
+        it("should error on send when secret_key is set but libsodium is unavailable", function()
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
+            client:connect()
+            client._state.ip = "1.2.3.4"
+            client._state.port = 5555
+            client._state.secret_key = string.rep("k", 32)
+
+            local success = pcall(function()
+                client:send(byte_string(1, 2, 3))
+            end)
+
+            -- Under plain Lua (no ffi), crypto.encrypt always fails, so
+            -- send() must error rather than silently send plaintext under
+            -- a secret_key. This is the safety property that matters;
+            -- the real encrypt/decrypt round-trip is covered under
+            -- LuaJIT in crypto_spec.lua.
+            assert.is_false(success)
+        end)
+
+        it("should decode as pass-through when no secret_key is set", function()
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
+            client:connect()
+
+            local rtp_header = { ssrc = 1, sequence = 1, timestamp = 1, padding = false }
+            local payload = byte_string(1, 2, 3)
+
+            local decoded = client:_decode_packet(rtp_header, payload, nil)
+
+            assert.equals(payload, decoded)
+        end)
+
+        it("should drop packets when secret_key is set but no nonce was extracted", function()
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
+            client:connect()
+            client._state.secret_key = string.rep("k", 32)
+
+            local rtp_header = { ssrc = 1, sequence = 1, timestamp = 1, padding = false }
+            local decoded = client:_decode_packet(rtp_header, byte_string(1, 2, 3), nil)
+
+            assert.is_nil(decoded)
+        end)
+
+        it("should strip the suffix nonce from incoming packets when secret_key and mode are set", function()
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
+            client:connect()
+            client._state.ip = "1.2.3.4"
+            client._state.port = 5555
+            client._state.secret_key = string.rep("k", 32)
+            client._state.mode = "xsalsa20_poly1305_suffix"
+
+            local header = byte_string(0x80, 0x78, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+            local ciphertext = byte_string(9, 9, 9, 9)  -- fake ciphertext, doesn't need to decrypt for this test
+            local nonce = string.rep("n", 24)
+            local packet = header .. ciphertext .. nonce
+
+            local captured_payload
+            client._decode_packet = function(self, rtp_header, payload, extracted_nonce)
+                captured_payload = payload
+                assert.equals(nonce, extracted_nonce)
+                return nil
+            end
+
+            client:_handle_rtp(packet, #packet)
+
+            assert.equals(ciphertext, captured_payload)
         end)
     end)
 end)

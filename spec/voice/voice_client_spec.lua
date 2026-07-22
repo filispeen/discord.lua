@@ -382,4 +382,75 @@ describe("VoiceClient", function()
             assert.is_true(ok)
         end)
     end)
+
+    describe("SSRC to user_id routing", function()
+        local client
+
+        before_each(function()
+            client = VoiceClient.new(mock_client, mock_channel)
+        end)
+
+        it("_on_client_connect populates known_users and ssrc_map", function()
+            client:_on_client_connect({ user_id = "user1", ssrc = 111 })
+
+            assert.is_not_nil(client.state.known_users["user1"])
+            assert.equals("user1", client.state.ssrc_map[111])
+        end)
+
+        it("_on_client_disconnect clears known_users and ssrc_map", function()
+            client:_on_client_connect({ user_id = "user1", ssrc = 111 })
+            client:_on_client_disconnect({ user_id = "user1", ssrc = 111 })
+
+            assert.is_nil(client.state.known_users["user1"])
+            assert.is_nil(client.state.ssrc_map[111])
+        end)
+
+        it("routes an incoming UDP packet to _feed_recording via ssrc_map", function()
+            client.state.connected = true
+            local Sink = require("voice.sinks.sink")
+            local sink = Sink.new()
+            client:start_recording(sink, function() end)
+
+            client:_on_client_connect({ user_id = "user1", ssrc = 111 })
+
+            client.udp._state.on_packet({ ssrc = 111 }, "opuspayload")
+
+            assert.equals(1, sink.audio_data["user1"].packets)
+            assert.equals("opuspayload", sink.audio_data["user1"].file[1])
+        end)
+
+        it("drops an incoming packet from an unknown ssrc", function()
+            client.state.connected = true
+            local Sink = require("voice.sinks.sink")
+            local sink = Sink.new()
+            client:start_recording(sink, function() end)
+
+            local success = pcall(function()
+                client.udp._state.on_packet({ ssrc = 999 }, "opuspayload")
+            end)
+
+            assert.is_true(success)
+            assert.is_nil(sink.audio_data["user1"])
+        end)
+    end)
+
+    describe("Session description handling", function()
+        local client
+
+        before_each(function()
+            client = VoiceClient.new(mock_client, mock_channel)
+        end)
+
+        it("stores secret_key and mode on state and on the UDP client", function()
+            client.gateway:emit("session_description", {
+                secret_key = string.rep("k", 32),
+                mode = "xsalsa20_poly1305_suffix",
+            })
+
+            assert.equals(string.rep("k", 32), client.state.secret_key)
+            assert.equals("xsalsa20_poly1305_suffix", client.state.mode)
+            assert.equals(string.rep("k", 32), client.udp._state.secret_key)
+            assert.equals("xsalsa20_poly1305_suffix", client.udp._state.mode)
+        end)
+    end)
 end)

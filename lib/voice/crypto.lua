@@ -8,6 +8,10 @@
 --   Crypto.macbytes() - Poly1305 MAC length in bytes (16)
 --   Crypto.encrypt(plaintext, nonce, key) - returns ciphertext string or nil, err
 --   Crypto.decrypt(ciphertext, nonce, key) - returns plaintext string or nil, err
+--   Crypto.random_nonce() - returns nonce_size() random bytes via
+--     libsodium's CSPRNG, or nil, err if unavailable. Do not use
+--     math.random for nonces; it is not cryptographically secure and
+--     nonce reuse breaks XSalsa20-Poly1305's confidentiality guarantees.
 --
 -- All strings are treated as raw byte strings (Lua strings), not byte-index
 -- tables. nonce must be exactly nonce_size() bytes, key exactly key_size()
@@ -53,6 +57,7 @@ local function load_sodium()
                 unsigned long long mlen, const unsigned char *n, const unsigned char *k);
             int crypto_secretbox_open_easy(unsigned char *m, const unsigned char *c,
                 unsigned long long clen, const unsigned char *n, const unsigned char *k);
+            void randombytes_buf(void *const buf, const size_t size);
         ]])
     end)
 
@@ -153,6 +158,17 @@ function Crypto.decrypt(ciphertext, nonce, key)
     end
 
     return ffi.string(m, mlen)
+end
+
+-- Returns nonce_size() random bytes via libsodium's randombytes_buf
+function Crypto.random_nonce()
+    if not sodium_ready then
+        return nil, "libsodium not available"
+    end
+
+    local buf = ffi.new("unsigned char[?]", NONCE_SIZE)
+    sodium_lib.randombytes_buf(buf, NONCE_SIZE)
+    return ffi.string(buf, NONCE_SIZE)
 end
 
 return Crypto

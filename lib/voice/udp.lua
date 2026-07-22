@@ -4,8 +4,14 @@
 -- Public Contract:
 --   UDPClient:new(endpoint, token) - Create UDP client
 --   udp:connect() - Connect to voice endpoint
---   udp:send(payload) - Send RTP packet, payload is a raw byte string
+--   udp:send(payload) - Send RTP packet, payload is a raw byte string.
+--     Encrypted with udp._state.secret_key if set (xsalsa20_poly1305_suffix).
 --   udp:receive() - Receive RTP packets
+--   udp._state.secret_key - set by VoiceClient after SESSION_DESCRIPTION;
+--     when present, _decode_packet decrypts incoming RTP payloads and
+--     send() encrypts outgoing ones. When absent, payloads pass through
+--     unencrypted (this only happens before the handshake completes, or
+--     if libsodium/ffi are unavailable, see crypto.lua's degradation).
 --   RTP header construction (12 bytes)
 --   IP discovery packet parsing
 --
@@ -16,6 +22,7 @@
 -- string.char()/table.concat() into strings rather than as number arrays.
 
 local luv = require("luv")
+local crypto = require("voice.crypto")
 
 local UDPClient = {
     _state = {
@@ -136,19 +143,33 @@ function UDPClient:_handle_rtp(data, n)
         payload_end = n - padding_length
     end
 
+    -- xsalsa20_poly1305_suffix mode appends a 24 byte nonce after the
+    -- encrypted payload; strip it off before treating the rest as
+    -- ciphertext. Only applies once a secret_key negotiated the suffix
+    -- mode; see _decode_packet.
+    local nonce = nil
+    if state.secret_key and state.mode == "xsalsa20_poly1305_suffix" then
+        if payload_end - payload_start + 1 < crypto.nonce_size() then
+            return  -- Too small to contain a suffix nonce
+        end
+        nonce = data:sub(payload_end - crypto.nonce_size() + 1, payload_end)
+        payload_end = payload_end - crypto.nonce_size()
+    end
+
     local payload = data:sub(payload_start, payload_end)
 
     -- Dispatch to packet decoder
     if state.ip and state.port then
-        local decoded = self:_decode_packet(rtp_header, payload)
+        local decoded = self:_decode_packet(rtp_header, payload, nonce)
         if decoded then
-            self:_dispatch_packet(decoded)
+            self:_dispatch_packet(rtp_header, decoded)
         end
     else
         -- IP not discovered yet, store for later
         local stored = {
             header = rtp_header,
             payload = payload,
+            nonce = nonce,
             timestamp = os.time() * 1000,
         }
         if not state.packets then
@@ -158,20 +179,44 @@ function UDPClient:_handle_rtp(data, n)
     end
 end
 
--- Decode RTP packet (strip header, decrypt if a decrypt callback is set)
-function UDPClient:_decode_packet(rtp_header, payload)
-    -- For now, just return payload. Decryption is wired in separately
-    -- once a secret_key is available (see VoiceGateway:send_session_description).
-    return payload
+-- Decode RTP packet: decrypt the payload if a secret_key is set, otherwise
+-- pass it through unchanged. nonce is the 24 byte suffix nonce extracted
+-- by _handle_rtp when mode is xsalsa20_poly1305_suffix; nil otherwise.
+function UDPClient:_decode_packet(rtp_header, payload, nonce)
+    local state = self._state
+
+    if not state.secret_key then
+        return payload
+    end
+
+    if not nonce then
+        -- secret_key is set but we have no nonce (mode mismatch or not
+        -- yet supported), can't decrypt; drop rather than pass ciphertext
+        -- through as if it were plaintext.
+        return nil
+    end
+
+    local plaintext, err = crypto.decrypt(payload, nonce, state.secret_key)
+    if not plaintext then
+        return nil
+    end
+
+    return plaintext
 end
 
--- Dispatch packet to voice client
-function UDPClient:_dispatch_packet(packet)
-    -- Emit event for packet received
-    -- This would be dispatched to the client
+-- Dispatch packet to voice client. self._state.on_packet, if set by the
+-- owner (see VoiceClient:setup), is called as on_packet(rtp_header, payload)
+-- with the decrypted/decoded payload for SSRC->user_id routing.
+function UDPClient:_dispatch_packet(rtp_header, payload)
+    local state = self._state
+    if state.on_packet then
+        state.on_packet(rtp_header, payload)
+    end
 end
 
--- Send RTP packet. payload must be a raw byte string.
+-- Send RTP packet. payload must be a raw byte string. If udp._state.
+-- secret_key is set, payload is encrypted (xsalsa20_poly1305_suffix: a
+-- fresh random 24 byte nonce is appended after the ciphertext).
 function UDPClient:send(payload)
     local state = self._state
 
@@ -184,7 +229,23 @@ function UDPClient:send(payload)
     end
 
     local rtp_header = self:_construct_rtp_header(payload)
-    local full_packet = rtp_header .. payload
+    local body = payload
+
+    if state.secret_key then
+        local nonce, nerr = crypto.random_nonce()
+        if not nonce then
+            error("Failed to generate nonce: " .. tostring(nerr))
+        end
+
+        local ciphertext, err = crypto.encrypt(payload, nonce, state.secret_key)
+        if not ciphertext then
+            error("Failed to encrypt payload: " .. tostring(err))
+        end
+
+        body = ciphertext .. nonce
+    end
+
+    local full_packet = rtp_header .. body
 
     local success, err = luv.sendto(state.udp, full_packet, state.ip, state.port)
     if not success then

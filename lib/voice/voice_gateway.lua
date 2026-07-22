@@ -9,6 +9,7 @@
 --   gateway:resume(session_id, seq) - Resume connection
 --   gateway:receive_hello() - Handle HELLO event
 --   gateway:receive_ready() - Handle READY event
+--   gateway:receive_session_description(data) - Handle SESSION_DESCRIPTION, sets secret_key
 --   gateway:send_client_connect(user_id, ssrc) - Client connected
 --   gateway:send_client_disconnect(user_id, ssrc) - Client disconnected
 --   gateway:send_speaking(user_id, ssrc, speaking) - Speaking update
@@ -136,6 +137,25 @@ function VoiceGateway:send_session_description()
     }
 
     return self:_send(payload)
+end
+
+-- Receive SESSION_DESCRIPTION event from the server. This is the server's
+-- reply after we SELECT_PROTOCOL; it carries the secret_key used to
+-- encrypt/decrypt RTP payloads (see lib/voice/crypto.lua). Note: nothing
+-- in this project currently routes incoming voice WebSocket frames into
+-- this method (self.ws is never populated with a real connection, see
+-- this module's module header), so this only fires if a caller invokes
+-- it directly with a parsed payload; it is not wired to a live socket yet.
+function VoiceGateway:receive_session_description(data)
+    self.secret_key = data.secret_key
+    self.mode = data.mode
+
+    self:emit("session_description", {
+        secret_key = data.secret_key,
+        mode = data.mode,
+    })
+
+    return true
 end
 
 -- Resume connection

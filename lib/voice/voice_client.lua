@@ -60,6 +60,7 @@ function VoiceClient.new(client, channel)
             decoder = nil,
             packets = {},
             ssrc_map = {},
+            known_users = {},
         },
         gateway = nil,
         udp = nil,
@@ -111,6 +112,35 @@ function VoiceClient:setup()
     self.gateway:on('speaking', function(data)
         self:_on_speaking(data)
     end)
+
+    -- Session description carries the secret_key used to encrypt/decrypt
+    -- RTP payloads over UDP. Store it on state and hand it to the UDP
+    -- client so incoming packets can be decrypted (see udp.lua's
+    -- _decode_packet, which reads udp._state.secret_key).
+    self.gateway:on('session_description', function(data)
+        state.secret_key = data.secret_key
+        state.mode = data.mode
+        if self.udp then
+            self.udp._state.secret_key = data.secret_key
+            self.udp._state.mode = data.mode
+        end
+    end)
+
+    -- Routes decrypted RTP payloads from the UDP client into the active
+    -- recording sink, keyed by SSRC->user_id (populated by
+    -- _on_client_connect from the gateway's client_connect event). Packets
+    -- from an SSRC with no known user_id yet are dropped; this can happen
+    -- for a brief window right after a user starts speaking if the
+    -- gateway's client_connect/speaking events arrive after their first
+    -- RTP packets. self.udp._state.on_packet is udp.lua's real dispatch
+    -- hook (see UDPClient:_dispatch_packet).
+    self.udp._state.on_packet = function(rtp_header, payload)
+        local user_id = state.ssrc_map[rtp_header.ssrc]
+        if not user_id then
+            return
+        end
+        self:_feed_recording(user_id, payload)
+    end
 end
 
 -- Connect to voice channel
@@ -471,6 +501,7 @@ end
 function VoiceClient:_on_client_connect(data)
     local state = self.state
     state.known_users[data.user_id] = data
+    state.ssrc_map[data.ssrc] = data.user_id
 
     -- Dispatch event
     self.client:dispatch('VOICE_CLIENT_CONNECT', {
@@ -485,6 +516,7 @@ end
 function VoiceClient:_on_client_disconnect(data)
     local state = self.state
     state.known_users[data.user_id] = nil
+    state.ssrc_map[data.ssrc] = nil
 
     -- Dispatch event
     self.client:dispatch('VOICE_CLIENT_DISCONNECT', {

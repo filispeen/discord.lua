@@ -229,6 +229,43 @@ describe("VoiceGateway", function()
         end)
     end)
 
+    describe("Receive SESSION_DESCRIPTION", function()
+        local gateway
+
+        before_each(function()
+            gateway = VoiceGateway.new(mock_client, "guild123")
+            gateway.ws = MockWebSocket.new()
+        end)
+
+        local session_data = {
+            mode = "xsalsa20_poly1305_suffix",
+            secret_key = string.rep("k", 32),
+        }
+
+        it("should store the secret_key and mode", function()
+            local success, err = pcall(function()
+                gateway:receive_session_description(session_data)
+            end)
+
+            assert.is_true(success)
+            assert.equals(session_data.secret_key, gateway.secret_key)
+            assert.equals(session_data.mode, gateway.mode)
+        end)
+
+        it("should emit a session_description event", function()
+            local received
+            gateway:on("session_description", function(data)
+                received = data
+            end)
+
+            gateway:receive_session_description(session_data)
+
+            assert.is_not_nil(received)
+            assert.equals(session_data.secret_key, received.secret_key)
+            assert.equals(session_data.mode, received.mode)
+        end)
+    end)
+
     describe("Send client connect", function()
         local gateway
 
