@@ -103,6 +103,8 @@ function VoiceGateway:connect(endpoint, token, session_id)
     local state = self.state
     state.token = token
     state.session_id = session_id
+    state.endpoint = endpoint
+    self._closing = false
 
     local host = endpoint:match("^([^:]+)")
     local url = "wss://" .. host .. "/?v=8"
@@ -112,7 +114,11 @@ function VoiceGateway:connect(endpoint, token, session_id)
 
     ws:on("open", function()
         state.connected = true
-        self:identify()
+        if self._is_reconnect then
+            self:resume(state.session_id, state.seq)
+        else
+            self:identify()
+        end
     end)
 
     ws:on("message", function(msg)
@@ -127,6 +133,9 @@ function VoiceGateway:connect(endpoint, token, session_id)
     ws:on("close", function(code, reason)
         state.connected = false
         self:emit("close", { code = code, reason = reason })
+        if not self._closing and code ~= 1000 then
+            self:_trigger_reconnect()
+        end
     end)
 
     ws:on("error", function(err)
@@ -156,6 +165,7 @@ function VoiceGateway:_dispatch(payload)
     elseif op == enums.HEARTBEAT_ACK then
         self:_handle_heartbeat_ack()
     elseif op == enums.RESUMED then
+        self._is_reconnect = false
         self:emit("resumed", data)
     elseif op == enums.CLIENT_CONNECT or op == enums.CLIENTS_CONNECT then
         self:emit("client_connect", data)
@@ -427,16 +437,23 @@ function VoiceGateway:_check_missed_acks()
     end
 end
 
--- Trigger reconnect
+-- Trigger reconnect. Preserves session_id/token/endpoint/seq so the
+-- reconnect can RESUME instead of a fresh identify (mirrors
+-- gateway.Shard:dispatch's resume-if-session_id pattern for HELLO).
 function VoiceGateway:_trigger_reconnect()
-    -- Stop heartbeat timer
     self:_stop_heartbeat()
 
-    -- Reset state
+    local state = self.state
+    local session_id = state.session_id
+    local token = state.token
+    local endpoint = state.endpoint
+    local seq = state.seq
+
     self.state = {
         connected = false,
-        session_id = nil,
-        token = nil,
+        session_id = session_id,
+        token = token,
+        endpoint = endpoint,
         ssrc = nil,
         ip = nil,
         port = nil,
@@ -444,17 +461,26 @@ function VoiceGateway:_trigger_reconnect()
         last_heartbeat = 0,
         last_ack = 0,
         missed_acks = 0,
-        seq = 0,
+        seq = seq,
         state = enums.DISCONNECTED,
     }
 
-    -- Dispatch reconnect event
-    -- self.client:dispatch('VOICE_RECONNECT', nil)
+    if self.ws then
+        self.ws = nil
+    end
+
+    if endpoint and token and session_id then
+        self._is_reconnect = true
+        self:connect(endpoint, token, session_id)
+    end
+
+    self:emit("reconnecting", { session_id = session_id, seq = seq })
 end
 
 -- Close connection
 function VoiceGateway:close()
     self:_stop_heartbeat()
+    self._closing = true
 
     if self.ws then
         self.ws:close()
@@ -462,6 +488,7 @@ function VoiceGateway:close()
     end
 
     self.state.connected = false
+    self._is_reconnect = false
     return true
 end
 

@@ -525,4 +525,115 @@ describe("VoiceGateway", function()
             assert.equals(1000, closed.code)
         end)
     end)
+
+    describe("Reconnect", function()
+        local gateway
+        local sockets
+        local handler_list
+
+        before_each(function()
+            sockets = {}
+            handler_list = {}
+            package.loaded["coro-websocket"] = {
+                connect = function(url)
+                    local ws = MockWebSocket.new()
+                    ws.url = url
+                    local handlers = {}
+                    ws.on = function(_self, event, callback)
+                        handlers[event] = callback
+                    end
+                    table.insert(sockets, ws)
+                    table.insert(handler_list, handlers)
+                    return ws
+                end,
+            }
+            gateway = VoiceGateway.new(mock_client, "guild123")
+        end)
+
+        it("does not reconnect on a clean close (code 1000)", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            handler_list[1]["open"]()
+            handler_list[1]["close"](1000, "bye")
+
+            assert.equals(1, #sockets)
+        end)
+
+        it("does not reconnect after an explicit close()", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            handler_list[1]["open"]()
+            gateway:close()
+
+            assert.equals(1, #sockets)
+        end)
+
+        it("reopens the socket on a non-1000 close", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            handler_list[1]["open"]()
+            handler_list[1]["close"](4006, "session invalid")
+
+            assert.equals(2, #sockets)
+            assert.equals("wss://guildvoice.discord.gg/?v=8", sockets[2].url)
+        end)
+
+        it("preserves session_id/token/seq across the reconnect", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            handler_list[1]["open"]()
+            handler_list[1]["message"](json.encode({
+                op = enums.HELLO,
+                d = { heartbeat_interval = 5000, ssrc = 1, ip = "1.2.3.4", port = 4444, modes = {} },
+                seq = 7,
+            }))
+            handler_list[1]["close"](4006, "session invalid")
+
+            assert.equals("sess1", gateway.state.session_id)
+            assert.equals("tok", gateway.state.token)
+            assert.equals(7, gateway.state.seq)
+        end)
+
+        it("sends RESUME instead of IDENTIFY when the reopened socket opens", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            handler_list[1]["open"]()
+            handler_list[1]["close"](4006, "session invalid")
+            handler_list[2]["open"]()
+
+            assert.equals(1, #sockets[2].messages)
+            assert.equals(enums.RESUME, sockets[2].messages[1].op)
+            assert.equals("sess1", sockets[2].messages[1].d.session_id)
+        end)
+
+        it("emits a reconnecting event with the preserved session_id", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            handler_list[1]["open"]()
+            local received
+            gateway:on("reconnecting", function(data)
+                received = data
+            end)
+            handler_list[1]["close"](4006, "session invalid")
+
+            assert.is_not_nil(received)
+            assert.equals("sess1", received.session_id)
+        end)
+
+        it("goes back to IDENTIFY on the next fresh connect() after RESUMED", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            handler_list[1]["open"]()
+            handler_list[1]["close"](4006, "session invalid")
+            handler_list[2]["open"]()
+            handler_list[2]["message"](json.encode({ op = enums.RESUMED, d = {} }))
+
+            gateway:connect("guildvoice.discord.gg", "tok", "sess2")
+            handler_list[3]["open"]()
+
+            assert.equals(enums.IDENTIFY, sockets[3].messages[1].op)
+        end)
+
+        it("does not reconnect when session_id/token/endpoint are missing", function()
+            gateway.state.token = "tok"
+            gateway.state.session_id = "sess1"
+            gateway.state.endpoint = nil
+            gateway:_trigger_reconnect()
+
+            assert.equals(0, #sockets)
+        end)
+    end)
 end)
