@@ -53,6 +53,42 @@ local GOT_WEBSOCKET_READY = 6
 local GOT_IP_DISCOVERY = 7
 local CONNECTED = 8
 
+-- Voice gateway WebSocket close codes (from Discord's voice close code
+-- reference). Used to decide whether a dropped connection should
+-- RESUME, fall back to a fresh IDENTIFY, or not reconnect at all.
+local CLOSE_UNKNOWN_OPCODE = 4001
+local CLOSE_FAILED_TO_DECODE = 4002
+local CLOSE_NOT_AUTHENTICATED = 4003
+local CLOSE_AUTHENTICATION_FAILED = 4004
+local CLOSE_ALREADY_AUTHENTICATED = 4005
+local CLOSE_SESSION_NO_LONGER_VALID = 4006
+local CLOSE_SESSION_TIMEOUT = 4009
+local CLOSE_SERVER_NOT_FOUND = 4011
+local CLOSE_UNKNOWN_PROTOCOL = 4012
+local CLOSE_DISCONNECTED = 4014
+local CLOSE_VOICE_SERVER_CRASHED = 4015
+local CLOSE_UNKNOWN_ENCRYPTION_MODE = 4016
+
+-- Close codes after which Discord explicitly says resuming is safe.
+local RESUMABLE_CLOSE_CODES = {
+    [CLOSE_VOICE_SERVER_CRASHED] = true,
+}
+
+-- Close codes that mean the session itself is invalid, so a RESUME
+-- would just fail again; a fresh IDENTIFY (new session_id from a new
+-- voice_state_update) is required instead.
+local SESSION_INVALID_CLOSE_CODES = {
+    [CLOSE_SESSION_NO_LONGER_VALID] = true,
+    [CLOSE_SESSION_TIMEOUT] = true,
+}
+
+-- Close codes after which reconnecting at all is pointless (the bot was
+-- kicked, the channel/guild is gone, or the main gateway session that
+-- backs this voice session was dropped).
+local FATAL_CLOSE_CODES = {
+    [CLOSE_DISCONNECTED] = true,
+}
+
 local M = {
     -- Opcodes
     IDENTIFY = IDENTIFY,
@@ -82,6 +118,23 @@ local M = {
     GOT_WEBSOCKET_READY = GOT_WEBSOCKET_READY,
     GOT_IP_DISCOVERY = GOT_IP_DISCOVERY,
     CONNECTED = CONNECTED,
+
+    -- Close codes
+    CLOSE_UNKNOWN_OPCODE = CLOSE_UNKNOWN_OPCODE,
+    CLOSE_FAILED_TO_DECODE = CLOSE_FAILED_TO_DECODE,
+    CLOSE_NOT_AUTHENTICATED = CLOSE_NOT_AUTHENTICATED,
+    CLOSE_AUTHENTICATION_FAILED = CLOSE_AUTHENTICATION_FAILED,
+    CLOSE_ALREADY_AUTHENTICATED = CLOSE_ALREADY_AUTHENTICATED,
+    CLOSE_SESSION_NO_LONGER_VALID = CLOSE_SESSION_NO_LONGER_VALID,
+    CLOSE_SESSION_TIMEOUT = CLOSE_SESSION_TIMEOUT,
+    CLOSE_SERVER_NOT_FOUND = CLOSE_SERVER_NOT_FOUND,
+    CLOSE_UNKNOWN_PROTOCOL = CLOSE_UNKNOWN_PROTOCOL,
+    CLOSE_DISCONNECTED = CLOSE_DISCONNECTED,
+    CLOSE_VOICE_SERVER_CRASHED = CLOSE_VOICE_SERVER_CRASHED,
+    CLOSE_UNKNOWN_ENCRYPTION_MODE = CLOSE_UNKNOWN_ENCRYPTION_MODE,
+    RESUMABLE_CLOSE_CODES = RESUMABLE_CLOSE_CODES,
+    SESSION_INVALID_CLOSE_CODES = SESSION_INVALID_CLOSE_CODES,
+    FATAL_CLOSE_CODES = FATAL_CLOSE_CODES,
 }
 
 return M

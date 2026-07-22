@@ -21,6 +21,18 @@
 --   gateway:on(event, callback) - Subscribe to a gateway event
 --   gateway:off(event, callback?) - Unsubscribe from a gateway event
 --   gateway:emit(event, ...) - Emit a gateway event to subscribers
+--
+--   Automatic reconnect on an unexpected WebSocket close (not triggered
+--   by an explicit gateway:close(), and not for close code 1000):
+--     - fatal close codes (see voice.enums.FATAL_CLOSE_CODES, e.g. 4014
+--       "Disconnected") give up immediately and emit "reconnect_failed"
+--     - session-invalid close codes (see voice.enums.SESSION_INVALID_CLOSE_CODES,
+--       4006/4009) clear session_id/token/seq and emit "session_invalidated"
+--       instead of reconnecting, since resuming a dead session cannot work;
+--       the caller must obtain a fresh session_id via a new voice_state_update
+--     - anything else reconnects and RESUMEs with exponential backoff,
+--       up to MAX_RECONNECT_ATTEMPTS, emitting "reconnecting" per attempt
+--       and "reconnect_failed" if attempts are exhausted
 
 local class = require("core.class")
 local enums = require("voice.enums")
@@ -28,6 +40,16 @@ local errors = require("voice.errors")
 local uv = package.loaded["mock_luv"] or require("luv")
 
 local VoiceGateway = class("VoiceGateway")
+
+-- Max automatic reconnect attempts before giving up and emitting
+-- "reconnect_failed" instead of trying again.
+local MAX_RECONNECT_ATTEMPTS = 5
+
+-- Base and cap for exponential backoff between reconnect attempts, in
+-- milliseconds. attempt 1 waits ~BASE_DELAY_MS, attempt 2 ~2x, etc,
+-- capped at MAX_DELAY_MS.
+local BASE_DELAY_MS = 1000
+local MAX_DELAY_MS = 30000
 
 function VoiceGateway.new(client, guild_id)
     local self = {
@@ -52,6 +74,8 @@ function VoiceGateway.new(client, guild_id)
         heartbeat_timer = nil,
         known_users = {},
         listeners = {},
+        reconnect_attempts = 0,
+        reconnect_timer = nil,
     }
     setmetatable(self, VoiceGateway)
     return self
@@ -134,7 +158,7 @@ function VoiceGateway:connect(endpoint, token, session_id)
         state.connected = false
         self:emit("close", { code = code, reason = reason })
         if not self._closing and code ~= 1000 then
-            self:_trigger_reconnect()
+            self:_trigger_reconnect(code, reason)
         end
     end)
 
@@ -166,6 +190,7 @@ function VoiceGateway:_dispatch(payload)
         self:_handle_heartbeat_ack()
     elseif op == enums.RESUMED then
         self._is_reconnect = false
+        self.reconnect_attempts = 0
         self:emit("resumed", data)
     elseif op == enums.CLIENT_CONNECT or op == enums.CLIENTS_CONNECT then
         self:emit("client_connect", data)
@@ -437,17 +462,61 @@ function VoiceGateway:_check_missed_acks()
     end
 end
 
--- Trigger reconnect. Preserves session_id/token/endpoint/seq so the
--- reconnect can RESUME instead of a fresh identify (mirrors
+-- Stop any pending backoff timer before reconnecting, retrying again,
+-- or giving up, so a stray delayed timer never fires after a newer
+-- attempt already started (or after a clean close()/reconnect success).
+function VoiceGateway:_cancel_reconnect_timer()
+    if self.reconnect_timer then
+        self.reconnect_timer:stop()
+        self.reconnect_timer = nil
+    end
+end
+
+-- Trigger reconnect after an unexpected close. close_code is the raw
+-- WebSocket close code Discord sent (nil for a non-protocol drop, e.g.
+-- a bare network error). Based on close_code this either:
+--   1. gives up entirely for a fatal code (kicked/channel deleted/etc,
+--      see enums.FATAL_CLOSE_CODES) - emits "reconnect_failed"
+--   2. invalidates the session for a session-invalid code (see
+--      enums.SESSION_INVALID_CLOSE_CODES) - the old session_id/token
+--      can't be resumed, so this clears them and emits
+--      "session_invalidated" for the caller (voice_client.lua) to
+--      start a brand new voice_state_update handshake; this module
+--      does not reconnect on its own in that case since it has no way
+--      to obtain a fresh session_id itself
+--   3. otherwise (resumable codes like CLOSE_VOICE_SERVER_CRASHED, or
+--      no code at all) reconnects and resumes, honoring
+--      MAX_RECONNECT_ATTEMPTS with exponential backoff between tries
+--
+-- Preserves session_id/token/endpoint/seq for the resumable path so
+-- the reconnect can RESUME instead of a fresh identify (mirrors
 -- gateway.Shard:dispatch's resume-if-session_id pattern for HELLO).
-function VoiceGateway:_trigger_reconnect()
+function VoiceGateway:_trigger_reconnect(close_code, close_reason)
     self:_stop_heartbeat()
+    self:_cancel_reconnect_timer()
+
+    if close_code and enums.FATAL_CLOSE_CODES[close_code] then
+        self.reconnect_attempts = 0
+        self:emit("reconnect_failed", {
+            reason = "fatal_close_code",
+            code = close_code,
+            close_reason = close_reason,
+        })
+        return
+    end
 
     local state = self.state
     local session_id = state.session_id
     local token = state.token
     local endpoint = state.endpoint
     local seq = state.seq
+    local session_invalid = close_code and enums.SESSION_INVALID_CLOSE_CODES[close_code]
+
+    if session_invalid then
+        session_id = nil
+        token = nil
+        seq = 0
+    end
 
     self.state = {
         connected = false,
@@ -469,17 +538,48 @@ function VoiceGateway:_trigger_reconnect()
         self.ws = nil
     end
 
-    if endpoint and token and session_id then
-        self._is_reconnect = true
-        self:connect(endpoint, token, session_id)
+    if session_invalid then
+        self.reconnect_attempts = 0
+        self:emit("session_invalidated", { code = close_code, close_reason = close_reason })
+        return
     end
 
-    self:emit("reconnecting", { session_id = session_id, seq = seq })
+    self.reconnect_attempts = self.reconnect_attempts + 1
+
+    if self.reconnect_attempts > MAX_RECONNECT_ATTEMPTS then
+        self.reconnect_attempts = 0
+        self:emit("reconnect_failed", {
+            reason = "max_attempts_exceeded",
+            code = close_code,
+            close_reason = close_reason,
+        })
+        return
+    end
+
+    self:emit("reconnecting", {
+        session_id = session_id,
+        seq = seq,
+        attempt = self.reconnect_attempts,
+    })
+
+    if not (endpoint and token and session_id) then
+        return
+    end
+
+    local delay = math.min(BASE_DELAY_MS * (2 ^ (self.reconnect_attempts - 1)), MAX_DELAY_MS)
+    local timer = uv.new_timer()
+    self.reconnect_timer = timer
+    timer:start(delay, 0, function()
+        self.reconnect_timer = nil
+        self._is_reconnect = true
+        self:connect(endpoint, token, session_id)
+    end)
 end
 
 -- Close connection
 function VoiceGateway:close()
     self:_stop_heartbeat()
+    self:_cancel_reconnect_timer()
     self._closing = true
 
     if self.ws then
@@ -489,6 +589,7 @@ function VoiceGateway:close()
 
     self.state.connected = false
     self._is_reconnect = false
+    self.reconnect_attempts = 0
     return true
 end
 

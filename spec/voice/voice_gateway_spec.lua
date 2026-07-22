@@ -531,6 +531,11 @@ describe("VoiceGateway", function()
         local sockets
         local handler_list
 
+        local function fire_reconnect_timer()
+            local timer = created_timers[#created_timers]
+            timer.callback()
+        end
+
         before_each(function()
             sockets = {}
             handler_list = {}
@@ -566,16 +571,19 @@ describe("VoiceGateway", function()
             assert.equals(1, #sockets)
         end)
 
-        it("reopens the socket on a non-1000 close", function()
+        it("schedules a reopen (after backoff) on a plain non-1000 close", function()
             gateway:connect("guildvoice.discord.gg", "tok", "sess1")
             handler_list[1]["open"]()
-            handler_list[1]["close"](4006, "session invalid")
+            handler_list[1]["close"](1006, "abnormal closure")
+
+            assert.equals(1, #sockets)
+            fire_reconnect_timer()
 
             assert.equals(2, #sockets)
             assert.equals("wss://guildvoice.discord.gg/?v=8", sockets[2].url)
         end)
 
-        it("preserves session_id/token/seq across the reconnect", function()
+        it("preserves session_id/token/seq across a resumable reconnect", function()
             gateway:connect("guildvoice.discord.gg", "tok", "sess1")
             handler_list[1]["open"]()
             handler_list[1]["message"](json.encode({
@@ -583,17 +591,18 @@ describe("VoiceGateway", function()
                 d = { heartbeat_interval = 5000, ssrc = 1, ip = "1.2.3.4", port = 4444, modes = {} },
                 seq = 7,
             }))
-            handler_list[1]["close"](4006, "session invalid")
+            handler_list[1]["close"](1006, "abnormal closure")
 
             assert.equals("sess1", gateway.state.session_id)
             assert.equals("tok", gateway.state.token)
             assert.equals(7, gateway.state.seq)
         end)
 
-        it("sends RESUME instead of IDENTIFY when the reopened socket opens", function()
+        it("sends RESUME instead of IDENTIFY once the reopened socket opens", function()
             gateway:connect("guildvoice.discord.gg", "tok", "sess1")
             handler_list[1]["open"]()
-            handler_list[1]["close"](4006, "session invalid")
+            handler_list[1]["close"](1006, "abnormal closure")
+            fire_reconnect_timer()
             handler_list[2]["open"]()
 
             assert.equals(1, #sockets[2].messages)
@@ -601,23 +610,25 @@ describe("VoiceGateway", function()
             assert.equals("sess1", sockets[2].messages[1].d.session_id)
         end)
 
-        it("emits a reconnecting event with the preserved session_id", function()
+        it("emits a reconnecting event with the preserved session_id and attempt number", function()
             gateway:connect("guildvoice.discord.gg", "tok", "sess1")
             handler_list[1]["open"]()
             local received
             gateway:on("reconnecting", function(data)
                 received = data
             end)
-            handler_list[1]["close"](4006, "session invalid")
+            handler_list[1]["close"](1006, "abnormal closure")
 
             assert.is_not_nil(received)
             assert.equals("sess1", received.session_id)
+            assert.equals(1, received.attempt)
         end)
 
         it("goes back to IDENTIFY on the next fresh connect() after RESUMED", function()
             gateway:connect("guildvoice.discord.gg", "tok", "sess1")
             handler_list[1]["open"]()
-            handler_list[1]["close"](4006, "session invalid")
+            handler_list[1]["close"](1006, "abnormal closure")
+            fire_reconnect_timer()
             handler_list[2]["open"]()
             handler_list[2]["message"](json.encode({ op = enums.RESUMED, d = {} }))
 
@@ -634,6 +645,80 @@ describe("VoiceGateway", function()
             gateway:_trigger_reconnect()
 
             assert.equals(0, #sockets)
+        end)
+
+        it("resets reconnect_attempts to 0 after RESUMED", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            handler_list[1]["open"]()
+            handler_list[1]["close"](1006, "abnormal closure")
+            fire_reconnect_timer()
+            handler_list[2]["open"]()
+            handler_list[2]["message"](json.encode({ op = enums.RESUMED, d = {} }))
+
+            assert.equals(0, gateway.reconnect_attempts)
+        end)
+
+        it("gives up after MAX_RECONNECT_ATTEMPTS with reconnect_failed", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            handler_list[1]["open"]()
+
+            local failed
+            gateway:on("reconnect_failed", function(data)
+                failed = data
+            end)
+
+            for i = 1, 5 do
+                handler_list[i]["close"](1006, "abnormal closure")
+                fire_reconnect_timer()
+                handler_list[i + 1]["open"]()
+            end
+            handler_list[6]["close"](1006, "abnormal closure")
+
+            assert.is_not_nil(failed)
+            assert.equals("max_attempts_exceeded", failed.reason)
+            assert.equals(0, gateway.reconnect_attempts)
+        end)
+
+        it("invalidates the session on CLOSE_SESSION_NO_LONGER_VALID (4006) instead of resuming", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            handler_list[1]["open"]()
+
+            local invalidated
+            gateway:on("session_invalidated", function(data)
+                invalidated = data
+            end)
+            handler_list[1]["close"](enums.CLOSE_SESSION_NO_LONGER_VALID, "session no longer valid")
+
+            assert.is_not_nil(invalidated)
+            assert.equals(enums.CLOSE_SESSION_NO_LONGER_VALID, invalidated.code)
+            assert.is_nil(gateway.state.session_id)
+            assert.is_nil(gateway.state.token)
+            assert.equals(0, gateway.state.seq)
+            assert.equals(1, #sockets)
+        end)
+
+        it("invalidates the session on CLOSE_SESSION_TIMEOUT (4009) instead of resuming", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            handler_list[1]["open"]()
+            handler_list[1]["close"](enums.CLOSE_SESSION_TIMEOUT, "session timeout")
+
+            assert.is_nil(gateway.state.session_id)
+            assert.equals(1, #sockets)
+        end)
+
+        it("gives up immediately on a fatal close code (4014) without reconnecting", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            handler_list[1]["open"]()
+
+            local failed
+            gateway:on("reconnect_failed", function(data)
+                failed = data
+            end)
+            handler_list[1]["close"](enums.CLOSE_DISCONNECTED, "disconnected")
+
+            assert.is_not_nil(failed)
+            assert.equals("fatal_close_code", failed.reason)
+            assert.equals(1, #sockets)
         end)
     end)
 end)
