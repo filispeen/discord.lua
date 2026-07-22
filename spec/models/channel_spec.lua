@@ -102,7 +102,12 @@ describe("Channel", function()
         it("returns a VoiceClient wired to this channel and client, on a voice channel with a guild", function()
             local guild = { id = "guild1", name = "Test" }
             local channel = Channel.new({ id = "1", type = 2, name = "general" }, guild)
-            local client = { user = { id = "bot1" }, dispatch = function() end }
+            local client = {
+                user = { id = "bot1" },
+                dispatch = function() end,
+                on = function() end,
+                voice_state_update = function() end,
+            }
 
             -- VoiceClient:connect() sends an IDENTIFY over the voice gateway
             -- websocket; stub the transport the same way voice_client_spec does,

@@ -36,6 +36,7 @@ local errors = require("voice.errors")
 local opus = require("voice.opus")
 local udp = require("voice.udp")
 local VoiceGateway = require("voice.voice_gateway")
+local luv = package.loaded["mock_luv"] or require("luv")
 
 local VoiceClient = class("VoiceClient")
 function VoiceClient.new(client, channel)
@@ -89,12 +90,34 @@ function VoiceClient:setup()
     -- Create Opus decoder
     state.decoder = opus.Decoder:new()
 
-    -- Create UDP client
+    -- Create UDP client (endpoint is set once we learn the voice server's
+    -- ip/port from the gateway READY event, see _on_ready below)
     self.udp = udp.UDPClient:new(nil, nil)
 
     -- Create gateway
     self.gateway = VoiceGateway.new(self.client, self.guild.id)
     self.gateway._voice_client = self
+
+    -- Track VOICE_STATE_UPDATE/VOICE_SERVER_UPDATE dispatches from the
+    -- main gateway (see Client:start_gateway). Discord sends both after
+    -- Shard:voice_state_update(); once we have all three of session_id,
+    -- token and endpoint we open the voice WebSocket.
+    self.client:on('voice_state_update', function(data)
+        if data.guild_id ~= self.guild.id or data.user_id ~= self.user.id then
+            return
+        end
+        state.session_id = data.session_id
+        self:_maybe_connect_gateway()
+    end)
+
+    self.client:on('voice_server_update', function(data)
+        if data.guild_id ~= self.guild.id then
+            return
+        end
+        state.token = data.token
+        state.endpoint = data.endpoint
+        self:_maybe_connect_gateway()
+    end)
 
     -- Add listeners
     self.gateway:on('ready', function(data)
@@ -143,7 +166,10 @@ function VoiceClient:setup()
     end
 end
 
--- Connect to voice channel
+-- Connect to voice channel. Sends VOICE_STATE_UPDATE through the main
+-- gateway; the actual voice WebSocket connect happens once Discord
+-- replies with VOICE_STATE_UPDATE + VOICE_SERVER_UPDATE, handled by
+-- _maybe_connect_gateway (registered in setup()).
 function VoiceClient:connect()
     local state = self.state
 
@@ -152,26 +178,20 @@ function VoiceClient:connect()
         return true
     end
 
-    -- Set guild voice state
-    -- self.client:voice_state_update({
-    --     guild_id = self.guild.id,
-    --     channel_id = self.channel.id,
-    --     self_mute = false,
-    --     self_deaf = false,
-    -- })
-
-    -- Get voice server endpoint
-    -- This would come from the gateway
-    -- For now, mock it
-    self.state.endpoint = "wss://example.com"  -- TODO: Get from guild
-
-    -- Identify to voice gateway
-    local success, err = self.gateway:identify()
-    if not success then
-        return false, err
-    end
+    self.client:voice_state_update(self.guild.id, self.channel.id, false, false)
 
     return true
+end
+
+-- Internal: called after either VOICE_STATE_UPDATE or VOICE_SERVER_UPDATE
+-- arrives for this guild. Opens the voice WebSocket once we have all
+-- three of session_id, token and endpoint.
+function VoiceClient:_maybe_connect_gateway()
+    local state = self.state
+    if not (state.session_id and state.token and state.endpoint) then
+        return
+    end
+    self.gateway:connect(state.endpoint, state.token, state.session_id)
 end
 
 -- Disconnect from voice
@@ -181,7 +201,7 @@ function VoiceClient:disconnect(force)
     if force then
         -- Force disconnect - stop playing, close everything
         if self._timer then
-            luv.timer:stop(self._timer)
+            self._timer:stop()
             self._timer = nil
         end
 
@@ -192,6 +212,8 @@ function VoiceClient:disconnect(force)
         if self.gateway and self.gateway.close then
             self.gateway:close()
         end
+
+        self.client:voice_state_update(self.guild.id, nil, false, false)
     else
         -- Graceful disconnect
         if self.state.playing then
@@ -270,7 +292,7 @@ function VoiceClient:stop()
     local state = self.state
 
     if self._timer then
-        luv.timer:stop(self._timer)
+        self._timer:stop()
         self._timer = nil
     end
 
@@ -287,7 +309,7 @@ function VoiceClient:pause()
     if state.playing then
         state.paused = true
         if self._timer then
-            luv.timer:stop(self._timer)
+            self._timer:stop()
         end
     end
 
@@ -370,7 +392,7 @@ function VoiceClient:_start_playback()
     end
 
     if self._timer then
-        luv.timer:stop(self._timer)
+        self._timer:stop()
     end
 
     -- Frame timing: 20ms Opus frames
@@ -481,8 +503,9 @@ function VoiceClient:_on_ready(data)
     state.heartbeat_interval = data.heartbeat_interval
     state.connected = true
 
-    -- Connect UDP
+    -- Connect UDP now that we know the voice server's ip/port
     if self.udp then
+        self.udp._state.endpoint = data.ip .. ":" .. tostring(data.port)
         self.udp:connect()
     end
 

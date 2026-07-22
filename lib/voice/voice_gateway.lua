@@ -3,6 +3,11 @@
 --
 -- Public Contract:
 --   VoiceGateway:new(client, guild_id) - Create gateway
+--   gateway:connect(endpoint, token, session_id) - Open the voice
+--     WebSocket and route incoming frames to receive_hello/receive_ready/
+--     receive_session_description and the client_connect/client_disconnect/
+--     speaking/resumed events. endpoint is the raw host (no scheme/port)
+--     as sent in VOICE_SERVER_UPDATE, e.g. "guildvoice.discord.gg".
 --   gateway:identify() - Send identify payload
 --   gateway:send_heartbeat() - Send heartbeat
 --   gateway:send_session_description() - Send encrypted session key
@@ -88,6 +93,78 @@ function VoiceGateway:emit(event, ...)
     return self
 end
 
+-- Open the voice WebSocket and wire incoming frames to this module's
+-- receive_* handlers and the client_connect/client_disconnect/speaking/
+-- resumed events. endpoint is the raw host from VOICE_SERVER_UPDATE
+-- (no scheme, may include a stray ":port" that Discord sometimes sends,
+-- which is stripped since the voice gateway always uses wss on 443).
+function VoiceGateway:connect(endpoint, token, session_id)
+    local state = self.state
+    state.token = token
+    state.session_id = session_id
+
+    local host = endpoint:match("^([^:]+)")
+    local url = "wss://" .. host .. "/?v=8"
+
+    local ws = require("coro-websocket").connect(url)
+    self.ws = ws
+
+    ws:on("open", function()
+        state.connected = true
+        self:identify()
+    end)
+
+    ws:on("message", function(msg)
+        local json = require("dkjson")
+        local ok, parsed = pcall(json.decode, msg)
+        if not ok or type(parsed) ~= "table" then
+            return
+        end
+        self:_dispatch(parsed)
+    end)
+
+    ws:on("close", function(code, reason)
+        state.connected = false
+        self:emit("close", { code = code, reason = reason })
+    end)
+
+    ws:on("error", function(err)
+        self:emit("error", errors.VoiceConnectError.new("WebSocket error: " .. tostring(err)))
+    end)
+
+    return self
+end
+
+-- Routes a decoded voice gateway payload { op, d, seq } to the matching
+-- receive_*/handler based on op, mirroring gateway.Shard:dispatch for the
+-- main gateway. Unknown opcodes are ignored.
+function VoiceGateway:_dispatch(payload)
+    local op = payload.op
+    local data = payload.d
+
+    if payload.seq ~= nil then
+        self.state.seq = payload.seq
+    end
+
+    if op == enums.HELLO then
+        self:receive_hello(data)
+    elseif op == enums.READY then
+        self:receive_ready(data)
+    elseif op == enums.SESSION_DESCRIPTION then
+        self:receive_session_description(data)
+    elseif op == enums.HEARTBEAT_ACK then
+        self:_handle_heartbeat_ack()
+    elseif op == enums.RESUMED then
+        self:emit("resumed", data)
+    elseif op == enums.CLIENT_CONNECT or op == enums.CLIENTS_CONNECT then
+        self:emit("client_connect", data)
+    elseif op == enums.CLIENT_DISCONNECT then
+        self:emit("client_disconnect", data)
+    elseif op == enums.SPEAKING then
+        self:emit("speaking", data)
+    end
+end
+
 function VoiceGateway:identify()
     local payload = {
         op = enums.IDENTIFY,
@@ -141,11 +218,8 @@ end
 
 -- Receive SESSION_DESCRIPTION event from the server. This is the server's
 -- reply after we SELECT_PROTOCOL; it carries the secret_key used to
--- encrypt/decrypt RTP payloads (see lib/voice/crypto.lua). Note: nothing
--- in this project currently routes incoming voice WebSocket frames into
--- this method (self.ws is never populated with a real connection, see
--- this module's module header), so this only fires if a caller invokes
--- it directly with a parsed payload; it is not wired to a live socket yet.
+-- encrypt/decrypt RTP payloads (see lib/voice/crypto.lua). Routed here by
+-- VoiceGateway:_dispatch when a live connect() socket is active.
 function VoiceGateway:receive_session_description(data)
     self.secret_key = data.secret_key
     self.mode = data.mode
@@ -199,12 +273,13 @@ function VoiceGateway:_send(payload)
         return false, "WebSocket not connected"
     end
 
+    local json = require("dkjson")
     local data = {
         op = payload.op,
         d = payload.d,
     }
 
-    ws:send(data)
+    ws:send(json.encode(data))
     return true
 end
 
@@ -383,7 +458,7 @@ function VoiceGateway:close()
     self:_stop_heartbeat()
 
     if self.ws then
-        -- self.ws:close()
+        self.ws:close()
         self.ws = nil
     end
 

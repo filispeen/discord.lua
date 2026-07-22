@@ -34,8 +34,11 @@ package.loaded["luv"] = mock_luv
 local class = require("core.class")
 local enums = require("voice.enums")
 local errors = require("voice.errors")
+local json = require("dkjson")
 
--- Mock WebSocket
+-- Mock WebSocket. Real connections send JSON-encoded string frames (see
+-- VoiceGateway:_send), so this decodes them back to tables for
+-- assertions to keep existing test expectations intact.
 local MockWebSocket = class("MockWebSocket")
 function MockWebSocket.new()
     local self = {
@@ -46,7 +49,11 @@ function MockWebSocket.new()
 end
 
 function MockWebSocket:send(data)
-    table.insert(self.messages, data)
+    local decoded = data
+    if type(data) == "string" then
+        decoded = json.decode(data)
+    end
+    table.insert(self.messages, decoded)
     return true
 end
 
@@ -340,6 +347,121 @@ describe("VoiceGateway", function()
 
             assert.is_true(success)
             assert.is_true(gateway.state.connected == false)
+        end)
+    end)
+
+    describe("Connect", function()
+        local gateway
+        local opened_ws
+        local handlers
+
+        before_each(function()
+            handlers = {}
+            opened_ws = MockWebSocket.new()
+            opened_ws.on = function(_self, event, callback)
+                handlers[event] = callback
+            end
+            package.loaded["coro-websocket"] = {
+                connect = function(url)
+                    opened_ws.url = url
+                    return opened_ws
+                end,
+            }
+            gateway = VoiceGateway.new(mock_client, "guild123")
+        end)
+
+        it("opens a wss url built from the raw endpoint host", function()
+            gateway:connect("guildvoice.discord.gg:443", "tok", "sess1")
+            assert.equals("wss://guildvoice.discord.gg/?v=8", opened_ws.url)
+        end)
+
+        it("strips a stray port with no scheme prefix", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            assert.equals("wss://guildvoice.discord.gg/?v=8", opened_ws.url)
+        end)
+
+        it("sends identify once the socket opens", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            handlers["open"]()
+
+            assert.is_true(gateway.state.connected)
+            assert.equals(1, #opened_ws.messages)
+            assert.equals(enums.IDENTIFY, opened_ws.messages[1].op)
+            assert.equals("tok", opened_ws.messages[1].d.token)
+            assert.equals("sess1", opened_ws.messages[1].d.session_id)
+        end)
+
+        it("routes a HELLO frame to receive_hello and starts heartbeat", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            handlers["message"](json.encode({
+                op = enums.HELLO,
+                d = { heartbeat_interval = 5000, ssrc = 1, ip = "1.2.3.4", port = 4444, modes = {} },
+            }))
+
+            assert.equals(5000, gateway.state.heartbeat_interval)
+            assert.equals(1, gateway.state.ssrc)
+        end)
+
+        it("routes a SESSION_DESCRIPTION frame to receive_session_description", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            handlers["message"](json.encode({
+                op = enums.SESSION_DESCRIPTION,
+                d = { secret_key = { 1, 2, 3 }, mode = "xsalsa20_poly1305_suffix" },
+            }))
+
+            assert.same({ 1, 2, 3 }, gateway.secret_key)
+        end)
+
+        it("routes CLIENT_CONNECT to the client_connect listener", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            local received
+            gateway:on("client_connect", function(data)
+                received = data
+            end)
+            handlers["message"](json.encode({
+                op = enums.CLIENT_CONNECT,
+                d = { user_id = "u1", ssrc = 99 },
+            }))
+
+            assert.is_not_nil(received)
+            assert.equals("u1", received.user_id)
+        end)
+
+        it("routes SPEAKING to the speaking listener", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            local received
+            gateway:on("speaking", function(data)
+                received = data
+            end)
+            handlers["message"](json.encode({
+                op = enums.SPEAKING,
+                d = { user_id = "u1", ssrc = 99, speaking = true },
+            }))
+
+            assert.is_not_nil(received)
+            assert.is_true(received.speaking)
+        end)
+
+        it("ignores malformed message frames instead of erroring", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            local success = pcall(function()
+                handlers["message"]("not json")
+            end)
+            assert.is_true(success)
+        end)
+
+        it("marks disconnected and emits close on socket close", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            handlers["open"]()
+            local closed
+            gateway:on("close", function(data)
+                closed = data
+            end)
+            handlers["close"](1000, "bye")
+
+            assert.is_false(gateway.state.connected)
+            assert.is_not_nil(closed)
+            assert.equals(1000, closed.code)
         end)
     end)
 end)

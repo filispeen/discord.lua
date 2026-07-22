@@ -215,6 +215,13 @@ function Client:emit(event, ...)
     return self
 end
 
+-- Alias for emit used by voice/lavalink integrations, which fire events
+-- like VOICE_CLIENT_CONNECTED using Discord-style upper snake_case names
+-- rather than the lower snake_case Client:on() convention.
+function Client:dispatch(event, ...)
+    return self:emit(event, ...)
+end
+
 function Client:off(event, callback)
     if self.events[event] then
         for i, cb in ipairs(self.events[event]) do

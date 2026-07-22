@@ -66,8 +66,25 @@ function MockClient.new()
             discriminator = "0001",
             username = "testuser",
         },
-        dispatch = function() end,
+        _listeners = {},
     }
+    self.dispatch = function(_self, event, ...)
+        return self:emit(event, ...)
+    end
+    self.on = function(_self, event, callback)
+        self._listeners[event] = self._listeners[event] or {}
+        table.insert(self._listeners[event], callback)
+        return self
+    end
+    self.emit = function(_self, event, ...)
+        if self._listeners[event] then
+            for _, cb in ipairs(self._listeners[event]) do
+                cb(...)
+            end
+        end
+        return self
+    end
+    self.voice_state_update = function() end
     setmetatable(self, MockClient)
     return self
 end
