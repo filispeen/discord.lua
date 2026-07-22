@@ -4,16 +4,25 @@
 package.path = "lib/?.lua;lib/?/?.lua;spec/voice/?.lua;" .. package.path
 
 -- Mock luv for testing
+local created_timers = {}
 local mock_luv = {
-    timer = {
-        new = function()
-            local timer = {
-                start = function() end,
-                stop = function() end,
-            }
-            return timer
-        end
-    },
+    new_timer = function()
+        local timer = {
+            started = false,
+            stopped = false,
+            start = function(self, interval, repeat_interval, callback)
+                self.started = true
+                self.interval = interval
+                self.repeat_interval = repeat_interval
+                self.callback = callback
+            end,
+            stop = function(self)
+                self.stopped = true
+            end,
+        }
+        table.insert(created_timers, timer)
+        return timer
+    end,
     socket = function()
         return 1
     end,
@@ -208,6 +217,58 @@ describe("VoiceGateway", function()
             assert.equals(hello_data.ssrc, gateway.state.ssrc)
             assert.equals(hello_data.ip, gateway.state.ip)
             assert.equals(hello_data.port, gateway.state.port)
+        end)
+    end)
+
+    describe("Heartbeat timer", function()
+        local gateway
+
+        before_each(function()
+            created_timers = {}
+            gateway = VoiceGateway.new(mock_client, "guild123")
+            gateway.ws = MockWebSocket.new()
+        end)
+
+        it("starts a real timer on HELLO with the given interval", function()
+            gateway:receive_hello({ heartbeat_interval = 5000, ssrc = 1, ip = "1.2.3.4", port = 4444, modes = {} })
+
+            assert.equals(1, #created_timers)
+            assert.is_true(created_timers[1].started)
+            assert.equals(5000, created_timers[1].interval)
+            assert.equals(5000, created_timers[1].repeat_interval)
+            assert.equals(gateway.state.heartbeat_timer, created_timers[1])
+        end)
+
+        it("sends a heartbeat when the timer fires", function()
+            gateway:receive_hello({ heartbeat_interval = 5000, ssrc = 1, ip = "1.2.3.4", port = 4444, modes = {} })
+            local timer = created_timers[1]
+
+            assert.equals(0, #gateway.ws.messages)
+            timer.callback()
+
+            assert.equals(1, #gateway.ws.messages)
+            assert.equals(enums.HEARTBEAT, gateway.ws.messages[1].op)
+        end)
+
+        it("stops the previous timer when a new HELLO restarts the heartbeat", function()
+            gateway:receive_hello({ heartbeat_interval = 5000, ssrc = 1, ip = "1.2.3.4", port = 4444, modes = {} })
+            local first_timer = created_timers[1]
+
+            gateway:receive_hello({ heartbeat_interval = 6000, ssrc = 1, ip = "1.2.3.4", port = 4444, modes = {} })
+
+            assert.is_true(first_timer.stopped)
+            assert.equals(2, #created_timers)
+            assert.equals(6000, created_timers[2].interval)
+        end)
+
+        it("stops the timer on close", function()
+            gateway:receive_hello({ heartbeat_interval = 5000, ssrc = 1, ip = "1.2.3.4", port = 4444, modes = {} })
+            local timer = created_timers[1]
+
+            gateway:close()
+
+            assert.is_true(timer.stopped)
+            assert.is_nil(gateway.state.heartbeat_timer)
         end)
     end)
 

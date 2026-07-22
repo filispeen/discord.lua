@@ -25,6 +25,7 @@
 local class = require("core.class")
 local enums = require("voice.enums")
 local errors = require("voice.errors")
+local uv = package.loaded["mock_luv"] or require("luv")
 
 local VoiceGateway = class("VoiceGateway")
 
@@ -335,22 +336,20 @@ function VoiceGateway:_start_heartbeat()
     local state = self.state
     local interval = state.heartbeat_interval or 5000
 
-    if self._heartbeat_timer then
-        self:_stop_heartbeat()
-    end
+    self:_stop_heartbeat()
 
-    local heartbeat_timer = {
-        interval = interval,
-        started = true,
-    }
-
-    state.heartbeat_timer = heartbeat_timer
+    local timer = uv.new_timer()
+    timer:start(interval, interval, function()
+        self:send_heartbeat()
+    end)
+    state.heartbeat_timer = timer
 end
 
 -- Stop heartbeat timer
 function VoiceGateway:_stop_heartbeat()
-    if self._heartbeat_timer then
-        self._heartbeat_timer = nil
+    if self.state.heartbeat_timer then
+        self.state.heartbeat_timer:stop()
+        self.state.heartbeat_timer = nil
     end
 end
 
