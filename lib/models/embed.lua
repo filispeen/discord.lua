@@ -108,7 +108,7 @@ function Embed.description(self, desc, color)
 end
 
 function Embed.to_json(self)
-    local json = require("json") or require("dkjson")
+    local json = require("core.json_compat")
     return json.encode(self)
 end
 

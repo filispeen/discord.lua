@@ -33,7 +33,7 @@
 --     Sends a message via webhook.
 
 local class = require("core.class")
-local json = require("json") or require("dkjson")
+local json = require("core.json_compat")
 
 -- Webhook class
 local Webhook = class("Webhook")

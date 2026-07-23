@@ -32,7 +32,7 @@
 local class = require("core.class")
 local errors = require("core.errors")
 local opcodes = require("gateway.opcodes")
-local json = require("dkjson")
+local json = require("core.json_compat")
 local uv = require("core.luv_compat")
 
 -- Shard class

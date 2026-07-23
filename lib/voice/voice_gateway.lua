@@ -146,7 +146,7 @@ function VoiceGateway:connect(endpoint, token, session_id)
     end)
 
     ws:on("message", function(msg)
-        local json = require("dkjson")
+        local json = require("core.json_compat")
         local ok, parsed = pcall(json.decode, msg)
         if not ok or type(parsed) ~= "table" then
             return
@@ -309,7 +309,7 @@ function VoiceGateway:_send(payload)
         return false, "WebSocket not connected"
     end
 
-    local json = require("dkjson")
+    local json = require("core.json_compat")
     local data = {
         op = payload.op,
         d = payload.d,

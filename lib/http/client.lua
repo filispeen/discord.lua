@@ -35,7 +35,7 @@
 
 local class = require("core.class")
 local errors = require("core.errors")
-local json = require("json")
+local json = require("core.json_compat")
 
 -- HTTP client class
 local Client = class("Client")
