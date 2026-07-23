@@ -136,6 +136,26 @@ function VoiceClient:setup()
         self:_on_speaking(data)
     end)
 
+    -- Session-invalid close code (4006/4009): the gateway already cleared
+    -- session_id/token/seq on its side since RESUME would fail against a
+    -- dead session. Clear our copy of session_id too so a later
+    -- voice_state_update reply is treated as fresh, then re-request a
+    -- new session the same way connect() does.
+    self.gateway:on('session_invalidated', function(data)
+        state.session_id = nil
+        self.client:voice_state_update(self.guild.id, self.channel.id, false, false)
+        self.client:dispatch('VOICE_CLIENT_SESSION_INVALIDATED', data)
+    end)
+
+    -- Fatal close code or backoff attempts exhausted: the gateway has
+    -- given up on its own, no automatic reconnect will happen. Mark
+    -- ourselves disconnected and let the bot author decide whether to
+    -- call connect() again.
+    self.gateway:on('reconnect_failed', function(data)
+        state.connected = false
+        self.client:dispatch('VOICE_CLIENT_RECONNECT_FAILED', data)
+    end)
+
     -- Session description carries the secret_key used to encrypt/decrypt
     -- RTP payloads over UDP. Store it on state and hand it to the UDP
     -- client so incoming packets can be decrypted (see udp.lua's

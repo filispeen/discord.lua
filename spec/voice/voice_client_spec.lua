@@ -470,4 +470,59 @@ describe("VoiceClient", function()
             assert.equals("xsalsa20_poly1305_suffix", client.udp._state.mode)
         end)
     end)
+
+    describe("Gateway reconnect event wiring", function()
+        local client
+
+        before_each(function()
+            client = VoiceClient.new(mock_client, mock_channel)
+        end)
+
+        it("session_invalidated clears session_id and re-requests a voice state update", function()
+            client.state.session_id = "old_session"
+            local called_guild, called_channel
+            mock_client.voice_state_update = function(_self, guild_id, channel_id)
+                called_guild = guild_id
+                called_channel = channel_id
+            end
+
+            client.gateway:emit("session_invalidated", { code = 4006 })
+
+            assert.is_nil(client.state.session_id)
+            assert.equals(mock_guild.id, called_guild)
+            assert.equals(mock_channel.id, called_channel)
+        end)
+
+        it("session_invalidated dispatches VOICE_CLIENT_SESSION_INVALIDATED on the client", function()
+            local received
+            mock_client:on("VOICE_CLIENT_SESSION_INVALIDATED", function(data)
+                received = data
+            end)
+
+            client.gateway:emit("session_invalidated", { code = 4009 })
+
+            assert.is_not_nil(received)
+            assert.equals(4009, received.code)
+        end)
+
+        it("reconnect_failed marks the client as disconnected", function()
+            client.state.connected = true
+
+            client.gateway:emit("reconnect_failed", { reason = "fatal_close_code" })
+
+            assert.is_false(client.state.connected)
+        end)
+
+        it("reconnect_failed dispatches VOICE_CLIENT_RECONNECT_FAILED on the client", function()
+            local received
+            mock_client:on("VOICE_CLIENT_RECONNECT_FAILED", function(data)
+                received = data
+            end)
+
+            client.gateway:emit("reconnect_failed", { reason = "max_attempts_exceeded" })
+
+            assert.is_not_nil(received)
+            assert.equals("max_attempts_exceeded", received.reason)
+        end)
+    end)
 end)
