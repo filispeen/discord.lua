@@ -33,7 +33,7 @@ local class = require("core.class")
 local errors = require("core.errors")
 local opcodes = require("gateway.opcodes")
 local json = require("dkjson")
-local uv = package.loaded["mock_luv"] or require("luv")
+local uv = require("core.luv_compat")
 
 -- Shard class
 local Shard = class("Shard")

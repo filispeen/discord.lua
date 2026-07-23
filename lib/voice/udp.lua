@@ -21,7 +21,7 @@
 -- string too, so RTP headers and discovery packets are built with
 -- string.char()/table.concat() into strings rather than as number arrays.
 
-local luv = require("luv")
+local luv = require("core.luv_compat")
 local crypto = require("voice.crypto")
 
 local UDPClient = {

@@ -37,7 +37,7 @@
 
 local class = require("core.class")
 local Shard = require("gateway.shard")
-local uv = package.loaded["mock_luv"] or require("luv")
+local uv = require("core.luv_compat")
 
 -- ShardManager class
 local ShardManager = class("ShardManager")

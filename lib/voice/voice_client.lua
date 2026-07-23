@@ -36,7 +36,7 @@ local errors = require("voice.errors")
 local opus = require("voice.opus")
 local udp = require("voice.udp")
 local VoiceGateway = require("voice.voice_gateway")
-local luv = package.loaded["mock_luv"] or require("luv")
+local luv = require("core.luv_compat")
 
 local VoiceClient = class("VoiceClient")
 function VoiceClient.new(client, channel)

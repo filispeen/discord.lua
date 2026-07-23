@@ -37,7 +37,7 @@
 local class = require("core.class")
 local enums = require("voice.enums")
 local errors = require("voice.errors")
-local uv = package.loaded["mock_luv"] or require("luv")
+local uv = require("core.luv_compat")
 
 local VoiceGateway = class("VoiceGateway")
 
