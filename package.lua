@@ -27,7 +27,6 @@ return {
     "lib/**.lua",
     "README.md",
     "package.lua",
-    "examples/**.lua",
     "discord/**.lua",
   },
 }
