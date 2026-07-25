@@ -29,8 +29,14 @@
 --   Client:get_member(id) -> Member
 --     Get a member by ID.
 --
---   Client:get_channel(id) -> Channel
---     Get a channel by ID.
+--   Client:get_channel(id) -> Channel or nil
+--     Get a Channel by ID. Checks the channel cache first (populated from
+--     GUILD_CREATE/CHANNEL_CREATE/CHANNEL_UPDATE dispatch events), falls
+--     back to a REST GET /channels/{id} if not cached. The returned
+--     Channel's .guild is a minimal {id = guild_id} stand-in, not a full
+--     Guild object, since only the id is known from cached/REST channel
+--     data; enough for Channel:connect()/VoiceClient which only read
+--     channel.guild.id.
 --
 --   Client:get_role(id) -> Role
 --     Get a role by ID.
@@ -46,6 +52,7 @@ local Client = class("Client")
 function Client.new(token, ratelimiter, intents)
     local enums = require("core.enums")
     local VoiceStateStore = require("cache.voice_state_store")
+    local ChannelStore = require("cache.channel_store")
     local self = {
         token = token,
         ratelimiter = ratelimiter or {},
@@ -58,6 +65,7 @@ function Client.new(token, ratelimiter, intents)
         intents = intents or enums.default_intents(),
         user = nil,
         voice_states = VoiceStateStore.new(),
+        channels = ChannelStore.new(),
     }
     setmetatable(self, {
         __index = Client
@@ -171,6 +179,30 @@ function Client:start_gateway()
 
     self.gateway:on_dispatch("VOICE_SERVER_UPDATE", function(data)
         self:emit("voice_server_update", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_CREATE", function(data)
+        if data and data.id then
+            self.channels:put_many(data.channels, data.id)
+        end
+        self:emit("guild_create", data)
+    end)
+
+    self.gateway:on_dispatch("CHANNEL_CREATE", function(data)
+        self.channels:put(data)
+        self:emit("channel_create", data)
+    end)
+
+    self.gateway:on_dispatch("CHANNEL_UPDATE", function(data)
+        self.channels:put(data)
+        self:emit("channel_update", data)
+    end)
+
+    self.gateway:on_dispatch("CHANNEL_DELETE", function(data)
+        if data and data.id then
+            self.channels:remove(data.id)
+        end
+        self:emit("channel_delete", data)
     end)
 
     self.gateway:start()
@@ -292,13 +324,27 @@ function Client.get_member(_self, _id)
 end
 
 function Client:get_channel(id)
-    if self.rest then
-        return self.rest:get_channel(id)
+    local Channel = require("models.channel")
+
+    local data = self.channels:get(id)
+    if not data then
+        if self.rest then
+            data = self.rest:get_channel(id)
+        elseif self.http then
+            data = self.http:get("/channels/" .. id)
+        end
     end
-    if self.http then
-        return self.http:get("/channels/" .. id)
+    if not data then
+        return nil
     end
-    return nil
+
+    -- Only the guild id is known here (channels are cached as raw
+    -- gateway payloads, not full Guild objects), but VoiceClient and
+    -- Channel:connect() only ever read channel.guild.id, so a minimal
+    -- {id = guild_id} stand-in is enough. Real Guild objects (from
+    -- get_guild/GUILD_CREATE) should be preferred where available.
+    local guild = data.guild_id and { id = data.guild_id } or nil
+    return Channel.new(data, guild, self.http)
 end
 
 function Client.get_role(_self, _id)

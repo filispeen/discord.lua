@@ -400,8 +400,13 @@ function Bot:get_user(user_id)
     return nil
 end
 
-function Bot.get_channel(_self, _channel_id)
-    return nil
+-- Returns a raw channel payload by ID, mirrors Client:get_channel (cache
+-- first, then REST fallback). nil if the bot has no client yet.
+function Bot:get_channel(channel_id)
+    if not self.client then
+        return nil
+    end
+    return self.client:get_channel(channel_id)
 end
 
 function Bot.get_role(_self, _role_id)
@@ -626,8 +631,6 @@ function Bot:generate_help_text(command_name)
 end
 
 -- Parses a prefix command out of an incoming Message and invokes its callback.
--- Requires the gateway to emit a message_create event with a Message-shaped
--- payload; see PROGRESS.md, gateway MESSAGE_CREATE dispatch is not wired yet.
 -- Tries a two word "group sub" match first (for Bot:bridge_group subcommands,
 -- registered as "group sub"), falling back to a single word match.
 function Bot:dispatch_message(message)

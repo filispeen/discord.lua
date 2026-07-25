@@ -51,4 +51,4 @@ bot:on("ready", function()
     print("Bot is ready!")
 end)
 
-bot:run("YOUR_BOT_TOKEN")
+bot:run(os.getenv("TOKEN") or "YOUR_BOT_TOKEN")

@@ -12,8 +12,11 @@
 --   gateway:send_heartbeat() - Send heartbeat
 --   gateway:send_session_description() - Send encrypted session key
 --   gateway:resume(session_id, seq) - Resume connection
---   gateway:receive_hello() - Handle HELLO event
---   gateway:receive_ready() - Handle READY event
+--   gateway:receive_hello() - Handle HELLO event (heartbeat_interval only,
+--     starts the heartbeat timer; does not emit "ready", that only
+--     happens once the real READY payload arrives)
+--   gateway:receive_ready() - Handle READY event (ssrc/ip/port/modes,
+--     emits "ready" via _dispatch_ready)
 --   gateway:receive_session_description(data) - Handle SESSION_DESCRIPTION, sets secret_key
 --   gateway:send_client_connect(user_id, ssrc) - Client connected
 --   gateway:send_client_disconnect(user_id, ssrc) - Client disconnected
@@ -133,9 +136,33 @@ function VoiceGateway:connect(endpoint, token, session_id)
     local host = endpoint:match("^([^:]+)")
     local url = "wss://" .. host .. "/?v=8"
 
-    local ws = require("coro-websocket").connect(url)
+    -- Mirrors gateway.Shard:connect(): coro-websocket.connect() needs a
+    -- parsed options table (host/port/path/tls), not a raw URL string,
+    -- and returns the low-level (res, read, write) coroutine contract
+    -- rather than an EventEmitter-style object. ws_adapter.wrap gives
+    -- this the same :on/:send/:close surface the rest of this function
+    -- (and VoiceGateway:_send/:close elsewhere in this file) expects.
+    local websocket = require("coro-websocket")
+    local ws_adapter = require("gateway.ws_adapter")
+
+    local options, parse_err = websocket.parseUrl(url)
+    if not options then
+        self:emit("error", errors.VoiceConnectError.new("Failed to parse voice endpoint: " .. tostring(parse_err)))
+        return self
+    end
+
+    local res, read, write = websocket.connect(options)
+    if not res then
+        self:emit("error", errors.VoiceConnectError.new("Failed to connect to voice endpoint: " .. tostring(read)))
+        return self
+    end
+
+    local ws = ws_adapter.wrap(res, read, write)
     self.ws = ws
 
+    -- core.emitter passes the emitter instance itself as the first
+    -- callback argument, so the actual payload is the second argument
+    -- here (matching gateway.Shard's ws:on wiring).
     ws:on("open", function()
         state.connected = true
         if self._is_reconnect then
@@ -145,7 +172,7 @@ function VoiceGateway:connect(endpoint, token, session_id)
         end
     end)
 
-    ws:on("message", function(msg)
+    ws:on("message", function(_, msg)
         local json = require("core.json_compat")
         local ok, parsed = pcall(json.decode, msg)
         if not ok or type(parsed) ~= "table" then
@@ -154,7 +181,7 @@ function VoiceGateway:connect(endpoint, token, session_id)
         self:_dispatch(parsed)
     end)
 
-    ws:on("close", function(code, reason)
+    ws:on("close", function(_, code, reason)
         state.connected = false
         self:emit("close", { code = code, reason = reason })
         if not self._closing and code ~= 1000 then
@@ -162,9 +189,11 @@ function VoiceGateway:connect(endpoint, token, session_id)
         end
     end)
 
-    ws:on("error", function(err)
+    ws:on("error", function(_, err)
         self:emit("error", errors.VoiceConnectError.new("WebSocket error: " .. tostring(err)))
     end)
+
+    ws:start_reading()
 
     return self
 end
@@ -320,26 +349,20 @@ function VoiceGateway:_send(payload)
 end
 
 -- Receive HELLO event
+-- HELLO (op 8) only ever carries heartbeat_interval on Discord's real
+-- voice gateway, unlike the main gateway's HELLO. ssrc/ip/port/modes are
+-- not available yet at this point, they only arrive later on READY (op
+-- 2); this used to read those fields off the HELLO payload anyway
+-- (always nil in practice) and fired "ready" early with incomplete data,
+-- which crashed VoiceClient:_on_ready when it tried to concatenate a nil
+-- ip into a UDP endpoint string.
 function VoiceGateway:receive_hello(data)
     local state = self.state
 
     state.heartbeat_interval = data.heartbeat_interval
-    state.ssrc = data.ssrc
-    state.ip = data.ip
-    state.port = data.port
-    state.modes = data.modes
 
     -- Start heartbeat timer
     self:_start_heartbeat()
-
-    -- Dispatch ready event
-    self:_dispatch_ready({
-        ssrc = data.ssrc,
-        ip = data.ip,
-        port = data.port,
-        modes = data.modes,
-        heartbeat_interval = data.heartbeat_interval,
-    })
 
     return true
 end

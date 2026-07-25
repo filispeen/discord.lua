@@ -84,6 +84,17 @@ function MockClient.new()
         end
         return self
     end
+    self.off = function(_self, event, callback)
+        if self._listeners[event] then
+            for i, cb in ipairs(self._listeners[event]) do
+                if cb == callback then
+                    table.remove(self._listeners[event], i)
+                    return self
+                end
+            end
+        end
+        return self
+    end
     self.voice_state_update = function() end
     setmetatable(self, MockClient)
     return self
@@ -182,6 +193,31 @@ describe("VoiceClient", function()
             end)
 
             assert.is_true(success)
+        end)
+
+        it("force disconnect unsubscribes voice_state_update/voice_server_update listeners", function()
+            assert.is_not_nil(mock_client._listeners["voice_state_update"])
+            assert.is_not_nil(mock_client._listeners["voice_server_update"])
+
+            client:disconnect(true)
+
+            assert.equals(0, #mock_client._listeners["voice_state_update"])
+            assert.equals(0, #mock_client._listeners["voice_server_update"])
+        end)
+
+        it("force disconnect does not remove listeners belonging to a different VoiceClient", function()
+            local other_channel = MockChannel.new(mock_guild)
+            other_channel.id = "channel789"
+            local other_client = VoiceClient.new(mock_client, other_channel)
+            other_client.gateway = {}
+            other_client.udp = {}
+
+            client:disconnect(true)
+
+            assert.equals(1, #mock_client._listeners["voice_state_update"])
+            assert.equals(1, #mock_client._listeners["voice_server_update"])
+            assert.equals(other_client._on_voice_state_update, mock_client._listeners["voice_state_update"][1])
+            assert.equals(other_client._on_voice_server_update, mock_client._listeners["voice_server_update"][1])
         end)
     end)
 

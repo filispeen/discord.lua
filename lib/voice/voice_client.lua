@@ -102,22 +102,29 @@ function VoiceClient:setup()
     -- main gateway (see Client:start_gateway). Discord sends both after
     -- Shard:voice_state_update(); once we have all three of session_id,
     -- token and endpoint we open the voice WebSocket.
-    self.client:on('voice_state_update', function(data)
+    -- Stored on self so disconnect(true) can unsubscribe them: self.client
+    -- is the shared main-gateway Client, so leaving these attached after
+    -- disconnect would leak a listener that keeps reacting to every future
+    -- voice_state_update/voice_server_update on this client, including
+    -- ones meant for a brand new VoiceClient created by a later connect.
+    self._on_voice_state_update = function(data)
         if data.guild_id ~= self.guild.id or data.user_id ~= self.user.id then
             return
         end
         state.session_id = data.session_id
         self:_maybe_connect_gateway()
-    end)
+    end
+    self.client:on('voice_state_update', self._on_voice_state_update)
 
-    self.client:on('voice_server_update', function(data)
+    self._on_voice_server_update = function(data)
         if data.guild_id ~= self.guild.id then
             return
         end
         state.token = data.token
         state.endpoint = data.endpoint
         self:_maybe_connect_gateway()
-    end)
+    end
+    self.client:on('voice_server_update', self._on_voice_server_update)
 
     -- Add listeners
     self.gateway:on('ready', function(data)
@@ -232,6 +239,9 @@ function VoiceClient:disconnect(force)
         if self.gateway and self.gateway.close then
             self.gateway:close()
         end
+
+        self.client:off('voice_state_update', self._on_voice_state_update)
+        self.client:off('voice_server_update', self._on_voice_server_update)
 
         self.client:voice_state_update(self.guild.id, nil, false, false)
     else

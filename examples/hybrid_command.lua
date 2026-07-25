@@ -54,4 +54,4 @@ bot:register_application_command("greet", {
     end,
 })
 
-bot:run("YOUR_BOT_TOKEN")
+bot:run(os.getenv("TOKEN") or "YOUR_BOT_TOKEN")

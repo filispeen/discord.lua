@@ -70,6 +70,11 @@ function MockWebSocket:close()
     return true
 end
 
+function MockWebSocket:start_reading()
+    return true
+end
+
+
 local VoiceGateway = require("voice.voice_gateway")
 
 describe("VoiceGateway", function()
@@ -199,12 +204,11 @@ describe("VoiceGateway", function()
             gateway.ws = MockWebSocket.new()
         end)
 
+        -- Discord's real voice gateway HELLO (op 8) only ever carries
+        -- heartbeat_interval, unlike ssrc/ip/port/modes which only arrive
+        -- later on READY (op 2).
         local hello_data = {
             heartbeat_interval = 5000,
-            ssrc = 12345,
-            ip = "10.0.0.1",
-            port = 1337,
-            modes = {"xsalsa20_poly1305_suffix"},
         }
 
         it("should handle HELLO event", function()
@@ -214,9 +218,17 @@ describe("VoiceGateway", function()
 
             assert.is_true(success)
             assert.equals(hello_data.heartbeat_interval, gateway.state.heartbeat_interval)
-            assert.equals(hello_data.ssrc, gateway.state.ssrc)
-            assert.equals(hello_data.ip, gateway.state.ip)
-            assert.equals(hello_data.port, gateway.state.port)
+        end)
+
+        it("does not emit ready from HELLO alone, only READY does that", function()
+            local received = false
+            gateway:on("ready", function()
+                received = true
+            end)
+
+            gateway:receive_hello(hello_data)
+
+            assert.is_false(received)
         end)
     end)
 
@@ -230,7 +242,7 @@ describe("VoiceGateway", function()
         end)
 
         it("starts a real timer on HELLO with the given interval", function()
-            gateway:receive_hello({ heartbeat_interval = 5000, ssrc = 1, ip = "1.2.3.4", port = 4444, modes = {} })
+            gateway:receive_hello({ heartbeat_interval = 5000 })
 
             assert.equals(1, #created_timers)
             assert.is_true(created_timers[1].started)
@@ -240,7 +252,7 @@ describe("VoiceGateway", function()
         end)
 
         it("sends a heartbeat when the timer fires", function()
-            gateway:receive_hello({ heartbeat_interval = 5000, ssrc = 1, ip = "1.2.3.4", port = 4444, modes = {} })
+            gateway:receive_hello({ heartbeat_interval = 5000 })
             local timer = created_timers[1]
 
             assert.equals(0, #gateway.ws.messages)
@@ -251,10 +263,10 @@ describe("VoiceGateway", function()
         end)
 
         it("stops the previous timer when a new HELLO restarts the heartbeat", function()
-            gateway:receive_hello({ heartbeat_interval = 5000, ssrc = 1, ip = "1.2.3.4", port = 4444, modes = {} })
+            gateway:receive_hello({ heartbeat_interval = 5000 })
             local first_timer = created_timers[1]
 
-            gateway:receive_hello({ heartbeat_interval = 6000, ssrc = 1, ip = "1.2.3.4", port = 4444, modes = {} })
+            gateway:receive_hello({ heartbeat_interval = 6000 })
 
             assert.is_true(first_timer.stopped)
             assert.equals(2, #created_timers)
@@ -262,7 +274,7 @@ describe("VoiceGateway", function()
         end)
 
         it("stops the timer on close", function()
-            gateway:receive_hello({ heartbeat_interval = 5000, ssrc = 1, ip = "1.2.3.4", port = 4444, modes = {} })
+            gateway:receive_hello({ heartbeat_interval = 5000 })
             local timer = created_timers[1]
 
             gateway:close()
@@ -420,15 +432,43 @@ describe("VoiceGateway", function()
             handlers = {}
             opened_ws = MockWebSocket.new()
             opened_ws.on = function(_self, event, callback)
-                handlers[event] = callback
+                -- Production code registers listeners the same way
+                -- gateway.Shard does: ws:on(event, function(_, ...) ... end),
+                -- since core.emitter passes the emitter itself as the first
+                -- callback argument. Wrapping here lets every existing
+                -- handlers[event](...) call in this describe block keep
+                -- passing only the real payload args.
+                handlers[event] = function(...)
+                    return callback(opened_ws, ...)
+                end
             end
+            -- VoiceGateway:connect now goes through parseUrl -> connect ->
+            -- gateway.ws_adapter.wrap (mirrors gateway.Shard:connect), so
+            -- the fake here plugs into that same seam: parseUrl just
+            -- passes the url through, connect returns a dummy (res, read,
+            -- write) triple, and ws_adapter.wrap is stubbed to hand back
+            -- opened_ws directly instead of building a real coroutine
+            -- EventEmitter, keeping every existing handlers[event](...)
+            -- assertion in this describe block unchanged.
             package.loaded["coro-websocket"] = {
-                connect = function(url)
-                    opened_ws.url = url
+                parseUrl = function(url)
+                    return { url = url }
+                end,
+                connect = function(options)
+                    opened_ws.url = options.url
+                    return {}, function() end, function() end
+                end,
+            }
+            package.loaded["gateway.ws_adapter"] = {
+                wrap = function(_res, _read, _write)
                     return opened_ws
                 end,
             }
             gateway = VoiceGateway.new(mock_client, "guild123")
+        end)
+
+        after_each(function()
+            package.loaded["gateway.ws_adapter"] = nil
         end)
 
         it("opens a wss url built from the raw endpoint host", function()
@@ -456,11 +496,27 @@ describe("VoiceGateway", function()
             gateway:connect("guildvoice.discord.gg", "tok", "sess1")
             handlers["message"](json.encode({
                 op = enums.HELLO,
-                d = { heartbeat_interval = 5000, ssrc = 1, ip = "1.2.3.4", port = 4444, modes = {} },
+                d = { heartbeat_interval = 5000 },
             }))
 
             assert.equals(5000, gateway.state.heartbeat_interval)
-            assert.equals(1, gateway.state.ssrc)
+        end)
+
+        it("routes a READY frame to receive_ready and emits ready with ssrc/ip/port/modes", function()
+            gateway:connect("guildvoice.discord.gg", "tok", "sess1")
+            local received
+            gateway:on("ready", function(data)
+                received = data
+            end)
+            handlers["message"](json.encode({
+                op = enums.READY,
+                d = { ssrc = 1, ip = "1.2.3.4", port = 4444, modes = { "xsalsa20_poly1305_suffix" } },
+            }))
+
+            assert.is_not_nil(received)
+            assert.equals(1, received.ssrc)
+            assert.equals("1.2.3.4", received.ip)
+            assert.equals(4444, received.port)
         end)
 
         it("routes a SESSION_DESCRIPTION frame to receive_session_description", function()
@@ -539,13 +595,30 @@ describe("VoiceGateway", function()
         before_each(function()
             sockets = {}
             handler_list = {}
+            -- Same seam as the "Connect" describe block above: fake
+            -- parseUrl/connect just pass the url through, and
+            -- gateway.ws_adapter.wrap is stubbed to return a fresh
+            -- MockWebSocket per connect() call so reconnects create a new
+            -- "socket" entry the same way the old direct-connect mock did.
             package.loaded["coro-websocket"] = {
-                connect = function(url)
+                parseUrl = function(url)
+                    return { url = url }
+                end,
+                connect = function(options)
+                    return { url = options.url }, function() end, function() end
+                end,
+            }
+            package.loaded["gateway.ws_adapter"] = {
+                wrap = function(res, _read, _write)
                     local ws = MockWebSocket.new()
-                    ws.url = url
+                    ws.url = res.url
                     local handlers = {}
                     ws.on = function(_self, event, callback)
-                        handlers[event] = callback
+                        -- Same emitter-shape wrapping as the "Connect"
+                        -- describe block above.
+                        handlers[event] = function(...)
+                            return callback(ws, ...)
+                        end
                     end
                     table.insert(sockets, ws)
                     table.insert(handler_list, handlers)
@@ -553,6 +626,10 @@ describe("VoiceGateway", function()
                 end,
             }
             gateway = VoiceGateway.new(mock_client, "guild123")
+        end)
+
+        after_each(function()
+            package.loaded["gateway.ws_adapter"] = nil
         end)
 
         it("does not reconnect on a clean close (code 1000)", function()

@@ -69,17 +69,19 @@ end
 
 -- Helper: throw appropriate error based on response
 function Client.throw_error(_self, status, data)
-    if status == 429 then
+    if status == 401 then
+        error(errors.HTTPException.new("Unauthorized: invalid or expired bot token", status, data), 0)
+    elseif status == 429 then
         local retry_after = data and data.retry_after or 0
-        return errors.RateLimited.new("Rate limited by Discord", retry_after)
+        error(errors.RateLimited.new("Rate limited by Discord", retry_after), 0)
     elseif status == 404 then
-        return errors.NotFound.new("Resource not found", data and data.id)
+        error(errors.NotFound.new("Resource not found", data and data.id), 0)
     elseif status == 403 then
-        return errors.Forbidden.new("Permission denied")
+        error(errors.Forbidden.new("Permission denied"), 0)
     elseif status >= 500 then
-        return errors.HTTPException.new("Internal server error", status, data)
+        error(errors.HTTPException.new("Internal server error", status, data), 0)
     else
-        return errors.HTTPException.new("HTTP error: " .. status, status, data)
+        error(errors.HTTPException.new("HTTP error: " .. status, status, data), 0)
     end
 end
 
@@ -115,21 +117,23 @@ function Client:request(method, endpoint, options)
     -- Build URL
     local url = self.base_url .. endpoint
 
-    -- Make request using coro-http
-    local http = require("http")
-    local response, err = http.request(url, {
-        method = method,
-        headers = headers,
-        body = request_body,
-    })
+    -- Convert header map to coro-http's array-of-pairs format
+    local header_list = {}
+    for k, v in pairs(headers) do
+        header_list[#header_list + 1] = { k, v }
+    end
 
-    if not response then
-        error("Request failed: " .. tostring(err), 0)
+    -- Make request using coro-http
+    local http = require("coro-http")
+    local ok, res, response_body = pcall(http.request, method, url, header_list, request_body)
+
+    if not ok then
+        error("Request failed: " .. tostring(res), 0)
     end
 
     -- Check status code
-    local status = response.status
-    local body = response.body
+    local status = res.code
+    local body = response_body
 
     if status >= 400 then
         return self:throw_error(status, body)
@@ -137,10 +141,10 @@ function Client:request(method, endpoint, options)
 
     -- Parse JSON response
     local parsed
-    local success, result = pcall(json.decode, response.body)
+    local success, result = pcall(json.decode, body)
     if not success then
         -- Not JSON, return as string
-        parsed = response.body
+        parsed = body
     else
         parsed = result
     end

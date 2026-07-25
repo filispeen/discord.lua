@@ -8,28 +8,27 @@ local class = require("core.class")
 
 -- Mock luv for testing
 local uv = {
-    timer = {
-        new = function()
-            local timer = {
-                start = function() end,
-                stop = function() end,
-            }
-            return timer
-        end
-    }
+    new_timer = function()
+        local timer = {
+            start = function() end,
+            stop = function() end,
+        }
+        return timer
+    end
 }
 package.loaded["luv"] = uv
 
 -- Mock coro-websocket for testing
-local mock_ws = {
-    on = function() end,
-    send = function() end,
-    close = function() end,
-}
+local function mock_parse_url(url)
+    return { host = "gateway.discord.gg", port = 443, tls = true, pathname = url }
+end
+local function mock_read() return nil end
+local function mock_write() end
 package.loaded["coro-websocket"] = {
     connect = function()
-        return mock_ws
+        return {}, mock_read, mock_write
     end,
+    parseUrl = mock_parse_url,
 }
 
 local Shard = require("gateway.shard")
@@ -47,14 +46,17 @@ end
 function MockHTTPClient:get(endpoint, callback)
     if endpoint == "/gateway/bot" then
         return {
-            data = {
-                shards = 3,
-                heartbeat_interval = 5000,
+            url = "wss://gateway.discord.gg",
+            shards = 3,
+            session_start_limit = {
+                total = 1000,
+                remaining = 999,
+                reset_after = 0,
                 max_concurrency = 2,
-            }
+            },
         }
     end
-    return { data = { url = "wss://gateway.discord.gg" } }
+    return { url = "wss://gateway.discord.gg" }
 end
 
 describe("Shard", function()
@@ -180,23 +182,89 @@ describe("Shard", function()
         -- Regression test: connect() previously only bound listeners to a local
         -- ws variable and never assigned self.ws, so Shard:send and Shard:close
         -- silently did nothing for the lifetime of the shard.
+        --
+        -- Uses a blocking mock_read (like the identify test below) so the
+        -- ws_adapter reading coroutine does not immediately observe a closed
+        -- connection and tear self.ws back down via Shard:close before this
+        -- assertion runs.
+        local function blocking_read() coroutine.yield() end
+        local function noop_write() end
+        package.loaded["coro-websocket"] = {
+            connect = function() return {}, blocking_read, noop_write end,
+            parseUrl = mock_parse_url,
+        }
+        package.loaded["gateway.shard"] = nil
+        local FreshShard = require("gateway.shard")
+
         local mock_client = MockHTTPClient.new("test_token")
-        local shard = Shard.new(mock_client, 0, 3)
+        local shard = FreshShard.new(mock_client, 0, 3)
 
         shard:connect()
 
         assert.is_not_nil(shard.ws)
+
+        -- restore the shared mock for any tests that run after this one
+        package.loaded["coro-websocket"] = {
+            connect = function() return {}, mock_read, mock_write end,
+            parseUrl = mock_parse_url,
+        }
+        package.loaded["gateway.shard"] = nil
+    end)
+
+    it("voice_state_update serializes channel_id=nil as JSON null, not an omitted field", function()
+        -- Discord's VOICE_STATE_UPDATE payload requires channel_id to be
+        -- present and explicitly null to signal "leave voice channel".
+        -- Lua drops table keys whose value is nil, so if the payload were
+        -- built with channel_id = nil directly (instead of json.null),
+        -- the field would be missing entirely from the encoded JSON,
+        -- which is what caused Discord to close the whole gateway
+        -- connection instead of just processing the leave.
+        local sent = {}
+        local function mock_read() coroutine.yield() end
+        local function mock_write(message)
+            if message then
+                table.insert(sent, message.payload)
+            end
+        end
+        package.loaded["coro-websocket"] = {
+            connect = function() return {}, mock_read, mock_write end,
+            parseUrl = mock_parse_url,
+        }
+        package.loaded["gateway.shard"] = nil
+        local FreshShard = require("gateway.shard")
+        local json = require("core.json_compat")
+
+        local mock_client = MockHTTPClient.new("test_token")
+        local shard = FreshShard.new(mock_client, 0, 3)
+        shard:connect()
+        shard:voice_state_update("guild123", nil, false, false)
+
+        assert.equals(1, #sent)
+        local decoded = json.decode(sent[1])
+        assert.is_true(decoded.d.channel_id == nil or decoded.d.channel_id == json.null)
+        assert.is_true(sent[1]:find('"channel_id":null', 1, true) ~= nil)
+
+        package.loaded["coro-websocket"] = {
+            connect = function() return {}, mock_read, mock_write end,
+            parseUrl = mock_parse_url,
+        }
+        package.loaded["gateway.shard"] = nil
     end)
 
     it("should actually deliver identify through send after self.ws is set", function()
         local sent = {}
-        local local_mock_ws = {
-            on = function() end,
-            send = function(_self, data) table.insert(sent, data) end,
-            close = function() end,
-        }
+        -- Blocks forever, simulating a real coro-http read() that only
+        -- resumes on the libuv event loop. Prevents the ws_adapter's
+        -- reading coroutine from closing the socket before identify runs.
+        local function mock_read() coroutine.yield() end
+        local function mock_write(message)
+            if message then
+                table.insert(sent, message.payload)
+            end
+        end
         package.loaded["coro-websocket"] = {
-            connect = function() return local_mock_ws end,
+            connect = function() return {}, mock_read, mock_write end,
+            parseUrl = mock_parse_url,
         }
         package.loaded["gateway.shard"] = nil
         local FreshShard = require("gateway.shard")
@@ -210,7 +278,8 @@ describe("Shard", function()
 
         -- restore the shared mock for any tests that run after this one
         package.loaded["coro-websocket"] = {
-            connect = function() return mock_ws end,
+            connect = function() return {}, mock_read, mock_write end,
+            parseUrl = mock_parse_url,
         }
         package.loaded["gateway.shard"] = nil
     end)

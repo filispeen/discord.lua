@@ -27,6 +27,33 @@ local function extract_id_from_guild(ctx)
     return guild
 end
 
+-- Helper to check if ctx's author has any role matching predicate(role)
+local function author_has_role(ctx, predicate)
+    if not ctx.guild then
+        return false
+    end
+    local author_id = extract_id_from_author(ctx)
+    local member = ctx.bot:get_member(author_id)
+    local member_roles = member and member.roles or ctx.author.roles or {}
+
+    local role_ids = {}
+    for _, role in ipairs(member_roles) do
+        if type(role) == "table" then
+            table.insert(role_ids, role.id or role.name)
+        else
+            table.insert(role_ids, role)
+        end
+    end
+
+    for _, role_id in ipairs(role_ids) do
+        local role = ctx.bot:get_role(role_id)
+        if role and predicate(role) then
+            return true
+        end
+    end
+    return false
+end
+
 -- Base check class
 M.Check = function(name, fn)
     return {
@@ -47,96 +74,27 @@ end
 -- Admin check
 function M.admin(_func)
     return M.Check("admin", function(ctx)
-        if not ctx.guild then
-            return false
-        end
-        local author_id = extract_id_from_author(ctx)
-        local member = ctx.bot:get_member(author_id)
-        local member_roles = member and member.roles or ctx.author.roles or {}
-
-        -- Convert roles to array of strings for consistent iteration
-        local role_ids = {}
-        for _, role in ipairs(member_roles) do
-            if type(role) == "table" then
-                table.insert(role_ids, role.id or role.name)
-            else
-                table.insert(role_ids, role)
-            end
-        end
-
-        for _, role_id in ipairs(role_ids) do
-            local role = ctx.bot:get_role(role_id)
-            if role then
-                if role.admin or role.permissions and permission.has_permission(role.permissions, permission.ADMINISTRATOR) then
-                    return true
-                end
-            end
-        end
-        return false
+        return author_has_role(ctx, function(role)
+            return role.admin or (role.permissions and permission.has_permission(role.permissions, permission.ADMINISTRATOR))
+        end)
     end)
 end
 
 -- Staff check
 function M.staff(_func)
     return M.Check("staff", function(ctx)
-        if not ctx.guild then
-            return false
-        end
-        local author_id = extract_id_from_author(ctx)
-        local member = ctx.bot:get_member(author_id)
-        local member_roles = member and member.roles or ctx.author.roles or {}
-
-        -- Convert roles to array of strings for consistent iteration
-        local role_ids = {}
-        for _, role in ipairs(member_roles) do
-            if type(role) == "table" then
-                table.insert(role_ids, role.id or role.name)
-            else
-                table.insert(role_ids, role)
-            end
-        end
-
-        for _, role_id in ipairs(role_ids) do
-            local role = ctx.bot:get_role(role_id)
-            if role then
-                if role.staff or role.name == "Staff" then
-                    return true
-                end
-            end
-        end
-        return false
+        return author_has_role(ctx, function(role)
+            return role.staff or role.name == "Staff"
+        end)
     end)
 end
 
 -- Mod check
 function M.mod(_func)
     return M.Check("mod", function(ctx)
-        if not ctx.guild then
-            return false
-        end
-        local author_id = extract_id_from_author(ctx)
-        local member = ctx.bot:get_member(author_id)
-        local member_roles = member and member.roles or ctx.author.roles or {}
-
-        -- Convert roles to array of strings for consistent iteration
-        local role_ids = {}
-        for _, role in ipairs(member_roles) do
-            if type(role) == "table" then
-                table.insert(role_ids, role.id or role.name)
-            else
-                table.insert(role_ids, role)
-            end
-        end
-
-        for _, role_id in ipairs(role_ids) do
-            local role = ctx.bot:get_role(role_id)
-            if role then
-                if role.mod or role.name == "Mod" then
-                    return true
-                end
-            end
-        end
-        return false
+        return author_has_role(ctx, function(role)
+            return role.mod or role.name == "Mod"
+        end)
     end)
 end
 

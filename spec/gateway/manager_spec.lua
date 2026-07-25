@@ -22,14 +22,14 @@ local uv = {
 package.loaded["luv"] = uv
 
 -- Mock coro-websocket for testing
-local mock_ws = {
-    on = function() end,
-    send = function() end,
-    close = function() end,
-}
+local function mock_read() return nil end
+local function mock_write() end
 package.loaded["coro-websocket"] = {
     connect = function()
-        return mock_ws
+        return {}, mock_read, mock_write
+    end,
+    parseUrl = function(url)
+        return { host = "gateway.discord.gg", port = 443, tls = true, pathname = url }
     end,
 }
 

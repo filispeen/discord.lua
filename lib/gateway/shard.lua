@@ -57,6 +57,7 @@ function Shard.new(client, shard_id, total_shards)
         total_shards = total_shards,
         ws = nil,
         listeners = {},
+        _state = {},
     }
     setmetatable(self, { __index = Shard })
     self:reset_state()
@@ -82,13 +83,23 @@ function Shard:connect()
     end
 
     -- Get gateway URL
-    local gateway_url = self.client:get("/gateway/bot")
-    if not gateway_url then
+    local gateway_info = self.client:get("/gateway/bot")
+    if not gateway_info or not gateway_info.url then
         error("Failed to get gateway URL")
     end
 
     -- Create WebSocket connection
-    local ws = require("coro-websocket").connect(gateway_url)
+    local websocket = require("coro-websocket")
+    local ws_adapter = require("gateway.ws_adapter")
+    local options, parse_err = websocket.parseUrl(gateway_info.url .. "/?v=10&encoding=json")
+    if not options then
+        error("Failed to parse gateway URL: " .. tostring(parse_err))
+    end
+    local res, read, write = websocket.connect(options)
+    if not res then
+        error("Failed to connect to gateway: " .. tostring(read))
+    end
+    local ws = ws_adapter.wrap(res, read, write)
     self.ws = ws
 
     -- Handle open event, real identify happens after HELLO (op 10) arrives
@@ -97,7 +108,9 @@ function Shard:connect()
     end)
 
     -- Handle message event
-    ws:on("message", function(msg)
+    -- core.emitter passes the emitter instance itself as the first callback
+    -- argument, so the actual payload is the second argument here.
+    ws:on("message", function(_, msg)
         local ok, parsed = pcall(function()
             return json.decode(msg)
         end)
@@ -109,14 +122,16 @@ function Shard:connect()
     end)
 
     -- Handle close event
-    ws:on("close", function(code, reason)
+    ws:on("close", function(_, code, reason)
         self:close(code, reason)
     end)
 
     -- Handle error event
-    ws:on("error", function(err)
+    ws:on("error", function(_, err)
         self:emit("error", errors.GatewayError.create("WebSocket error: " .. tostring(err)))
     end)
+
+    ws:start_reading()
 
     return self
 end
@@ -137,12 +152,20 @@ end
 
 -- Send voice state update (opcode 4), used to join, move between, or
 -- leave a voice channel. channel_id = nil disconnects from voice.
+-- Discord's VOICE_STATE_UPDATE payload requires channel_id to be present
+-- and explicitly null to signal "leave", not merely absent from the
+-- payload. Lua tables drop keys whose value is nil, so encoding
+-- channel_id = nil directly would omit the field entirely instead of
+-- serializing it as JSON null, producing a malformed leave request that
+-- Discord responds to by closing the whole gateway connection (not just
+-- the voice one). json.null is the sentinel core.json_compat's encoder
+-- recognizes and serializes as a real JSON null.
 function Shard:voice_state_update(guild_id, channel_id, self_mute, self_deaf)
     self:send({
         op = opcodes.VOICE_STATE_UPDATE,
         d = {
             guild_id = guild_id,
-            channel_id = channel_id,
+            channel_id = channel_id or json.null,
             self_mute = self_mute or false,
             self_deaf = self_deaf or false,
         },
@@ -270,10 +293,10 @@ function Shard:start_heartbeat()
     -- Clear existing timer
     self:clear_heartbeat()
 
-    local timer = uv.timer:new(function()
+    local timer = uv.new_timer()
+    timer:start(interval, interval, function()
         self:send_heartbeat()
     end)
-    timer:start(interval, interval)
     self._state.heartbeat_timer = timer
 end
 

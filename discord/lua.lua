@@ -14,7 +14,7 @@
 --     INTENTS, combine_intents, default_intents, all_intents, OPTION_TYPE.
 --     Exposed here so bots don't need a separate require("core.enums").
 
-package.path = package.path .. ";lib/?.lua;lib/?/?.lua;deps/?.lua;deps/?/init.lua"
+package.path = package.path .. ";lib/?.lua;lib/?/?.lua;deps/?.lua;deps/?/init.lua;deps/secure-socket/?.lua"
 
 local Bot = require("commands.bot")
 local enums = require("core.enums")
