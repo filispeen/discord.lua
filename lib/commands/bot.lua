@@ -678,8 +678,13 @@ function Bot:run(token)
     if token then
         self.token = token
     end
-    self:connect()
-    self.client:start_gateway()
+    local ok, err = pcall(function()
+        self:connect()
+        self.client:start_gateway()
+    end)
+    if not ok then
+        error(tostring(err), 0)
+    end
     return self
 end
 
