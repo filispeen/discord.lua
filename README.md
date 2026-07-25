@@ -53,7 +53,7 @@ bot:on("ready", function()
     print("Bot is ready!")
 end)
 
-bot:command("ping", function(ctx)
+bot:register_command("ping", function(ctx)
     ctx:reply("Pong!")
 end)
 
