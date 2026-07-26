@@ -195,6 +195,20 @@ function Bot:message_command(options)
     return cmd
 end
 
+-- Clears self.interactions (Bot:interaction custom_id callbacks) and
+-- self.components (Bot:component Views), without touching command_tree
+-- or self.commands. Called automatically once at the start of every
+-- Bot:connect() (not on every gateway ready, which also fires on plain
+-- reconnects and would otherwise drop live component/interaction routing
+-- on a normal reconnect, not just on an intentional hot-reload). Safe to
+-- call again manually too, e.g. mid-session before re-registering
+-- bot:interaction/bot:component callbacks without a full reconnect.
+function Bot:clear_interactions()
+    self.interactions = {}
+    self.components = {}
+    return self
+end
+
 -- Fetches the application id if needed, then registers all pending
 -- application commands with Discord. Must be called after connect().
 function Bot:sync_commands()
@@ -558,6 +572,14 @@ end
 
 -- Connects the underlying gateway/http client without blocking, useful in tests.
 function Bot:connect()
+    -- Runs once per Bot:connect() call, unlike the "ready" handler below
+    -- which fires again on every gateway reconnect. Clears any
+    -- interaction/component callbacks left over from a previous
+    -- connect() in the same process (hot-reload flows that call
+    -- Bot:connect() again), so re-running setup code doesn't stack new
+    -- bot:interaction/bot:component registrations on top of stale ones.
+    self:clear_interactions()
+
     local Client = require("models.client")
     self.client = Client.new(self.token, self.ratelimiter, self.intents)
     self.client:_create_http()

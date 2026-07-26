@@ -164,6 +164,58 @@ describe("Bot", function()
         assert.equals(view, bot.components[1])
     end)
 
+    describe("Bot:clear_interactions", function()
+        it("empties self.interactions and self.components", function()
+            local bot = Bot.new("token")
+            bot:interaction("confirm", function() end)
+            bot:component({ items = {} })
+
+            bot:clear_interactions()
+
+            assert.same({}, bot.interactions)
+            assert.same({}, bot.components)
+        end)
+
+        it("does not touch self.commands or command_tree", function()
+            local bot = Bot.new("token")
+            bot:command("ping", function() end)
+            bot.command_tree:add({ name = "ping" })
+
+            bot:clear_interactions()
+
+            assert.is_not_nil(bot.commands["ping"])
+            assert.is_not_nil(bot.command_tree:get("ping"))
+        end)
+
+        it("returns self for chaining", function()
+            local bot = Bot.new("token")
+            assert.equals(bot, bot:clear_interactions())
+        end)
+
+        it("stops a previously registered custom_id callback from firing after clearing", function()
+            local bot = Bot.new("token")
+            local received = nil
+            bot:interaction("confirm", function(interaction) received = interaction.custom_id end)
+
+            bot:clear_interactions()
+            local handled = bot:dispatch_interaction({ data = { custom_id = "confirm" } })
+
+            assert.is_false(handled)
+            assert.is_nil(received)
+        end)
+
+        it("is called automatically by Bot:connect, clearing interactions registered beforehand", function()
+            local bot = Bot.new("token")
+            bot:interaction("confirm", function() end)
+            bot:component({ items = {} })
+
+            bot:connect()
+
+            assert.same({}, bot.interactions)
+            assert.same({}, bot.components)
+        end)
+    end)
+
     it("registers and dispatches an interaction callback by custom_id", function()
         local bot = Bot.new("token")
         local received = nil
