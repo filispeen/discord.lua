@@ -46,6 +46,14 @@ describe("CommandTree", function()
         assert.is_nil(tree:get("ping"))
     end)
 
+    it("finds a global command even when the lookup passes a guild_id", function()
+        local tree = CommandTree.new(make_http({}))
+        local cmd = ApplicationCommand.new("ping", "Replies with pong")
+        tree:add(cmd)
+
+        assert.equals(cmd, tree:get("ping", "111"))
+    end)
+
     it("syncs global commands via PUT when none are registered remotely", function()
         local http = make_http({ ["/applications/1/commands"] = {} })
         local tree = CommandTree.new(http)
@@ -148,6 +156,20 @@ describe("CommandTree", function()
             assert.equals(cmd, resolved)
             assert.equals(1, #checks)
             assert.equals(check, checks[1])
+        end)
+
+        it("resolves a global command when the interaction carries a real guild_id", function()
+            local tree = CommandTree.new(make_http({}))
+            local cmd = ApplicationCommand.new("ping", "Replies with pong")
+            cmd.callback = function() end
+            tree:add(cmd)
+
+            local resolved = tree:resolve({
+                guild_id = "123456789",
+                data = { name = "ping", options = {} },
+            })
+
+            assert.equals(cmd, resolved)
         end)
 
         it("returns nil, {} when no command matches", function()

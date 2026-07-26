@@ -169,7 +169,7 @@ describe("Bot", function()
         local received = nil
 
         bot:interaction("confirm", function(interaction) received = interaction.custom_id end)
-        local handled = bot:dispatch_interaction({ custom_id = "confirm" })
+        local handled = bot:dispatch_interaction({ data = { custom_id = "confirm" } })
 
         assert.is_true(handled)
         assert.equals("confirm", received)
@@ -178,9 +178,26 @@ describe("Bot", function()
     it("returns false when dispatching an interaction with no matching callback", function()
         local bot = Bot.new("token")
 
-        local handled = bot:dispatch_interaction({ custom_id = "unknown" })
+        local handled = bot:dispatch_interaction({ data = { custom_id = "unknown" } })
 
         assert.is_false(handled)
+    end)
+
+    it("dispatches a realistic type 3 MESSAGE_COMPONENT payload with custom_id nested under data", function()
+        local bot = Bot.new("token")
+        local received = nil
+
+        bot:interaction("vote_up", function(interaction) received = interaction.custom_id end)
+
+        local handled = bot:dispatch_interaction({
+            id = "int1",
+            token = "tok1",
+            type = 3,
+            data = { custom_id = "vote_up", component_type = 2 },
+        })
+
+        assert.is_true(handled)
+        assert.equals("vote_up", received)
     end)
 
     it("dispatches a prefix command from an incoming message", function()
@@ -268,7 +285,7 @@ describe("Bot", function()
         }))
         bot:component(view)
 
-        local handled = bot:dispatch_interaction({ custom_id = "click" })
+        local handled = bot:dispatch_interaction({ data = { custom_id = "click" } })
 
         assert.is_true(handled)
         assert.is_true(clicked)
@@ -289,7 +306,7 @@ describe("Bot", function()
         view:stop()
         bot:component(view)
 
-        local handled = bot:dispatch_interaction({ custom_id = "click" })
+        local handled = bot:dispatch_interaction({ data = { custom_id = "click" } })
 
         assert.is_false(handled)
         assert.is_false(clicked)
@@ -307,7 +324,7 @@ describe("Bot", function()
         local received = nil
         bot:interaction("confirm", function(interaction) received = interaction.custom_id end)
 
-        local handled = bot:dispatch_interaction({ custom_id = "confirm" })
+        local handled = bot:dispatch_interaction({ data = { custom_id = "confirm" } })
 
         assert.is_true(handled)
         assert.equals("confirm", received)

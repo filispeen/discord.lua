@@ -25,6 +25,17 @@ local VALID_STYLES = {
     link = true,
 }
 
+-- Discord's button component requires style as an integer
+-- (https://discord.com/developers/docs/interactions/message-components#button-object-button-styles),
+-- never the string name used by this library's public API.
+local STYLE_TO_INT = {
+    primary = 1,
+    secondary = 2,
+    success = 3,
+    danger = 4,
+    link = 5,
+}
+
 local Button = class("Button", Item)
 
 function Button.new(opts)
@@ -75,7 +86,7 @@ end
 function Button:to_component()
     local component = {
         type = 2,
-        style = self.style,
+        style = STYLE_TO_INT[self.style],
         disabled = self.disabled,
     }
 

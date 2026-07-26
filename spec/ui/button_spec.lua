@@ -66,16 +66,30 @@ describe("Button", function()
         local component = button:to_component()
 
         assert.equals(2, component.type)
-        assert.equals("danger", component.style)
+        assert.equals(4, component.style)
         assert.equals("Click me", component.label)
         assert.equals("b1", component.custom_id)
         assert.equals(false, component.disabled)
+    end)
+
+    it("serializes every style name to Discord's integer button style", function()
+        local expected = {
+            primary = 1,
+            secondary = 2,
+            success = 3,
+            danger = 4,
+        }
+        for style, int_value in pairs(expected) do
+            local button = Button.new({ custom_id = "b1", style = style })
+            assert.equals(int_value, button:to_component().style)
+        end
     end)
 
     it("serializes a link button with url instead of custom_id", function()
         local button = Button.new({ label = "Docs", url = "https://example.com" })
         local component = button:to_component()
 
+        assert.equals(5, component.style)
         assert.equals("https://example.com", component.url)
         assert.is_nil(component.custom_id)
     end)

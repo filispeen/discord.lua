@@ -7,9 +7,11 @@
 -- Public Contract:
 --   ComponentContext.new(interaction, client) -> ComponentContext
 --     Wraps a raw MESSAGE_COMPONENT interaction payload. All fields from
---     the raw interaction (custom_id, message, member, guild_id, etc) are
---     copied onto the context, so existing code reading interaction.custom_id
---     directly keeps working.
+--     the raw interaction (message, member, guild_id, etc) are copied
+--     onto the context. custom_id, component_type and values are hoisted
+--     from interaction.data onto the context's top level (ctx.custom_id,
+--     not ctx.data.custom_id), since Discord always nests them there and
+--     never sends them on the interaction's own top level.
 --
 --   ComponentContext:respond(content, opts) -> Response
 --     Sends a new message in response to the interaction (type 4).
@@ -37,6 +39,16 @@ function ComponentContext.new(interaction, client)
     self.bot = client
     self.interaction_id = interaction.id
     self.interaction_token = interaction.token
+
+    -- Discord nests custom_id and component_type inside interaction.data,
+    -- never on the interaction's top level; hoist them here so callback
+    -- code can read ctx.custom_id directly, matching the doc comment
+    -- above and every example's usage.
+    if interaction.data then
+        self.custom_id = interaction.data.custom_id
+        self.component_type = interaction.data.component_type
+        self.values = interaction.data.values
+    end
 
     return self
 end

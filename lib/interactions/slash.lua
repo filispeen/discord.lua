@@ -12,10 +12,14 @@
 --     via normal Python inheritance.
 --
 --   SlashCommandContext:author -> User
---     Interaction author.
+--     Interaction author. Built from interaction.member.user for guild
+--     interactions, interaction.user for DMs (Discord only ever sends one
+--     of the two).
 --
---   SlashCommandContext:guild -> Guild or nil
---     Guild (nil for DMs).
+--   SlashCommandContext:guild -> table or nil
+--     Minimal { id = ... } table built from interaction.guild_id, since
+--     Discord's interaction payload never includes a full guild object.
+--     nil for DMs.
 --
 --   SlashCommandContext:channel -> Channel
 --     Channel.
@@ -50,9 +54,29 @@ M.SlashCommandContext = {
 
 -- Create a new context
 function M.new(interaction, client, context_class)
+    -- Discord only ever sends one of interaction.user or
+    -- interaction.member.user, never both: interaction.user is set for
+    -- DM interactions, interaction.member.user for guild interactions.
+    -- Falling back to interaction.user alone left ctx.author nil for
+    -- every real guild invocation.
+    local author = interaction.user
+    if not author and interaction.member then
+        author = interaction.member.user
+    end
+
+    -- Discord's interaction payload does not include a full guild
+    -- object, only interaction.guild_id (a snowflake string), so ctx.guild
+    -- is built as a minimal { id = ... } table rather than left as the
+    -- always-nil interaction.guild field. nil for DMs, matching the
+    -- documented "Guild or nil" contract.
+    local guild = nil
+    if interaction.guild_id then
+        guild = { id = interaction.guild_id }
+    end
+
     local ctx = {
-        author = interaction.user,
-        guild = interaction.guild,
+        author = author,
+        guild = guild,
         channel = interaction.channel,
         message = interaction.message,
         args = {},
@@ -68,7 +92,7 @@ function M.new(interaction, client, context_class)
     -- Parse arguments from interaction data
     if interaction.data and interaction.data.options then
         for _, opt in ipairs(interaction.data.options) do
-            ctx:parse_option(opt)
+            ctx:parse_option(opt, interaction.data.resolved)
         end
     end
 
@@ -91,9 +115,13 @@ function M.new(interaction, client, context_class)
     return ctx
 end
 
--- Parse an option
-function M.SlashCommandContext:parse_option(opt)
+-- Parse an option. resolved is interaction.data.resolved, needed to look
+-- up the actual User/Channel/Role/Member objects for option types 6-8/10,
+-- since Discord only sends their snowflake id as opt.value, never an
+-- inline user/channel/role/mentionable field on the option itself.
+function M.SlashCommandContext:parse_option(opt, resolved)
     local name = opt.name
+    resolved = resolved or {}
 
     if opt.type == 3 then
         -- String option
@@ -105,45 +133,76 @@ function M.SlashCommandContext:parse_option(opt)
         -- Boolean option
         self.args[name] = opt.value == true or opt.value == "true"
     elseif opt.type == 6 then
-        -- User option
-        self.args[name] = {
-            id = opt.user.id,
-            discriminator = opt.user.discriminator,
-            username = opt.user.username,
-            global_name = opt.user.global_name,
-        }
+        -- User option: resolved via interaction.data.resolved.users,
+        -- opt.value is just the user id.
+        local user = resolved.users and resolved.users[opt.value]
+        if user then
+            self.args[name] = {
+                id = user.id,
+                discriminator = user.discriminator,
+                username = user.username,
+                global_name = user.global_name,
+            }
+        else
+            self.args[name] = { id = opt.value }
+        end
     elseif opt.type == 7 then
-        -- Channel option
-        self.args[name] = {
-            id = opt.channel.id,
-            type = opt.channel.type,
-            name = opt.channel.name,
-        }
+        -- Channel option: resolved via interaction.data.resolved.channels,
+        -- opt.value is just the channel id.
+        local channel = resolved.channels and resolved.channels[opt.value]
+        if channel then
+            self.args[name] = {
+                id = channel.id,
+                type = channel.type,
+                name = channel.name,
+            }
+        else
+            self.args[name] = { id = opt.value }
+        end
     elseif opt.type == 8 then
-        -- Role option
-        self.args[name] = {
-            id = opt.role.id,
-            name = opt.role.name,
-        }
+        -- Role option: resolved via interaction.data.resolved.roles,
+        -- opt.value is just the role id.
+        local role = resolved.roles and resolved.roles[opt.value]
+        if role then
+            self.args[name] = {
+                id = role.id,
+                name = role.name,
+            }
+        else
+            self.args[name] = { id = opt.value }
+        end
     elseif opt.type == 10 then
-        -- Mentionable option
-        self.args[name] = {
-            id = opt.mentionable.id,
-            type = opt.mentionable.type,
-            name = opt.mentionable.name,
-        }
+        -- Mentionable option: opt.value can be a user id or a role id,
+        -- check resolved.users first, then resolved.roles.
+        local user = resolved.users and resolved.users[opt.value]
+        local role = resolved.roles and resolved.roles[opt.value]
+        if user then
+            self.args[name] = {
+                id = user.id,
+                type = "user",
+                name = user.global_name or user.username,
+            }
+        elseif role then
+            self.args[name] = {
+                id = role.id,
+                type = "role",
+                name = role.name,
+            }
+        else
+            self.args[name] = { id = opt.value }
+        end
     elseif opt.type == 1 then
         -- Subcommand
         if opt.options then
             for _, sub in ipairs(opt.options) do
-                self:parse_option(sub)
+                self:parse_option(sub, resolved)
             end
         end
     elseif opt.type == 2 then
         -- Subcommand group
         if opt.options then
             for _, sub in ipairs(opt.options) do
-                self:parse_option(sub)
+                self:parse_option(sub, resolved)
             end
         end
     end

@@ -40,7 +40,7 @@ end)
 
 bot:component(vote_view)
 
-bot:register_application_command("poll", {
+bot:slash_command("poll", {
     description = "Starts a simple upvote/downvote poll",
     callback = function(ctx)
         ctx:respond("Votes: +0 / -0", { components = vote_view:to_components() })

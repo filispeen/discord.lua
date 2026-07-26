@@ -41,10 +41,10 @@ end
 function CommandTree:get(name, guild_id)
     for _, cmd in ipairs(self.commands) do
         if cmd.name == name then
-            if guild_id == nil and cmd.guild_ids == nil then
+            if cmd.guild_ids == nil then
                 return cmd
             end
-            if guild_id ~= nil and cmd.guild_ids ~= nil then
+            if guild_id ~= nil then
                 for _, gid in ipairs(cmd.guild_ids) do
                     if gid == guild_id then
                         return cmd

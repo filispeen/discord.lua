@@ -1,18 +1,17 @@
 -- examples/voice_play.lua
 -- Example: Voice client usage.
 --
--- IMPORTANT: lib/voice/voice_client.lua's connect() does not yet obtain a
--- real voice endpoint or session; VOICE_STATE_UPDATE / VOICE_SERVER_UPDATE
--- are also not wired from the gateway to Bot/Client yet, so
--- VoiceClient:connect() below will not actually join a voice channel on
--- Discord's servers. This example shows the intended shape of the API
--- and the parts that do work today (ready, bot.user, shard_ready); the
--- VoiceClient:connect() call is left in to show the intended usage once
--- voice gateway wiring lands, and is guarded with pcall so the rest of
--- the bot keeps running if it fails.
+-- The voice gateway connect/reconnect/resume loop, channel cache and
+-- VOICE_STATE_UPDATE/VOICE_SERVER_UPDATE wiring are all real (see
+-- PROG.md's "Voice WebSocket connect loop" / "Voice reconnect" /
+-- "Channel cache" sections), so /join below actually joins a channel on
+-- Discord's servers. This looks up the invoking user's current voice
+-- channel via Bot:get_author_voice_channel_id-equivalent for slash
+-- context (guild_id/author.id), fetches the real Channel through the
+-- channel cache, and connects through Channel:connect(client) exactly as
+-- Channel:connect()'s public contract documents.
 
 local discord = require("discord.lua")
-local VoiceClient = require("voice.voice_client")
 
 -- GUILD_VOICE_STATES is needed to track who is in which voice channel,
 -- on top of GUILDS for basic guild/channel caching.
@@ -34,28 +33,35 @@ bot:on("shard_ready", function(shard_id)
     print("Shard " .. shard_id .. " is ready")
 end)
 
--- Slash command that attempts to join the invoking user's voice channel.
--- ctx.channel here must be a voice channel the bot can already see from
--- cache; there is no helper yet to look up "the user's current voice
--- channel" since VOICE_STATE_UPDATE is not tracked.
-bot:register_application_command("join", {
+-- Slash command that joins the invoking user's current voice channel.
+bot:slash_command("join", {
     description = "Joins your voice channel",
     callback = function(ctx)
-        if not ctx.channel or not ctx.channel.guild then
-            ctx:respond("I need a cached voice channel with its guild to join.")
+        if not ctx.guild then
+            ctx:respond("This command only works inside a server.")
             return
         end
 
-        local voice_client = VoiceClient.new(bot.client, ctx.channel)
+        local voice_channel_id = bot:get_voice_channel_id(ctx.guild.id, ctx.author.id)
+        if not voice_channel_id then
+            ctx:respond("You need to be in a voice channel first.")
+            return
+        end
 
-        local ok, err = pcall(function()
-            return voice_client:connect()
+        local channel = bot:get_channel(voice_channel_id)
+        if not channel then
+            ctx:respond("Could not find your voice channel in cache.")
+            return
+        end
+
+        local ok, result = pcall(function()
+            return channel:connect(bot.client)
         end)
 
         if ok then
             ctx:respond("Connected to voice!")
         else
-            ctx:respond("Could not connect to voice: " .. tostring(err))
+            ctx:respond("Could not connect to voice: " .. tostring(result))
         end
     end,
 })

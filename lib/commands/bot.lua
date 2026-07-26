@@ -461,6 +461,12 @@ function Bot:command(name, func, description)
     return self
 end
 
+-- Registers a slash command, mirrors register_application_command but matches
+-- the README/examples calling convention: client:slash_command(name, options)
+function Bot:slash_command(name, options)
+    return self:register_application_command(name, options)
+end
+
 -- Registers a View (from ui.view) so its buttons/selects route through
 -- Bot:interaction when an INTERACTION_CREATE dispatch matches a custom_id.
 function Bot:component(view)
@@ -507,7 +513,9 @@ function Bot:dispatch_interaction(interaction)
         end
     end
 
-    local custom_id = interaction.custom_id
+    -- Discord sends custom_id inside interaction.data.custom_id for
+    -- MESSAGE_COMPONENT interactions, never on the interaction's top level.
+    local custom_id = interaction.data and interaction.data.custom_id
     if custom_id then
         local ComponentContext = require("interactions.component_context")
         local ctx = ComponentContext.new(interaction, self.client)

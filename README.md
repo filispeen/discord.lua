@@ -53,7 +53,7 @@ bot:on("ready", function()
     print("Bot is ready!")
 end)
 
-bot:register_command("ping", function(ctx)
+bot:command("ping", function(ctx)
     ctx:reply("Pong!")
 end)
 
@@ -69,14 +69,14 @@ bot:on("ready", function()
     print("Bot is ready!")
 end)
 
-bot:register_application_command("ping", {
+bot:slash_command("ping", {
     description = "Repeats back pong",
     callback = function(ctx)
         ctx:respond("Pong!")
     end,
 })
 
-bot:register_application_command("roll", {
+bot:slash_command("roll", {
     description = "Rolls a die",
     options = {
         {

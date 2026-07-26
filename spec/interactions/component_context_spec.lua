@@ -22,17 +22,28 @@ end
 
 describe("ComponentContext", function()
     it("copies fields from the raw interaction onto itself", function()
-        local ctx = ComponentContext.new({ id = "1", token = "tok", custom_id = "vote_up" }, nil)
+        local ctx = ComponentContext.new({ id = "1", token = "tok", data = { custom_id = "vote_up" } }, nil)
 
         assert.equals("vote_up", ctx.custom_id)
         assert.equals("1", ctx.interaction_id)
         assert.equals("tok", ctx.interaction_token)
     end)
 
+    it("hoists component_type and values from interaction.data alongside custom_id", function()
+        local ctx = ComponentContext.new({
+            id = "1",
+            token = "tok",
+            data = { custom_id = "pick_color", component_type = 3, values = { "red", "blue" } },
+        }, nil)
+
+        assert.equals(3, ctx.component_type)
+        assert.same({ "red", "blue" }, ctx.values)
+    end)
+
     it("respond sends a type 4 CHANNEL_MESSAGE_WITH_SOURCE response", function()
         local calls = {}
         local client = make_client(calls)
-        local ctx = ComponentContext.new({ id = "1", token = "tok", custom_id = "vote_up" }, client)
+        local ctx = ComponentContext.new({ id = "1", token = "tok", data = { custom_id = "vote_up" } }, client)
 
         ctx:respond("Thanks for voting!")
 
@@ -44,7 +55,7 @@ describe("ComponentContext", function()
     it("update sends a type 7 UPDATE_MESSAGE response", function()
         local calls = {}
         local client = make_client(calls)
-        local ctx = ComponentContext.new({ id = "1", token = "tok", custom_id = "vote_up" }, client)
+        local ctx = ComponentContext.new({ id = "1", token = "tok", data = { custom_id = "vote_up" } }, client)
 
         ctx:update("Votes: 5")
 

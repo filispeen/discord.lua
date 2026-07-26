@@ -1,7 +1,7 @@
 -- examples/interaction_bot.lua
 -- Example: Bot built entirely on slash commands.
 --
--- No prefix commands here, just register_application_command with typed
+-- No prefix commands here, just slash_command with typed
 -- options. ctx:respond/reply must be called within Discord's 3 second
 -- interaction window; ctx:edit can update the response afterward.
 
@@ -16,7 +16,7 @@ bot:on("ready", function()
     print("Bot is ready!")
 end)
 
-bot:register_application_command("echo", {
+bot:slash_command("echo", {
     description = "Repeats back what you typed",
     options = {
         {
@@ -32,7 +32,7 @@ bot:register_application_command("echo", {
     end,
 })
 
-bot:register_application_command("roll", {
+bot:slash_command("roll", {
     description = "Rolls a die",
     options = {
         {
@@ -48,7 +48,7 @@ bot:register_application_command("roll", {
     end,
 })
 
-bot:register_application_command("note", {
+bot:slash_command("note", {
     description = "Sends a private note only you can see",
     options = {
         {

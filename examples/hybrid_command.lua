@@ -7,7 +7,7 @@
 --
 -- This reduces code duplication and keeps logic in one place. There is
 -- no single "hybrid" registration helper, so the same handler is passed
--- to both register_command and register_application_command.
+-- to both command and slash_command.
 
 local discord = require("discord.lua")
 
@@ -30,15 +30,15 @@ local function ping(ctx)
     ctx:reply("Pong!")
 end
 
-bot:register_command("ping", ping, "!", "Replies with pong")
-bot:register_application_command("ping", {
+bot:command("ping", ping, "Replies with pong")
+bot:slash_command("ping", {
     description = "Replies with pong",
     callback = ping,
 })
 
 -- A slash-only command with an option.
 -- ctx.args.user holds the parsed User option.
-bot:register_application_command("greet", {
+bot:slash_command("greet", {
     description = "Greet someone",
     options = {
         {
