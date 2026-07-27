@@ -31,12 +31,13 @@ function M.wrap(_res, read, write)
         if self._closed then
             return
         end
-        coroutine.wrap(function()
-            local ok, err = pcall(self._write, { opcode = TEXT_OPCODE, payload = text })
-            if not ok then
-                self:emit("error", err)
-            end
-        end)()
+        local co = coroutine.create(function()
+            self._write({ opcode = TEXT_OPCODE, payload = text })
+        end)
+        local ok, err = coroutine.resume(co)
+        if not ok then
+            self:emit("error", err)
+        end
     end
 
     function ws:close()
@@ -44,22 +45,17 @@ function M.wrap(_res, read, write)
             return
         end
         self._closed = true
-        coroutine.wrap(function()
-            pcall(self._write)
-        end)()
+        local co = coroutine.create(function()
+            self._write()
+        end)
+        coroutine.resume(co)
     end
 
     function ws:start_reading()
-        coroutine.wrap(function()
+        local co = coroutine.create(function()
             self:emit("open")
             while true do
-                local ok, message = pcall(self._read)
-                if not ok then
-                    self._closed = true
-                    self:emit("error", message)
-                    self:emit("close", 1006, tostring(message))
-                    return
-                end
+                local message = self._read()
                 if not message then
                     self._closed = true
                     self:emit("close", 1000, "Connection closed")
@@ -67,7 +63,19 @@ function M.wrap(_res, read, write)
                 end
                 self:emit("message", message.payload)
             end
-        end)()
+        end)
+
+        local function step(...)
+            local ok, err_or_message = coroutine.resume(co, ...)
+            if not ok then
+                self._closed = true
+                self:emit("error", err_or_message)
+                self:emit("close", 1006, tostring(err_or_message))
+                return
+            end
+        end
+
+        step()
     end
 
     return ws
