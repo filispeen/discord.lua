@@ -260,6 +260,12 @@ describe("UDP", function()
         end)
 
         it("should error on send when secret_key is set but libsodium is unavailable", function()
+            local crypto = require("voice.crypto")
+            if crypto.available() then
+                pending("libsodium/ffi is available in this environment (LuaJIT), so this error path cannot be exercised; see the encrypted send-and-decode test below instead")
+                return
+            end
+
             local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
             client:connect()
             client._state.ip = "1.2.3.4"
@@ -276,6 +282,38 @@ describe("UDP", function()
             -- the real encrypt/decrypt round-trip is covered under
             -- LuaJIT in crypto_spec.lua.
             assert.is_false(success)
+        end)
+
+        it("should encrypt on send and decrypt back to the original payload when libsodium is available", function()
+            local crypto = require("voice.crypto")
+            if not crypto.available() then
+                pending("requires LuaJIT + libsodium; the no-libsodium error path is covered above")
+                return
+            end
+
+            sent_packets = {}
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
+            client:connect()
+            client._state.ip = "1.2.3.4"
+            client._state.port = 5555
+            client._state.secret_key = string.rep("k", 32)
+            client._state.mode = "xsalsa20_poly1305_suffix"
+
+            local payload = byte_string(1, 2, 3)
+            client:send(payload)
+
+            local sent = sent_packets[1].data
+            local rtp_header_len = 12
+            local nonce_len = crypto.nonce_size()
+            local nonce = sent:sub(-nonce_len)
+            local ciphertext = sent:sub(rtp_header_len + 1, -nonce_len - 1)
+
+            assert.equals(rtp_header_len + #payload + crypto.macbytes() + nonce_len, #sent)
+
+            local rtp_header = { ssrc = 1, sequence = 1, timestamp = 1, padding = false }
+            local decoded = client:_decode_packet(rtp_header, ciphertext, nonce)
+
+            assert.equals(payload, decoded)
         end)
 
         it("should decode as pass-through when no secret_key is set", function()
