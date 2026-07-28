@@ -259,37 +259,29 @@ describe("UDP", function()
             assert.equals(payload, sent_packets[1].data:sub(13))
         end)
 
-        it("should error on send when secret_key is set but libsodium is unavailable", function()
-            local crypto = require("voice.crypto")
-            if crypto.available() then
-                pending("libsodium/ffi is available in this environment (LuaJIT), so this error path cannot be exercised; see the encrypted send-and-decode test below instead")
-                return
-            end
-
+        it("should error on send when secret_key is set but the wrong key size is used", function()
+            -- Crypto.available() is now always true (libsodium or the
+            -- pure-Lua fallback), so the "no crypto backend at all"
+            -- path no longer exists. The safety property that still
+            -- matters is that send() must error rather than silently
+            -- send plaintext when encryption itself fails for some
+            -- other reason (e.g. a malformed secret_key), regardless of
+            -- which backend is active.
             local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
             client:connect()
             client._state.ip = "1.2.3.4"
             client._state.port = 5555
-            client._state.secret_key = string.rep("k", 32)
+            client._state.secret_key = "too_short_to_be_a_valid_key"
 
             local success = pcall(function()
                 client:send(byte_string(1, 2, 3))
             end)
 
-            -- Under plain Lua (no ffi), crypto.encrypt always fails, so
-            -- send() must error rather than silently send plaintext under
-            -- a secret_key. This is the safety property that matters;
-            -- the real encrypt/decrypt round-trip is covered under
-            -- LuaJIT in crypto_spec.lua.
             assert.is_false(success)
         end)
 
-        it("should encrypt on send and decrypt back to the original payload when libsodium is available", function()
+        it("should encrypt on send and decrypt back to the original payload", function()
             local crypto = require("voice.crypto")
-            if not crypto.available() then
-                pending("requires LuaJIT + libsodium; the no-libsodium error path is covered above")
-                return
-            end
 
             sent_packets = {}
             local client = udp.UDPClient.new("192.168.1.1:12345", "token123")

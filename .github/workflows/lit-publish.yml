@@ -24,6 +24,18 @@ jobs:
           curl -L https://github.com/luvit/lit/raw/master/get-lit.sh | sh
           echo "$PWD" >> $GITHUB_PATH
 
+      - name: Install libsodium (Windows dlls)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq unzip
+          curl -s https://api.github.com/repos/jedisct1/libsodium/releases/latest | jq -r '.assets[] | select(.name | test("msvc.zip$")) | .browser_download_url' | xargs -I{} curl -L -o libsodium-latest-msvc.zip {}
+          unzip libsodium-latest-msvc.zip 'libsodium/*/Release/v143/dynamic/*.dll' -d ./
+          mkdir -p ./lib/dlls
+          for arch in x64 Win32 ARM64; do
+            mv "./libsodium/$arch/Release/v143/dynamic/libsodium.dll" "./lib/dlls/libsodium-$arch.dll"
+            echo "Copied libsodium.dll for $arch"
+          done
+
       - name: Authenticate with lit
         run: ./lit auth ${{ secrets.LIT_GITHUB_USERNAME }} "${{ secrets.LIT_GITHUB_USERNAME }}" ""
 

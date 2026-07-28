@@ -16,7 +16,7 @@ jobs:
       - name: Install Lua/LuaRocks
         run: |
           sudo apt-get update
-          sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks
+          sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks libsodium-dev
       - name: Install luacheck
         run: sudo luarocks install luacheck
 
@@ -43,7 +43,7 @@ jobs:
       - name: Install Lua/LuaRocks
         run: |
           sudo apt-get update
-          sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks
+          sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks libsodium-dev
       - name: Install lit/luvi/luvit
         run: |
           curl -L https://github.com/luvit/lit/raw/master/get-lit.sh | sh
@@ -77,7 +77,7 @@ jobs:
       - name: Install Lua/LuaRocks
         run: |
           sudo apt-get update
-          sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks
+          sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks libsodium-dev
       - name: Validate rockspec
         run: luarocks lint discord-lua-scm-0.rockspec
 
