@@ -15,8 +15,6 @@ if not ffi_ok then
     ffi = nil
 end
 
-local C = ffi_ok and ffi.C or nil
-
 -- Load libopus
 local opus_lib = nil
 local function load_opus()
@@ -27,7 +25,7 @@ local function load_opus()
 
     if opus_lib then return end
 
-    local success, err = pcall(function()
+    local success = pcall(function()
         opus_lib = ffi.load("opus") or ffi.load("libopus")
     end)
 
@@ -36,40 +34,53 @@ local function load_opus()
         return
     end
 
-    -- Declare opus functions
-    C.opus_encoder_create = ffi.cast("int (*)(opus_int32, int, int, opus_int64*)", opus_lib.opus_encoder_create)
-    C.opus_encoder_destroy = ffi.cast("void (*)(opus_int32)", opus_lib.opus_encoder_destroy)
-    C.opus_encode = ffi.cast("opus_int16 (*)(opus_int32, const opus_int16*, opus_int32, unsigned char*, opus_size_t, int, int)", opus_lib.opus_encode)
-    C.opus_encoder_get_frame_size = ffi.cast("opus_int32 (*)(opus_int32, int, int)", opus_lib.opus_encoder_get_frame_size)
+    ffi.cdef([[
+        typedef struct OpusEncoder OpusEncoder;
+        typedef struct OpusDecoder OpusDecoder;
 
-    C.opus_decoder_create = ffi.cast("int (*)(opus_int32, int, opus_int64*)", opus_lib.opus_decoder_create)
-    C.opus_decoder_destroy = ffi.cast("void (*)(opus_int32)", opus_lib.opus_decoder_destroy)
-    C.opus_decode = ffi.cast("opus_int16 (*)(opus_int32, const unsigned char*, int, int, int, int)", opus_lib.opus_decode)
+        OpusEncoder *opus_encoder_create(int32_t Fs, int channels, int application, int *error);
+        void opus_encoder_destroy(OpusEncoder *st);
+        int opus_encoder_ctl(OpusEncoder *st, int request, ...);
+        int32_t opus_encode(OpusEncoder *st, const int16_t *pcm, int frame_size, unsigned char *data, int32_t max_data_bytes);
 
-    C.opus_packet_get_size = ffi.cast("size_t (*)(const opus_packet)", opus_lib.opus_packet_get_size)
-    C.opus_packet_get_timestamp = ffi.cast("opus_int64 (*)(const opus_packet)", opus_lib.opus_packet_get_timestamp)
-    C.opus_packet_get_sequence_number = ffi.cast("opus_uint32 (*)(const opus_packet)", opus_lib.opus_packet_get_sequence_number)
+        OpusDecoder *opus_decoder_create(int32_t Fs, int channels, int *error);
+        void opus_decoder_destroy(OpusDecoder *st);
+        int opus_decode(OpusDecoder *st, const unsigned char *data, int32_t len, int16_t *pcm, int frame_size, int decode_fec);
 
-    -- Frame sizes for different application types
-    C.opus_encode_get_size = ffi.cast("opus_int32 (*)(opus_int32, int, int)", opus_lib.opus_encode_get_size)
-    C.opus_decode_get_size = ffi.cast("opus_int32 (*)(opus_int32, int, int)", opus_lib.opus_decode_get_size)
+        int32_t opus_packet_get_nb_samples(const unsigned char packet[], int32_t len, int32_t Fs);
+        int opus_packet_get_nb_frames(const unsigned char packet[], int32_t len);
+    ]])
 
-    -- Packet decoder functions
-    C.opus_packet_decode = ffi.cast("int (*)(const opus_packet, const opus_packet*, int, int)", opus_lib.opus_packet_decode)
-    C.opus_packet_decode_size = ffi.cast("size_t (*)(const opus_packet*)", opus_lib.opus_packet_decode_size)
 end
 
--- Application types
-local APPLICATION_AUDIO = 1
-local APPLICATION_VOIP = 2
-local APPLICATION_LOWDELAY = 3
+load_opus()
+
+-- Application types (from opus_defines.h)
+local APPLICATION_VOIP = 2048
+local APPLICATION_AUDIO = 2049
+local APPLICATION_LOWDELAY = 2051
+
+-- opus_encoder_ctl request codes (from opus_defines.h)
+local OPUS_SET_BITRATE_REQUEST = 4002
+local OPUS_SET_BANDWIDTH_REQUEST = 4008
+local OPUS_SET_INBAND_FEC_REQUEST = 4012
+local OPUS_SET_PACKET_LOSS_PERC_REQUEST = 4014
+local OPUS_SET_SIGNAL_REQUEST = 4024
+
+local OPUS_AUTO = -1000
+local OPUS_SIGNAL_VOICE = 3001
+local OPUS_SIGNAL_MUSIC = 3002
+
+-- Sample rate (Discord voice is always 48kHz stereo)
+local SAMPLE_RATE = 48000
+local CHANNELS = 2
 
 -- Bandwidth types
-local BANDWIDTH_NARROW = 11025
-local BANDWIDTH_MEDIUM = 12000
-local BANDWIDTH_WIDE = 16000
-local BANDWIDTH_SUPERWIDE = 24000
-local BANDWIDTH_FULL = 48000
+local BANDWIDTH_NARROW = 1101
+local BANDWIDTH_MEDIUM = 1102
+local BANDWIDTH_WIDE = 1103
+local BANDWIDTH_SUPERWIDE = 1104
+local BANDWIDTH_FULL = 1105
 
 local Opus = {}
 Opus.__index = Opus
@@ -85,9 +96,8 @@ function Opus.new()
     return self
 end
 
-function Opus:load_lib()
+function Opus:load_lib() -- luacheck: ignore
     load_opus()
-    opus_lib = opus_lib
 end
 
 -- Create encoder
@@ -97,57 +107,66 @@ function Opus:create_encoder(options)
     end
 
     local application = options.application or APPLICATION_AUDIO
-    local bitrate = options.bitrate or 128
-    local fec = options.fec or true
-    local expected_packet_loss = options.expected_packet_loss or 0.15
+    local bitrate = options.bitrate or 64000
+    local fec = options.fec
+    if fec == nil then
+        fec = true
+    end
+    local expected_packet_loss = options.expected_packet_loss or 15
     local bandwidth = options.bandwidth or BANDWIDTH_FULL
-    local signal_type = options.signal_type or "auto"
+    local signal_type_map = {
+        auto = OPUS_AUTO,
+        voice = OPUS_SIGNAL_VOICE,
+        music = OPUS_SIGNAL_MUSIC,
+    }
+    local signal_type = signal_type_map[options.signal_type] or OPUS_AUTO
 
-    local error
-    local encoder = ffi.new("opus_int32[1]")
-    local status = C.opus_encoder_create(
-        APPLICATION_LOWDELAY,  -- Low latency for voice
-        bitrate,
-        expected_packet_loss,
-        encoder[0]
-    )
+    local err = ffi.new("int[1]")
+    local encoder = opus_lib.opus_encoder_create(SAMPLE_RATE, CHANNELS, application, err)
 
-    if status < 0 then
-        error = "Failed to create opus encoder: " .. tostring(status)
-        return false, error
+    if err[0] < 0 or encoder == nil then
+        return false, "Failed to create opus encoder: " .. tostring(err[0])
     end
 
-    self.encoder = encoder[0]
+    opus_lib.opus_encoder_ctl(encoder, OPUS_SET_BITRATE_REQUEST, ffi.new("int", bitrate))
+    opus_lib.opus_encoder_ctl(encoder, OPUS_SET_INBAND_FEC_REQUEST, ffi.new("int", fec and 1 or 0))
+    opus_lib.opus_encoder_ctl(encoder, OPUS_SET_PACKET_LOSS_PERC_REQUEST, ffi.new("int", expected_packet_loss))
+    opus_lib.opus_encoder_ctl(encoder, OPUS_SET_BANDWIDTH_REQUEST, ffi.new("int", bandwidth))
+    opus_lib.opus_encoder_ctl(encoder, OPUS_SET_SIGNAL_REQUEST, ffi.new("int", signal_type))
+
+    self.encoder = encoder
+    self.frame_size = math.floor(SAMPLE_RATE * 20 / 1000)  -- 20ms frames
+
     return true
 end
 
--- Encode PCM to Opus packet
+-- Encode PCM to Opus packet. pcm_data must be a raw byte string containing
+-- frame_size * CHANNELS 16-bit PCM samples (20ms of 48kHz stereo audio).
+-- Returns the encoded packet as a Lua string and its length, or nil on
+-- failure.
 function Opus:encode(pcm_data)
-    if not opus_lib then
+    if not opus_lib or not self.encoder then
         return nil
     end
 
-    local frame_size = C.opus_encoder_get_frame_size(self.encoder, APPLICATION_LOWDELAY, 48000)
-    local out_size = C.opus_encode_get_size(self.encoder, APPLICATION_LOWDELAY, 48000)
+    local frame_size = self.frame_size or math.floor(SAMPLE_RATE * 20 / 1000)
+    local pcm = ffi.cast("const int16_t*", pcm_data)
+    local max_data_bytes = 4000
+    local out = ffi.new("unsigned char[?]", max_data_bytes)
 
-    local pcm = ffi.cast("opus_int16*", pcm_data)
-    local out = ffi.new("unsigned char[1275]")  -- Max Opus packet size
-
-    local status = C.opus_encode(
+    local status = opus_lib.opus_encode(
         self.encoder,
         pcm,
         frame_size,
         out,
-        out_size,
-        0,  -- nb_samples
-        0   -- application
+        max_data_bytes
     )
 
     if status < 0 then
         return nil
     end
 
-    return out, out_size
+    return ffi.string(out, status), status
 end
 
 -- Create decoder
@@ -156,25 +175,20 @@ function Opus:create_decoder()
         return false, "libopus not available"
     end
 
-    local error
-    local decoder = ffi.new("opus_int32[1]")
+    local err = ffi.new("int[1]")
+    local decoder = opus_lib.opus_decoder_create(SAMPLE_RATE, CHANNELS, err)
 
-    local status = C.opus_decoder_create(
-        APPLICATION_LOWDELAY,
-        48000,
-        decoder[0]
-    )
-
-    if status < 0 then
-        error = "Failed to create opus decoder: " .. tostring(status)
-        return false, error
+    if err[0] < 0 or decoder == nil then
+        return false, "Failed to create opus decoder: " .. tostring(err[0])
     end
 
-    self.decoder = decoder[0]
+    self.decoder = decoder
     return true
 end
 
--- Decode Opus packet to PCM
+-- Decode Opus packet to PCM. opus_packet must be a raw byte string.
+-- Returns decoded PCM as a Lua string (frame_size * CHANNELS 16-bit
+-- samples) and the frame_size (samples per channel), or nil on failure.
 function Opus:decode(opus_packet)
     if not opus_lib then
         return nil
@@ -185,57 +199,61 @@ function Opus:decode(opus_packet)
         return nil
     end
 
-    local frame_size = C.opus_decode_get_size(self.decoder, APPLICATION_LOWDELAY, 48000)
-    local pcm = ffi.new("opus_int16[1200]")  -- Max PCM samples
+    local max_frame_size = math.floor(SAMPLE_RATE * 120 / 1000)  -- 120ms max
+    local pcm = ffi.new("int16_t[?]", max_frame_size * CHANNELS)
 
-    local status = C.opus_decode(
+    local status = opus_lib.opus_decode(
         self.decoder,
         opus_packet,
-        C.opus_packet_get_size(opus_packet),
+        #opus_packet,
         pcm,
-        frame_size,
-        0,  -- nb_samples
-        0   -- application
+        max_frame_size,
+        0  -- decode_fec
     )
 
     if status < 0 then
         return nil
     end
 
-    return ffi.cast("opus_int16*", pcm), frame_size
+    return ffi.string(pcm, status * CHANNELS * ffi.sizeof("int16_t")), status
 end
 
 -- Create packet decoder (jitter buffer)
-function Opus:create_packet_decoder(router, ssrc)
-    local self = {
+function Opus:create_packet_decoder(router, ssrc) -- luacheck: ignore
+    local decoder = {
         router = router,
         ssrc = ssrc,
         packets = {},
         sequence = 0,
         last_sequence = 0,
     }
-    setmetatable(self, { __index = self })
-    return self
+    setmetatable(decoder, { __index = decoder })
+    return decoder
 end
 
-function Opus:packet_decoder_push_packet(packet)
+-- TODO: this jitter buffer is not wired into the live RTP receive path
+-- (see PROG.md). timestamp/sequence must come from the RTP header, not
+-- from libopus (opus_packet_get_timestamp/get_sequence_number/get_size
+-- do not exist in the real libopus API and were removed from the FFI
+-- bindings above as part of the encoder/decoder fix).
+function Opus:packet_decoder_push_packet(packet, rtp_header)
     if not opus_lib then
         return
     end
 
-    local timestamp = C.opus_packet_get_timestamp(packet)
-    local sequence = C.opus_packet_get_sequence_number(packet)
-    local packet_size = C.opus_packet_get_size(packet)
+    if not rtp_header then
+        return
+    end
 
     table.insert(self.packets, {
-        timestamp = timestamp,
-        sequence = sequence,
+        timestamp = rtp_header.timestamp,
+        sequence = rtp_header.sequence,
         packet = packet,
-        size = packet_size,
+        size = #packet,
     })
 
-    self.sequence = sequence
-    self.last_sequence = sequence
+    self.sequence = rtp_header.sequence
+    self.last_sequence = rtp_header.sequence
 end
 
 function Opus:packet_decoder_pop_data(timeout_ms)
@@ -248,7 +266,7 @@ function Opus:packet_decoder_pop_data(timeout_ms)
 
     -- Filter packets within timeout
     local valid_packets = {}
-    for i, p in ipairs(self.packets) do
+    for _, p in ipairs(self.packets) do
         if current_time - p.timestamp <= timeout_ms then
             table.insert(valid_packets, p)
         end
@@ -295,7 +313,7 @@ local Encoder = {
     destroy = function(self)
         if self.encoder then
             if opus_lib then
-                C.opus_encoder_destroy(self.encoder)
+                opus_lib.opus_encoder_destroy(self.encoder)
             end
             self.encoder = nil
         end
@@ -314,7 +332,7 @@ local Decoder = {
     destroy = function(self)
         if self.decoder then
             if opus_lib then
-                C.opus_decoder_destroy(self.decoder)
+                opus_lib.opus_decoder_destroy(self.decoder)
             end
             self.decoder = nil
         end

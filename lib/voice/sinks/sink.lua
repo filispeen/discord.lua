@@ -77,7 +77,7 @@ function Sink:write(user_id, opus_data)
     entry.packets = entry.packets + 1
 end
 
-function Sink:cleanup()
+function Sink:cleanup() -- luacheck: ignore
 end
 
 function Sink:get_all_audio()

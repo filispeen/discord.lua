@@ -30,6 +30,8 @@ local UDPClient = {
         endpoint = nil,
         token = nil,
         local_port = nil,
+        remote_ip = nil,
+        remote_port = nil,
         ip = nil,
         port = nil,
         buffer = nil,
@@ -45,6 +47,8 @@ function UDPClient.new(endpoint, token)
             endpoint = endpoint,
             token = token,
             local_port = nil,
+            remote_ip = nil,
+            remote_port = nil,
             ip = nil,
             port = nil,
             buffer = nil,
@@ -70,6 +74,8 @@ function UDPClient:connect()
     end
 
     local port = tonumber(port_str)
+    state.remote_ip = host
+    state.remote_port = port
 
     -- Create UDP socket
     local sock, err = luv.socket(luv.AF_INET, luv.SOCK_DGRAM)
@@ -182,7 +188,7 @@ end
 -- Decode RTP packet: decrypt the payload if a secret_key is set, otherwise
 -- pass it through unchanged. nonce is the 24 byte suffix nonce extracted
 -- by _handle_rtp when mode is xsalsa20_poly1305_suffix; nil otherwise.
-function UDPClient:_decode_packet(rtp_header, payload, nonce)
+function UDPClient:_decode_packet(_rtp_header, payload, nonce)
     local state = self._state
 
     if not state.secret_key then
@@ -196,7 +202,7 @@ function UDPClient:_decode_packet(rtp_header, payload, nonce)
         return nil
     end
 
-    local plaintext, err = crypto.decrypt(payload, nonce, state.secret_key)
+    local plaintext = crypto.decrypt(payload, nonce, state.secret_key)
     if not plaintext then
         return nil
     end
@@ -256,7 +262,7 @@ function UDPClient:send(payload)
 end
 
 -- Construct RTP header (12 bytes), returned as a raw byte string
-function UDPClient:_construct_rtp_header(payload)
+function UDPClient:_construct_rtp_header(_payload)
     local state = self._state
 
     local version_flags = 0x80  -- Version 2, no padding, no extension, no CSRC
@@ -285,7 +291,8 @@ function UDPClient:_construct_rtp_header(payload)
 end
 
 -- Receive RTP packets (blocking or non-blocking)
-function UDPClient:receive(timeout_ms)
+-- TODO: timeout_ms is accepted but not wired into the timer below, see PROG.md
+function UDPClient:receive(timeout_ms) -- luacheck: ignore
     local state = self._state
 
     if not state.udp then
@@ -310,7 +317,7 @@ function UDPClient:receive(timeout_ms)
     state.read_timer = read_timer
 
     -- Read from socket
-    local data, addr = luv.recvfrom(sock)
+    local data = luv.recvfrom(sock)
 
     if not data then
         return nil, "No data received"
@@ -320,7 +327,7 @@ function UDPClient:receive(timeout_ms)
 end
 
 -- Emit timeout event
-function UDPClient:_emit_timeout()
+function UDPClient:_emit_timeout() -- luacheck: ignore
     -- Emit timeout event to client
 end
 
@@ -349,8 +356,8 @@ function UDPClient:discover_ip()
     local success, err = luv.sendto(
         state.udp,
         discovery_packet,
-        state.ip,
-        state.port
+        state.remote_ip,
+        state.remote_port
     )
 
     if not success then
@@ -362,7 +369,7 @@ function UDPClient:discover_ip()
     local start = os.time() * 1000
 
     while (os.time() * 1000) - start < timeout do
-        local data, addr = luv.recvfrom(state.udp)
+        local data = luv.recvfrom(state.udp)
 
         if data then
             -- Parse response
@@ -386,7 +393,7 @@ end
 -- Byte 5-8: SSRC
 -- Byte 9-72: null terminated IP address string
 -- Byte 73-74: port (big endian)
-function UDPClient:_parse_discovery_response(data)
+function UDPClient:_parse_discovery_response(data) -- luacheck: ignore
     if #data < 74 then
         return nil, nil
     end
@@ -426,6 +433,8 @@ function UDPClient:close()
     end
 
     state.connected = false
+    state.remote_ip = nil
+    state.remote_port = nil
     state.ip = nil
     state.port = nil
     state.buffer = nil

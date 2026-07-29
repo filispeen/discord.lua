@@ -468,9 +468,8 @@ function VoiceGateway:_handle_heartbeat_ack()
     state.missed_acks = 0
 
     -- Check if latency is too high
-    if latency > 2000 then  -- 2 second threshold
-        -- High latency, could trigger reconnect
-        -- self:_trigger_reconnect()
+    if latency > 2000 then  -- luacheck: ignore -- 2 second threshold
+        -- TODO: high latency reconnect trigger not yet implemented, see PROG.md
     end
 end
 

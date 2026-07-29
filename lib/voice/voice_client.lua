@@ -30,9 +30,6 @@
 --     Calls sink:cleanup() then the finished_callback with (sink, ...).
 
 local class = require("core.class")
-local emitter = require("core.emitter")
-local enums = require("voice.enums")
-local errors = require("voice.errors")
 local opus = require("voice.opus")
 local udp = require("voice.udp")
 local VoiceGateway = require("voice.voice_gateway")
@@ -374,15 +371,13 @@ function VoiceClient:send_audio_packet(data, encode)
             return false, "Encoder not initialized"
         end
 
-        local success, err = pcall(function()
+        local success, opus_packet = pcall(function()
             return state.encoder:encode(data)
         end)
 
         if not success then
-            return false, err
+            return false, opus_packet
         end
-
-        local opus_packet, size = success and { data[1], data[2] } or nil
 
         if not opus_packet then
             return false, "Encoding failed"
@@ -393,9 +388,9 @@ function VoiceClient:send_audio_packet(data, encode)
             return false, "UDP not connected"
         end
 
-        local success, err = self.udp:send(opus_packet)
-        if not success then
-            return false, err
+        local udp_ok, udp_err = self.udp:send(opus_packet)
+        if not udp_ok then
+            return false, udp_err
         end
     else
         -- Send raw packet
@@ -453,9 +448,7 @@ function VoiceClient:_start_playback()
 end
 
 -- Process audio source
-function VoiceClient:_process_source(source, options)
-    local state = self.state
-
+function VoiceClient:_process_source(source, _options)
     -- Read initial data
     local chunk = source:read()
     if not chunk then
@@ -517,7 +510,8 @@ function VoiceClient:stop_recording()
     recording.sink:cleanup()
 
     if recording.finished_callback then
-        recording.finished_callback(recording.sink, table.unpack(recording.args))
+        local unpack = table.unpack or unpack -- luacheck: ignore
+        recording.finished_callback(recording.sink, unpack(recording.args))
     end
 
     return true
