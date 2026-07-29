@@ -6,7 +6,7 @@
 --   udp:connect() - Connect to voice endpoint
 --   udp:send(payload) - Send RTP packet, payload is a raw byte string.
 --     Encrypted with udp._state.secret_key if set (xsalsa20_poly1305_suffix).
---   udp:receive() - Receive RTP packets
+--   udp:receive(timeout_ms) - Receive one decoded RTP packet, coroutine-based
 --   udp._state.secret_key - set by VoiceClient after SESSION_DESCRIPTION;
 --     when present, _decode_packet decrypts incoming RTP payloads and
 --     send() encrypts outgoing ones. When absent, payloads pass through
@@ -35,7 +35,7 @@ local UDPClient = {
         ip = nil,
         port = nil,
         buffer = nil,
-        read_timer = nil,
+        receive_waiter = nil,
     },
 }
 
@@ -52,7 +52,7 @@ function UDPClient.new(endpoint, token)
             ip = nil,
             port = nil,
             buffer = nil,
-            read_timer = nil,
+            receive_waiter = nil,
             sequence = 0,
             ssrc = 0,
         },
@@ -213,11 +213,32 @@ end
 -- Dispatch packet to voice client. self._state.on_packet, if set by the
 -- owner (see VoiceClient:setup), is called as on_packet(rtp_header, payload)
 -- with the decrypted/decoded payload for SSRC->user_id routing.
+--
+-- Also feeds UDPClient:receive()'s waiter queue: any coroutine parked in
+-- receive() via _wait_for_packet is resumed here with the same decoded
+-- packet, in addition to (not instead of) the on_packet callback above.
 function UDPClient:_dispatch_packet(rtp_header, payload)
     local state = self._state
     if state.on_packet then
         state.on_packet(rtp_header, payload)
     end
+    self:_resolve_waiter(rtp_header, payload)
+end
+
+-- Resume the coroutine parked in receive(), if any, with a decoded packet.
+-- No-op if nothing is currently waiting (e.g. voice consumed purely via
+-- on_packet).
+function UDPClient:_resolve_waiter(rtp_header, payload)
+    local state = self._state
+    local waiter = state.receive_waiter
+    if not waiter then
+        return
+    end
+    state.receive_waiter = nil
+    if waiter.timer then
+        waiter.timer:stop()
+    end
+    coroutine.resume(waiter.co, { header = rtp_header, payload = payload }, nil)
 end
 
 -- Send RTP packet. payload must be a raw byte string. If udp._state.
@@ -290,45 +311,49 @@ function UDPClient:_construct_rtp_header(_payload)
     )
 end
 
--- Receive RTP packets (blocking or non-blocking)
--- TODO: timeout_ms is accepted but not wired into the timer below, see PROG.md
-function UDPClient:receive(timeout_ms) -- luacheck: ignore
+-- Receive a decoded RTP packet, waiting up to timeout_ms if none is
+-- already queued. Must be called from inside a coroutine: real incoming
+-- packets only ever arrive via the onread callback (see read_loop /
+-- _handle_rtp), so there is no way to receive one without yielding back
+-- to the event loop while we wait.
+--
+-- Returns:
+--   packet, nil          - packet is { header = rtp_header, payload = ... }
+--   nil, "timeout"        - timeout_ms elapsed with nothing received
+--   nil, "no data received" - socket not initialized / not connected
+--
+-- timeout_ms defaults to 1000 if omitted.
+function UDPClient:receive(timeout_ms)
     local state = self._state
 
     if not state.udp then
-        return nil, "UDP socket not initialized"
+        return nil, "no data received"
     end
 
-    local sock = state.udp
-
-    -- Create timeout timer
-    if self._state.read_timer then
-        luv.timer:stop(self._state.read_timer)
+    if state.receive_waiter then
+        return nil, "receive already in progress"
     end
 
-    local read_timer = luv.timer:new()
-    read_timer:start(0, 0, function()
-        if self._state.buffer then
-            -- Emit timeout event
-            self:_emit_timeout()
+    local co = coroutine.running()
+    if not co then
+        error("UDPClient:receive must be called from within a coroutine")
+    end
+
+    timeout_ms = timeout_ms or 1000
+
+    local timer = luv.timer:new()
+    state.receive_waiter = { co = co, timer = timer }
+
+    timer:start(timeout_ms, 0, function()
+        local waiter = state.receive_waiter
+        if not waiter or waiter.co ~= co then
+            return
         end
+        state.receive_waiter = nil
+        coroutine.resume(co, nil, "timeout")
     end)
 
-    state.read_timer = read_timer
-
-    -- Read from socket
-    local data = luv.recvfrom(sock)
-
-    if not data then
-        return nil, "No data received"
-    end
-
-    return data
-end
-
--- Emit timeout event
-function UDPClient:_emit_timeout() -- luacheck: ignore
-    -- Emit timeout event to client
+    return coroutine.yield()
 end
 
 -- Discover IP address (UDP discovery)
@@ -422,9 +447,13 @@ end
 function UDPClient:close()
     local state = self._state
 
-    if state.read_timer then
-        luv.timer:stop(state.read_timer)
-        state.read_timer = nil
+    if state.receive_waiter then
+        local waiter = state.receive_waiter
+        state.receive_waiter = nil
+        if waiter.timer then
+            waiter.timer:stop()
+        end
+        coroutine.resume(waiter.co, nil, "closed")
     end
 
     if state.udp then

@@ -15,11 +15,14 @@ local sent_packets = {}
 local luv = {
     timer = {
         new = function()
-            local timer = {
+            local timer
+            timer = {
                 _started = false,
                 _stop_count = 0,
-                start = function()
+                _callback = nil,
+                start = function(self, timeout, repeat_ms, callback)
                     timer._started = true
+                    timer._callback = callback
                 end,
                 stop = function()
                     timer._stop_count = timer._stop_count + 1
@@ -186,14 +189,83 @@ describe("UDP", function()
             assert.is_true(success)
         end)
 
-        it("should receive packets", function()
+        it("should error when called outside a coroutine", function()
             local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
+            client:connect()
 
             local success, err = pcall(function()
                 return client:receive(1000)
             end)
 
-            assert.is_true(success)
+            assert.is_false(success)
+            assert.matches("coroutine", err)
+        end)
+
+        it("should resolve receive with a decoded packet dispatched while waiting", function()
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
+            client:connect()
+            client._state.ip = "10.0.0.1"
+            client._state.port = 5555
+
+            local result, err
+
+            local co = coroutine.create(function()
+                result, err = client:receive(1000)
+            end)
+            coroutine.resume(co)
+
+            assert.is_not_nil(client._state.receive_waiter)
+
+            local header = byte_string(0x80, 0x78, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+            local payload = byte_string(5, 5, 5)
+            local packet = header .. payload
+
+            client:_handle_rtp(packet, #packet)
+
+            assert.is_nil(client._state.receive_waiter)
+            assert.is_not_nil(result)
+            assert.equals(payload, result.payload)
+            assert.equals(1, result.header.sequence)
+            assert.is_nil(err)
+        end)
+
+        it("should time out receive when no packet arrives", function()
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
+            client:connect()
+
+            local result, err
+
+            local co = coroutine.create(function()
+                result, err = client:receive(1000)
+            end)
+            coroutine.resume(co)
+
+            local waiter = client._state.receive_waiter
+            assert.is_not_nil(waiter)
+            waiter.timer._callback()
+
+            assert.is_nil(client._state.receive_waiter)
+            assert.is_nil(result)
+            assert.equals("timeout", err)
+        end)
+
+        it("should reject a second receive while one is already waiting", function()
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
+            client:connect()
+
+            local co1 = coroutine.create(function()
+                client:receive(1000)
+            end)
+            coroutine.resume(co1)
+
+            local result2, err2
+            local co2 = coroutine.create(function()
+                result2, err2 = client:receive(1000)
+            end)
+            coroutine.resume(co2)
+
+            assert.is_nil(result2)
+            assert.equals("receive already in progress", err2)
         end)
 
         it("should discover IP", function()
