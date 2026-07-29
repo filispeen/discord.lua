@@ -2,11 +2,10 @@
 -- WaveSink: wraps recorded PCM per user in a WAV (RIFF) container,
 -- contract mirrors pycord's discord.sinks.WaveSink.
 --
--- See lib/voice/sinks/sink.lua for the RTP-receive-pipeline limitation
--- that applies to every sink in this package. This sink assumes it is
--- fed already-decoded PCM (16-bit signed, stereo, 48kHz), not raw Opus;
--- pairing it with real Opus data requires the not-yet-built Opus decode
--- step described there.
+-- See lib/voice/sinks/sink.lua for how the RTP receive pipeline feeds
+-- write(): it delivers raw Opus payloads, not PCM. This sink assumes it
+-- is fed already-decoded PCM (16-bit signed, stereo, 48kHz); pairing it
+-- with real Opus data requires the not-yet-built Opus decode step.
 --
 -- Public Contract:
 --   WaveSink.new(opts) -> sink

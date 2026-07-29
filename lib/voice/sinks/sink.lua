@@ -2,13 +2,14 @@
 -- Base Sink class for voice recording, contract mirrors pycord's
 -- discord.sinks.core.Sink.
 --
--- IMPORTANT LIMITATION: this codebase has no RTP receive loop yet.
--- lib/voice/udp.lua only sends packets; there is no
--- decrypt-incoming-RTP -> per-SSRC Opus decode -> PCM pipeline wired to
--- the voice gateway's client_connect/speaking events. Sink:write(user_id,
--- opus_data) is the intended entry point for that pipeline once it
--- exists; for now it must be called manually (or from a future RTP
--- receive handler) rather than firing automatically during a real call.
+-- RTP receive pipeline: lib/voice/udp.lua decrypts and RTP-decodes
+-- incoming packets, VoiceClient routes each SSRC's payloads through a
+-- jitter buffer (opus.PacketDecoder) to reorder them, and a timer
+-- flushes reordered packets into Sink:write(user_id, opus_data) per user
+-- (see VoiceClient:_flush_jitter_buffers / :_feed_recording). Note this
+-- delivers raw Opus payloads, not decoded PCM: sinks that need PCM
+-- (e.g. WaveSink) must decode it themselves; there is no automatic
+-- Opus -> PCM decode step in this pipeline yet.
 --
 -- Public Contract:
 --   Sink.new(opts) -> sink

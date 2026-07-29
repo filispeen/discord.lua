@@ -2,8 +2,10 @@
 -- PCMSink: writes raw decoded PCM samples per user, contract mirrors
 -- pycord's discord.sinks.PCMSink.
 --
--- See lib/voice/sinks/sink.lua for the RTP-receive-pipeline limitation
--- that applies to every sink in this package.
+-- See lib/voice/sinks/sink.lua for how the RTP receive pipeline feeds
+-- write(): it delivers raw Opus payloads, not PCM, so pairing this sink
+-- with real voice data requires decoding Opus to PCM before calling
+-- write(), which nothing in this codebase does automatically yet.
 --
 -- Public Contract:
 --   PCMSink.new(opts) -> sink

@@ -9,6 +9,13 @@
 --     Decoder:new() - Create decoder
 --     decoder:decode(opus_packet) - Decode Opus to PCM
 --     decoder:destroy() - Cleanup decoder
+--
+--   PacketDecoder: pure Lua RTP sequence jitter buffer, no FFI/libopus
+--   dependency (see the PacketDecoder class below for the full contract)
+--     PacketDecoder.new() - Create a jitter buffer
+--     jb:push_packet(rtp_header, payload) - Buffer one packet
+--     jb:pop_ready(hold_ms?) - Pop packets held >= hold_ms, in sequence order
+--     jb:reset() - Drop all buffered packets
 
 local ffi_ok, ffi = pcall(require, "ffi")
 if not ffi_ok then
@@ -89,8 +96,6 @@ function Opus.new()
     local self = {
         encoder = nil,
         decoder = nil,
-        packet_decoder = nil,
-        ssrc = nil,
     }
     setmetatable(self, Opus)
     return self
@@ -218,88 +223,7 @@ function Opus:decode(opus_packet)
     return ffi.string(pcm, status * CHANNELS * ffi.sizeof("int16_t")), status
 end
 
--- Create packet decoder (jitter buffer)
-function Opus:create_packet_decoder(router, ssrc) -- luacheck: ignore
-    local decoder = {
-        router = router,
-        ssrc = ssrc,
-        packets = {},
-        sequence = 0,
-        last_sequence = 0,
-    }
-    setmetatable(decoder, { __index = decoder })
-    return decoder
-end
 
--- TODO: this jitter buffer is not wired into the live RTP receive path
--- (see PROG.md). timestamp/sequence must come from the RTP header, not
--- from libopus (opus_packet_get_timestamp/get_sequence_number/get_size
--- do not exist in the real libopus API and were removed from the FFI
--- bindings above as part of the encoder/decoder fix).
-function Opus:packet_decoder_push_packet(packet, rtp_header)
-    if not opus_lib then
-        return
-    end
-
-    if not rtp_header then
-        return
-    end
-
-    table.insert(self.packets, {
-        timestamp = rtp_header.timestamp,
-        sequence = rtp_header.sequence,
-        packet = packet,
-        size = #packet,
-    })
-
-    self.sequence = rtp_header.sequence
-    self.last_sequence = rtp_header.sequence
-end
-
-function Opus:packet_decoder_pop_data(timeout_ms)
-    if not opus_lib then
-        return nil
-    end
-
-    local now = os.time() * 1000
-    local current_time = now
-
-    -- Filter packets within timeout
-    local valid_packets = {}
-    for _, p in ipairs(self.packets) do
-        if current_time - p.timestamp <= timeout_ms then
-            table.insert(valid_packets, p)
-        end
-    end
-
-    if #valid_packets == 0 then
-        return nil
-    end
-
-    -- Sort by sequence and find largest gap
-    table.sort(valid_packets, function(a, b)
-        return a.sequence < b.sequence
-    end)
-
-    local best_packet = valid_packets[1]
-    local max_gap = -1
-
-    for i = 2, #valid_packets do
-        local gap = valid_packets[i].sequence - valid_packets[i-1].sequence - 1
-        if gap > max_gap then
-            max_gap = gap
-            best_packet = valid_packets[i - 1]
-        end
-    end
-
-    return best_packet
-end
-
-function Opus:packet_decoder_reset()
-    self.packets = {}
-    self.sequence = 0
-    self.last_sequence = 0
-end
 
 local Encoder = {
     new = function(options)
@@ -339,20 +263,120 @@ local Decoder = {
     end,
 }
 
-local PacketDecoder = {
-    new = function(router, ssrc)
-        return Opus:new():create_packet_decoder(router, ssrc)
-    end,
-    push_packet = function(self, packet)
-        return self:packet_decoder_push_packet(packet)
-    end,
-    pop_data = function(self, timeout_ms)
-        return self:packet_decoder_pop_data(timeout_ms)
-    end,
-    reset = function(self)
-        return self:packet_decoder_reset()
-    end,
-}
+-- Jitter buffer: reorders incoming RTP-decoded Opus payloads by RTP
+-- sequence number before handing them to the caller, so a packet that
+-- arrives out of order (common over UDP) isn't delivered before an
+-- earlier one that is still in flight. Pure Lua, no FFI/libopus
+-- dependency, so it works identically under PUC Lua and LuaJIT.
+--
+-- Usage:
+--   local jb = PacketDecoder.new()
+--   jb:push_packet(rtp_header, payload)   -- call per received packet
+--   local ready = jb:pop_ready(hold_ms)   -- call periodically (e.g. from
+--                                          -- a timer); returns a list of
+--                                          -- { sequence, timestamp, payload }
+--                                          -- in ascending sequence order
+--                                          -- for packets that have sat in
+--                                          -- the buffer at least hold_ms
+--   jb:reset()                            -- drop all buffered packets
+--
+-- Sequence numbers are 16 bit (0-65535) and wrap around; comparisons use
+-- signed 16 bit difference arithmetic so a wrapped sequence still sorts
+-- correctly relative to recent ones.
+local PacketDecoder = {}
+PacketDecoder.__index = PacketDecoder
+
+local SEQ_MOD = 65536
+local SEQ_HALF = 32768
+
+-- Signed difference a - b for 16 bit RTP sequence numbers, wrapping the
+-- result into (-32768, 32768] so it reflects "how many packets after b
+-- is a", even across a 65535 -> 0 wraparound.
+local function seq_diff(a, b)
+    local diff = (a - b) % SEQ_MOD
+    if diff > SEQ_HALF then
+        diff = diff - SEQ_MOD
+    end
+    return diff
+end
+
+function PacketDecoder.new()
+    local self = setmetatable({}, PacketDecoder)
+    self.packets = {}
+    self.by_sequence = {}
+    self.highest_sequence = nil
+    return self
+end
+
+-- Buffer one packet. rtp_header must have .sequence and .timestamp
+-- (as produced by udp.lua's parse_rtp_header). Duplicate sequence
+-- numbers (retransmits or replays) are ignored after the first.
+function PacketDecoder:push_packet(rtp_header, payload)
+    if not rtp_header or not rtp_header.sequence then
+        return false
+    end
+
+    local sequence = rtp_header.sequence
+    if self.by_sequence[sequence] then
+        return false
+    end
+
+    local entry = {
+        sequence = sequence,
+        timestamp = rtp_header.timestamp,
+        payload = payload,
+        received_at = os.clock() * 1000,
+    }
+
+    self.by_sequence[sequence] = entry
+    table.insert(self.packets, entry)
+
+    if not self.highest_sequence or seq_diff(sequence, self.highest_sequence) > 0 then
+        self.highest_sequence = sequence
+    end
+
+    return true
+end
+
+-- Returns the buffered packets that have waited at least hold_ms,
+-- oldest sequence first, and removes them from the buffer. Packets
+-- still younger than hold_ms are left buffered for a future call, so
+-- a packet that arrives slightly out of order still has a chance to be
+-- delivered in the right place. hold_ms defaults to 60ms (3 frames at
+-- 20ms/frame), a reasonable reorder window for typical jitter.
+function PacketDecoder:pop_ready(hold_ms)
+    hold_ms = hold_ms or 60
+
+    if #self.packets == 0 then
+        return {}
+    end
+
+    table.sort(self.packets, function(a, b)
+        return seq_diff(a.sequence, b.sequence) < 0
+    end)
+
+    local now = os.clock() * 1000
+    local ready = {}
+    local remaining = {}
+
+    for _, entry in ipairs(self.packets) do
+        if now - entry.received_at >= hold_ms then
+            table.insert(ready, entry)
+            self.by_sequence[entry.sequence] = nil
+        else
+            table.insert(remaining, entry)
+        end
+    end
+
+    self.packets = remaining
+    return ready
+end
+
+function PacketDecoder:reset()
+    self.packets = {}
+    self.by_sequence = {}
+    self.highest_sequence = nil
+end
 
 local M = {
     Opus = Opus,

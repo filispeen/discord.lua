@@ -21,10 +21,13 @@
 --     ...: extra arguments forwarded to finished_callback, mirrors pycord's
 --     vc.start_recording(sink, callback, ctx.channel).
 --     Sets sink.vc = self so finished_callback can call sink.vc:disconnect().
---     See lib/voice/sinks/sink.lua for the RTP-receive-pipeline limitation:
---     this starts bookkeeping and calls sink:write() for any audio pushed
---     through client:_feed_recording(user_id, data), but there is no
---     automatic RTP decode loop yet feeding real call audio into it.
+--     Incoming RTP audio is routed here automatically: UDPClient's
+--     on_packet hook feeds each SSRC's per-user jitter buffer (see
+--     opus.PacketDecoder), and a timer (_start_jitter_timer,
+--     _flush_jitter_buffers) periodically drains reordered packets into
+--     sink:write() via client:_feed_recording(user_id, data). Sinks still
+--     receive raw Opus payloads, not decoded PCM; see lib/voice/sinks/
+--     for which sinks expect which.
 --
 --   client:stop_recording() -> boolean, string?
 --     Calls sink:cleanup() then the finished_callback with (sink, ...).
@@ -59,10 +62,12 @@ function VoiceClient.new(client, channel)
             packets = {},
             ssrc_map = {},
             known_users = {},
+            jitter_buffers = {},
         },
         gateway = nil,
         udp = nil,
         _timer = nil,
+        _jitter_timer = nil,
         _recording = nil,
     }
     setmetatable(self, VoiceClient)
@@ -173,21 +178,64 @@ function VoiceClient:setup()
         end
     end)
 
-    -- Routes decrypted RTP payloads from the UDP client into the active
-    -- recording sink, keyed by SSRC->user_id (populated by
-    -- _on_client_connect from the gateway's client_connect event). Packets
-    -- from an SSRC with no known user_id yet are dropped; this can happen
-    -- for a brief window right after a user starts speaking if the
-    -- gateway's client_connect/speaking events arrive after their first
-    -- RTP packets. self.udp._state.on_packet is udp.lua's real dispatch
-    -- hook (see UDPClient:_dispatch_packet).
+    -- Routes decrypted RTP payloads from the UDP client into a per-SSRC
+    -- jitter buffer (see opus.PacketDecoder), rather than straight into
+    -- the recording sink: UDP can deliver packets out of order, and
+    -- feeding them to the sink as they arrive would record them
+    -- out of sequence. _flush_jitter_buffers (run on a timer, see
+    -- _start_jitter_timer) drains each buffer's packets that have been
+    -- held long enough for reordering and hands them to _feed_recording
+    -- in ascending RTP sequence order. self.udp._state.on_packet is
+    -- udp.lua's real dispatch hook (see UDPClient:_dispatch_packet).
     self.udp._state.on_packet = function(rtp_header, payload)
-        local user_id = state.ssrc_map[rtp_header.ssrc]
-        if not user_id then
-            return
+        local jitter_buffer = state.jitter_buffers[rtp_header.ssrc]
+        if not jitter_buffer then
+            jitter_buffer = opus.PacketDecoder.new()
+            state.jitter_buffers[rtp_header.ssrc] = jitter_buffer
         end
-        self:_feed_recording(user_id, payload)
+        jitter_buffer:push_packet(rtp_header, payload)
     end
+end
+
+-- Jitter buffer hold window in milliseconds: how long a packet sits
+-- buffered before being released, giving a slightly-late or
+-- out-of-order packet a chance to arrive and be placed correctly.
+-- 60ms is 3 Opus frames at the standard 20ms frame size.
+local JITTER_HOLD_MS = 60
+
+-- Drains every active SSRC's jitter buffer of packets that have been
+-- held for at least hold_ms (defaults to JITTER_HOLD_MS), delivering
+-- them to the matching user's recording sink in ascending RTP sequence
+-- order. Called on a timer (see _start_jitter_timer); a no-op if
+-- nothing is recording. hold_ms is overridable mainly for tests that
+-- need a deterministic flush without waiting on real time.
+function VoiceClient:_flush_jitter_buffers(hold_ms)
+    local state = self.state
+
+    for ssrc, jitter_buffer in pairs(state.jitter_buffers) do
+        local user_id = state.ssrc_map[ssrc]
+        local ready = jitter_buffer:pop_ready(hold_ms or JITTER_HOLD_MS)
+
+        if user_id then
+            for _, entry in ipairs(ready) do
+                self:_feed_recording(user_id, entry.payload)
+            end
+        end
+    end
+end
+
+-- Starts the timer that periodically flushes jitter buffers into
+-- recording sinks. Safe to call more than once; restarts any existing
+-- timer rather than creating a second one.
+function VoiceClient:_start_jitter_timer()
+    if self._jitter_timer then
+        self._jitter_timer:stop()
+    end
+
+    self._jitter_timer = luv.timer:new()
+    self._jitter_timer:start(JITTER_HOLD_MS, JITTER_HOLD_MS, function()
+        self:_flush_jitter_buffers()
+    end)
 end
 
 -- Connect to voice channel. Sends VOICE_STATE_UPDATE through the main
@@ -228,6 +276,12 @@ function VoiceClient:disconnect(force)
             self._timer:stop()
             self._timer = nil
         end
+
+        if self._jitter_timer then
+            self._jitter_timer:stop()
+            self._jitter_timer = nil
+        end
+        state.jitter_buffers = {}
 
         if self.udp and self.udp.close then
             self.udp:close()
@@ -464,9 +518,8 @@ end
 
 -- Starts recording with the given sink, mirrors pycord's
 -- vc.start_recording(sink, callback, *args). See this file's module
--- header for the RTP-receive-pipeline limitation: recording state is
--- tracked and sink:write() is available via _feed_recording, but nothing
--- calls it automatically yet without a real RTP decode loop.
+-- header: incoming RTP audio is fed to the sink automatically via the
+-- per-SSRC jitter buffer once recording is active.
 function VoiceClient:start_recording(sink, finished_callback, ...)
     if not self.state.connected then
         return false, "Not connected"
@@ -486,9 +539,9 @@ function VoiceClient:start_recording(sink, finished_callback, ...)
     return true
 end
 
--- Feeds one Opus RTP payload for user_id into the active recording sink,
--- the manual entry point described in start_recording's doc comment
--- until a real RTP receive loop exists to call this automatically.
+-- Feeds one Opus RTP payload for user_id into the active recording sink.
+-- Called automatically from _flush_jitter_buffers as reordered packets
+-- become ready; can also be called directly for tests or manual feeds.
 function VoiceClient:_feed_recording(user_id, opus_data)
     if not self._recording then
         return false, "Not recording"
@@ -533,6 +586,8 @@ function VoiceClient:_on_ready(data)
         self.udp:connect()
     end
 
+    self:_start_jitter_timer()
+
     -- Send session description
     if self.gateway then
         self.gateway:send_session_description()
@@ -564,6 +619,7 @@ function VoiceClient:_on_client_disconnect(data)
     local state = self.state
     state.known_users[data.user_id] = nil
     state.ssrc_map[data.ssrc] = nil
+    state.jitter_buffers[data.ssrc] = nil
 
     -- Dispatch event
     self.client:dispatch('VOICE_CLIENT_DISCONNECT', {

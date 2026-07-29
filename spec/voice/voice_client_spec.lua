@@ -466,7 +466,8 @@ describe("VoiceClient", function()
 
             client:_on_client_connect({ user_id = "user1", ssrc = 111 })
 
-            client.udp._state.on_packet({ ssrc = 111 }, "opuspayload")
+            client.udp._state.on_packet({ ssrc = 111, sequence = 1 }, "opuspayload")
+            client:_flush_jitter_buffers(0)
 
             assert.equals(1, sink.audio_data["user1"].packets)
             assert.equals("opuspayload", sink.audio_data["user1"].file[1])
@@ -479,7 +480,8 @@ describe("VoiceClient", function()
             client:start_recording(sink, function() end)
 
             local success = pcall(function()
-                client.udp._state.on_packet({ ssrc = 999 }, "opuspayload")
+                client.udp._state.on_packet({ ssrc = 999, sequence = 1 }, "opuspayload")
+                client:_flush_jitter_buffers(0)
             end)
 
             assert.is_true(success)
