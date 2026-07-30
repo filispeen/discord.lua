@@ -5,8 +5,8 @@
 -- extension. Real Ogg/Opus muxing needs a container writer wired into
 -- :cleanup().
 
-local class = require("core.class")
-local OpusSink = require("voice.sinks.opus_sink")
+local class = require("./core/class")
+local OpusSink = require("./voice/sinks/opus_sink")
 
 local OGGSink = class("OGGSink", OpusSink)
 

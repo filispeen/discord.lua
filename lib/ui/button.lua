@@ -14,8 +14,8 @@
 --   button:to_component() -> table
 --     Serializes to the Discord button component payload (type 2).
 
-local class = require("core.class")
-local Item = require("ui.item")
+local class = require("./core/class")
+local Item = require("./ui/item")
 
 local VALID_STYLES = {
     primary = true,

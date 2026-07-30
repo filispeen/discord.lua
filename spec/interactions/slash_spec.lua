@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local slash = require("interactions.slash")
+local slash = require("./interactions/slash")
 
 describe("SlashCommandContext", function()
     describe("author and guild resolution", function()

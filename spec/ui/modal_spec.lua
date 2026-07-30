@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local Modal = require("ui.modal")
+local Modal = require("./ui/modal")
 
 describe("Modal", function()
     it("creates a modal with a title", function()

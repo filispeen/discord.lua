@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local errors = require("core.errors")
+local errors = require("./core/errors")
 
 describe("errors", function()
     describe("TimeoutError", function()
@@ -18,7 +18,7 @@ describe("errors", function()
         end)
 
         it("is a DiscordException", function()
-            local class = require("core.class")
+            local class = require("./core/class")
             local err = errors.TimeoutError.new("boom")
             assert.is_true(class.isInstanceOf(err, errors.DiscordException))
         end)
@@ -60,7 +60,7 @@ describe("errors", function()
         end)
 
         it("is a DiscordException", function()
-            local class = require("core.class")
+            local class = require("./core/class")
             local err = errors.HTTPException.new("bad request", 400)
             assert.is_true(class.isInstanceOf(err, errors.DiscordException))
         end)

@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local AutocompleteContext = require("interactions.autocomplete_context")
+local AutocompleteContext = require("./interactions/autocomplete_context")
 
 describe("AutocompleteContext", function()
     it("sets value from the focused option", function()

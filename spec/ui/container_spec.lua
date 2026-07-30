@@ -3,9 +3,9 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local Container = require("ui.container")
-local TextDisplay = require("ui.text_display")
-local Separator = require("ui.separator")
+local Container = require("./ui/container")
+local TextDisplay = require("./ui/text_display")
+local Separator = require("./ui/separator")
 
 describe("Container", function()
     it("creates a container with child components", function()

@@ -11,7 +11,7 @@
 -- channel cache, and connects through Channel:connect(client) exactly as
 -- Channel:connect()'s public contract documents.
 
-local discord = require("discord.lua")
+local discord = require("./discord/lua")
 
 -- GUILD_VOICE_STATES is needed to track who is in which voice channel,
 -- on top of GUILDS for basic guild/channel caching.

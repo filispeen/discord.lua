@@ -17,8 +17,8 @@ package.loaded["luv"] = {
     now = function() return 0 end
 }
 
-local Role = require("models.role")
-local permission = require("models.permission")
+local Role = require("./models/role")
+local permission = require("./models/permission")
 
 describe("Role", function()
     it("creates a new role", function()

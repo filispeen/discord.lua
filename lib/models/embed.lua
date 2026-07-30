@@ -1,7 +1,7 @@
 -- lib/models/embed.lua
 -- Embed model for Discord API
 
-local class = require("core.class")
+local class = require("./core/class")
 
 -- Embed class
 local Embed = class("Embed")
@@ -108,7 +108,7 @@ function Embed.description(self, desc, color)
 end
 
 function Embed.to_json(self)
-    local json = require("core.json_compat")
+    local json = require("./core/json_compat")
     return json.encode(self)
 end
 

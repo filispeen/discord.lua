@@ -4,8 +4,8 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local CommandTree = require("interactions.command_tree")
-local ApplicationCommand = require("interactions.application_command")
+local CommandTree = require("./interactions/command_tree")
+local ApplicationCommand = require("./interactions/application_command")
 
 -- Minimal http double recording calls and returning canned responses.
 local function make_http(responses)
@@ -139,7 +139,7 @@ describe("CommandTree", function()
     end)
 
     describe("CommandTree:resolve", function()
-        local SlashCommandGroup = require("interactions.slash_command_group")
+        local SlashCommandGroup = require("./interactions/slash_command_group")
 
         it("resolves a plain ApplicationCommand and its own checks", function()
             local tree = CommandTree.new(make_http({}))
@@ -264,7 +264,7 @@ describe("CommandTree", function()
     end)
 
     describe("CommandTree:dispatch_autocomplete with SlashCommandGroup", function()
-        local SlashCommandGroup = require("interactions.slash_command_group")
+        local SlashCommandGroup = require("./interactions/slash_command_group")
 
         it("dispatches autocomplete for a subcommand one level under a group", function()
             local tree = CommandTree.new(make_http({}))

@@ -8,7 +8,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local ws_adapter = require("gateway.ws_adapter")
+local ws_adapter = require("./gateway/ws_adapter")
 
 describe("ws_adapter", function()
     it("send does not run the write function on the caller's coroutine", function()

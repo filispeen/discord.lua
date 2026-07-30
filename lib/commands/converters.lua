@@ -1,7 +1,7 @@
 -- lib/commands/converters.lua
 -- Type converters for ext.commands
 
-local class = require("core.class")
+local class = require("./core/class")
 
 -- Converter error class
 local ConverterError = class("ConverterError")

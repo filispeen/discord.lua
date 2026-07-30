@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local Guild = require("models.guild")
+local Guild = require("./models/guild")
 
 local function make_http(get_response, post_response)
     local calls = {}

@@ -17,7 +17,7 @@ package.loaded["luv"] = {
     now = function() return 0 end
 }
 
-local M = require("models.embed")
+local M = require("./models/embed")
 local Embed = M
 
 describe("Embed", function()

@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local M = require("commands.cooldown")
+local M = require("./commands/cooldown")
 
 describe("Cooldown", function()
     describe("Cooldown class", function()

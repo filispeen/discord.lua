@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local Page = require("ext.pages.page")
+local Page = require("./ext/pages/page")
 
 describe("Page", function()
     describe("Page.new", function()

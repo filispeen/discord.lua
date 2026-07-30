@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local Bot = require("commands.bot")
+local Bot = require("./commands/bot")
 
 describe("BridgeGroup", function()
     it("registers a slash command group on the bot", function()

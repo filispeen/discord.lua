@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local M = require("commands.cog")
+local M = require("./commands/cog")
 
 describe("Cog", function()
     it("creates a new cog", function()

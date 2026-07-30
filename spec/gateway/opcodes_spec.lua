@@ -4,7 +4,7 @@
 -- Setup package path to find lib modules
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local opcodes = require("gateway.opcodes")
+local opcodes = require("./gateway/opcodes")
 
 describe("Gateway Opcodes", function()
     it("should define DISPATCH opcode", function()

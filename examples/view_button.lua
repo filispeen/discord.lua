@@ -4,9 +4,9 @@
 -- Component callbacks receive a ComponentContext (ctx) with
 -- respond/update/defer for answering the interaction.
 
-local discord = require("discord.lua")
-local View = require("ui.view")
-local Button = require("ui.button")
+local discord = require("./discord/lua")
+local View = require("./ui/view")
+local Button = require("./ui/button")
 
 -- Only slash commands and component interactions here, no prefix
 -- commands reading message content, so GUILDS alone is enough.

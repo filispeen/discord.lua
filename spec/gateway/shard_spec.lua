@@ -4,7 +4,7 @@
 -- Setup package path to find lib modules
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local class = require("core.class")
+local class = require("./core/class")
 
 -- Mock luv for testing
 local uv = {
@@ -31,7 +31,7 @@ package.loaded["coro-websocket"] = {
     parseUrl = mock_parse_url,
 }
 
-local Shard = require("gateway.shard")
+local Shard = require("./gateway/shard")
 
 -- Mock HTTP client
 local MockHTTPClient = class("MockHTTPClient")
@@ -194,7 +194,7 @@ describe("Shard", function()
             parseUrl = mock_parse_url,
         }
         package.loaded["gateway.shard"] = nil
-        local FreshShard = require("gateway.shard")
+        local FreshShard = require("./gateway/shard")
 
         local mock_client = MockHTTPClient.new("test_token")
         local shard = FreshShard.new(mock_client, 0, 3)
@@ -231,8 +231,8 @@ describe("Shard", function()
             parseUrl = mock_parse_url,
         }
         package.loaded["gateway.shard"] = nil
-        local FreshShard = require("gateway.shard")
-        local json = require("core.json_compat")
+        local FreshShard = require("./gateway/shard")
+        local json = require("./core/json_compat")
 
         local mock_client = MockHTTPClient.new("test_token")
         local shard = FreshShard.new(mock_client, 0, 3)
@@ -267,7 +267,7 @@ describe("Shard", function()
             parseUrl = mock_parse_url,
         }
         package.loaded["gateway.shard"] = nil
-        local FreshShard = require("gateway.shard")
+        local FreshShard = require("./gateway/shard")
 
         local mock_client = MockHTTPClient.new("test_token")
         local shard = FreshShard.new(mock_client, 0, 3)

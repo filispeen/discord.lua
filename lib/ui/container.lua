@@ -15,8 +15,8 @@
 --   container:to_component() -> table
 --     Serializes to the Discord Container component payload (type 17).
 
-local class = require("core.class")
-local Item = require("ui.item")
+local class = require("./core/class")
+local Item = require("./ui/item")
 
 local Container = class("Container", Item)
 

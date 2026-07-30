@@ -26,9 +26,9 @@
 --     slash command group directly. On the prefix side this is a no-op,
 --     the bare group name already invokes callback directly.
 
-local class = require("core.class")
-local SlashCommandGroup = require("interactions.slash_command_group")
-local BridgeContext = require("ext.bridge.bridge_context")
+local class = require("./core/class")
+local SlashCommandGroup = require("./interactions/slash_command_group")
+local BridgeContext = require("./ext/bridge/bridge_context")
 
 local BridgeGroup = class("BridgeGroup")
 

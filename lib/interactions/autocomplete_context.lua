@@ -25,7 +25,7 @@
 --   ctx.bot -> Client
 --     The client instance, mirrors pycord's ctx.interaction.client shortcut.
 
-local class = require("core.class")
+local class = require("./core/class")
 
 local AutocompleteContext = class("AutocompleteContext")
 

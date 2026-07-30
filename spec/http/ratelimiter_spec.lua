@@ -5,7 +5,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local ratelimiter = require("http.ratelimiter")
+local ratelimiter = require("./http/ratelimiter")
 
 describe("ratelimiter", function()
     it("loads without error and exports Bucket, Manager, DEFAULTS", function()

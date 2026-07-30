@@ -17,7 +17,7 @@ package.loaded["luv"] = {
     now = function() return 0 end
 }
 
-local Policy = require("cache.policy")
+local Policy = require("./cache/policy")
 
 describe("Cache Policy", function()
     it("creates a new policy", function()

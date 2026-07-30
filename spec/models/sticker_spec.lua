@@ -17,7 +17,7 @@ package.loaded["luv"] = {
     now = function() return 0 end
 }
 
-local Sticker = require("models.sticker")
+local Sticker = require("./models/sticker")
 
 describe("Sticker", function()
     it("creates a new sticker", function()

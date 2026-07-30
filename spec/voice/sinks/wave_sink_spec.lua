@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local WaveSink = require("voice.sinks.wave_sink")
+local WaveSink = require("./voice/sinks/wave_sink")
 
 describe("WaveSink", function()
     it("sets encoding to wav", function()

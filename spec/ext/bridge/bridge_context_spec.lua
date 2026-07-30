@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local BridgeContext = require("ext.bridge.bridge_context")
+local BridgeContext = require("./ext/bridge/bridge_context")
 
 local function make_message()
     local calls = {}

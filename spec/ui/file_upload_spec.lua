@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local FileUpload = require("ui.file_upload")
+local FileUpload = require("./ui/file_upload")
 
 describe("FileUpload", function()
     it("creates a file component with an attachment url", function()

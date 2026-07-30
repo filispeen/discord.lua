@@ -16,7 +16,7 @@ package.loaded["json"] = {
 -- Don't clear core.class - checks_spec loads it first
 package.loaded["commands.bot"] = nil
 
-local Bot = require("commands.bot")
+local Bot = require("./commands/bot")
 
 local function table_count(t)
     local n = 0
@@ -304,7 +304,7 @@ describe("Bot", function()
     end)
 
     it("enforces cooldown checks on a prefix command and emits command_error", function()
-        local cooldown = require("commands.cooldown")
+        local cooldown = require("./commands/cooldown")
         local bot = Bot.new("token")
         local invoke_count = 0
         local error_received = nil
@@ -324,8 +324,8 @@ describe("Bot", function()
     end)
 
     it("routes a component interaction to a registered View's item callback", function()
-        local View = require("ui.view")
-        local Button = require("ui.button")
+        local View = require("./ui/view")
+        local Button = require("./ui/button")
 
         local bot = Bot.new("token")
         local view = View.new()
@@ -344,8 +344,8 @@ describe("Bot", function()
     end)
 
     it("does not route a component interaction through a stopped View", function()
-        local View = require("ui.view")
-        local Button = require("ui.button")
+        local View = require("./ui/view")
+        local Button = require("./ui/button")
 
         local bot = Bot.new("token")
         local view = View.new()
@@ -365,8 +365,8 @@ describe("Bot", function()
     end)
 
     it("falls back to Bot:interaction when no View claims the custom_id", function()
-        local View = require("ui.view")
-        local Button = require("ui.button")
+        local View = require("./ui/view")
+        local Button = require("./ui/button")
 
         local bot = Bot.new("token")
         local view = View.new()
@@ -643,7 +643,7 @@ describe("Bot", function()
     end)
 
     it("user_command registers a USER type application command dispatched with the resolved member", function()
-        local ApplicationCommand = require("interactions.application_command")
+        local ApplicationCommand = require("./interactions/application_command")
         local bot = Bot.new("token")
         local received_ctx, received_member = nil, nil
 
@@ -705,7 +705,7 @@ describe("Bot", function()
     end)
 
     it("message_command registers a MESSAGE type application command dispatched with the resolved message", function()
-        local ApplicationCommand = require("interactions.application_command")
+        local ApplicationCommand = require("./interactions/application_command")
         local bot = Bot.new("token")
         local received_message = nil
 

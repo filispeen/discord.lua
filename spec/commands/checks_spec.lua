@@ -3,8 +3,8 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local M = require("commands.checks")
-local permission = require("models.permission")
+local M = require("./commands/checks")
+local permission = require("./models/permission")
 
 describe("Checks", function()
     describe("owner check", function()

@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local ApplicationCommand = require("interactions.application_command")
+local ApplicationCommand = require("./interactions/application_command")
 
 describe("ApplicationCommand", function()
     it("serializes a command with no options", function()

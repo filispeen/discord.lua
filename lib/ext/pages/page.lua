@@ -17,7 +17,7 @@
 --     already-built Page, or a View) into a Page, mirrors pycord's static
 --     Paginator.get_page_content. Errors on an unrecognized type.
 
-local class = require("core.class")
+local class = require("./core/class")
 
 local Page = class("Page")
 

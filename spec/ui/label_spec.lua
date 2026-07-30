@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local Label = require("ui.label")
+local Label = require("./ui/label")
 
 -- Minimal stand-in for a wrapped input component (InputText/Select/FileUpload)
 local function fake_component(payload)

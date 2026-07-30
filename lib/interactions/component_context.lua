@@ -25,7 +25,7 @@
 --     (type 6, DEFERRED_UPDATE_MESSAGE unless opts.with_message is set,
 --     which uses type 5, DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE).
 
-local class = require("core.class")
+local class = require("./core/class")
 
 local ComponentContext = class("ComponentContext")
 

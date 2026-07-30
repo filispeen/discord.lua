@@ -40,10 +40,10 @@ local mock_luv = {
 
 package.loaded["luv"] = mock_luv
 
-local class = require("core.class")
-local enums = require("voice.enums")
-local errors = require("voice.errors")
-local json = require("dkjson")
+local class = require("./core/class")
+local enums = require("./voice/enums")
+local errors = require("./voice/errors")
+local json = require("json")
 
 -- Mock WebSocket. Real connections send JSON-encoded string frames (see
 -- VoiceGateway:_send), so this decodes them back to tables for
@@ -75,7 +75,7 @@ function MockWebSocket:start_reading()
 end
 
 
-local VoiceGateway = require("voice.voice_gateway")
+local VoiceGateway = require("./voice/voice_gateway")
 
 describe("VoiceGateway", function()
     local mock_client

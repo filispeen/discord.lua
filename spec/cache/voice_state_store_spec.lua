@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local VoiceStateStore = require("cache.voice_state_store")
+local VoiceStateStore = require("./cache/voice_state_store")
 
 describe("VoiceStateStore", function()
     it("returns nil for a user never seen in voice", function()
@@ -47,7 +47,7 @@ describe("VoiceStateStore", function()
     it("removes the state when channel_id is the json.null sentinel", function()
         package.loaded["json"] = { null = setmetatable({}, {}) }
         package.loaded["cache.voice_state_store"] = nil
-        local FreshStore = require("cache.voice_state_store")
+        local FreshStore = require("./cache/voice_state_store")
 
         local store = FreshStore.new()
         store:update({ guild_id = "guild1", user_id = "user1", channel_id = "channel1" })

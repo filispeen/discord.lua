@@ -4,7 +4,7 @@
 -- Setup package path to find lib modules
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local Message = require("models.message")
+local Message = require("./models/message")
 
 local function fake_http()
     local calls = {}

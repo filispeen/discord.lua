@@ -19,8 +19,8 @@
 --     chunks) with a single string: a complete WAV file (44 byte RIFF
 --     header + the concatenated PCM data), ready to write to disk.
 
-local class = require("core.class")
-local Sink = require("voice.sinks.sink")
+local class = require("./core/class")
+local Sink = require("./voice/sinks/sink")
 
 local SAMPLE_RATE = 48000
 local CHANNELS = 2

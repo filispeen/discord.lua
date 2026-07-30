@@ -25,8 +25,8 @@
 --     string, same shape as WaveSink's cleanup output, but the bytes are
 --     raw concatenated Opus frames, not a valid container file.
 
-local class = require("core.class")
-local Sink = require("voice.sinks.sink")
+local class = require("./core/class")
+local Sink = require("./voice/sinks/sink")
 
 local OpusSink = class("OpusSink", Sink)
 

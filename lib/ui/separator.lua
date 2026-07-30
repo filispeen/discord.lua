@@ -10,8 +10,8 @@
 --   separator:to_component() -> table
 --     Serializes to the Discord Separator component payload (type 14).
 
-local class = require("core.class")
-local Item = require("ui.item")
+local class = require("./core/class")
+local Item = require("./ui/item")
 
 local SPACING_VALUES = {
     small = 1,

@@ -32,7 +32,7 @@
 --     Prefix path: :send falls back to Message:reply, mirrors ctx.author:send
 --     used in the bridge_commands.py example as the non-app equivalent.
 
-local class = require("core.class")
+local class = require("./core/class")
 
 local BridgeContext = class("BridgeContext")
 

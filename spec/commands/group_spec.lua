@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local M = require("commands.group")
+local M = require("./commands/group")
 
 describe("Group", function()
     it("creates a new group", function()

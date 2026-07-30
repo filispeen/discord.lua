@@ -13,7 +13,7 @@
 --     opts.row: number or nil - defaults to 0
 --     opts.loop_label: string or nil - label shown instead when Paginator.loop_pages is true
 
-local class = require("core.class")
+local class = require("./core/class")
 
 local VALID_TYPES = {
     first = true,

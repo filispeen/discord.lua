@@ -4,7 +4,7 @@
 -- Setup package path to find lib modules
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local M = require("commands.command")
+local M = require("./commands/command")
 
 describe("Command", function()
     it("creates a new command", function()

@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local OpusSink = require("voice.sinks.opus_sink")
+local OpusSink = require("./voice/sinks/opus_sink")
 
 describe("OpusSink", function()
     it("sets encoding to the value passed at construction", function()

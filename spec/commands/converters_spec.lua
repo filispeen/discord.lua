@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local M = require("commands.converters")
+local M = require("./commands/converters")
 
 describe("Converters", function()
     describe("StringConverter", function()

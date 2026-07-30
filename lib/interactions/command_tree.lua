@@ -20,7 +20,7 @@
 --     Returns a table with keys global and guilds, each a list of the
 --     command dicts returned by Discord.
 
-local class = require("core.class")
+local class = require("./core/class")
 
 local CommandTree = class("CommandTree")
 
@@ -243,7 +243,7 @@ function CommandTree:dispatch_autocomplete(interaction, client)
         return false
     end
 
-    local AutocompleteContext = require("interactions.autocomplete_context")
+    local AutocompleteContext = require("./interactions/autocomplete_context")
     local ctx = AutocompleteContext.new(interaction, client, focused.name, cmd)
     callback(ctx)
     return true

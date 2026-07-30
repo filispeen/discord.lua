@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local Select = require("ui.select")
+local Select = require("./ui/select")
 
 describe("Select", function()
     it("creates a string select with defaults", function()

@@ -27,7 +27,7 @@ package.loaded["json"] = {
     end
 }
 
-local Webhook = require("models.webhook")
+local Webhook = require("./models/webhook")
 
 describe("Webhook", function()
     it("creates a new webhook", function()

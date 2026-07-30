@@ -56,13 +56,13 @@
 --   paginator:page_action() -> nil
 --     Invokes the current page's callback, if any.
 
-local class = require("core.class")
-local View = require("ui.view")
-local Button = require("ui.button")
-local Select = require("ui.select")
-local Page = require("ext.pages.page")
-local PageGroup = require("ext.pages.page_group")
-local PaginatorButton = require("ext.pages.paginator_button")
+local class = require("./core/class")
+local View = require("./ui/view")
+local Button = require("./ui/button")
+local Select = require("./ui/select")
+local Page = require("./ext/pages/page")
+local PageGroup = require("./ext/pages/page_group")
+local PaginatorButton = require("./ext/pages/paginator_button")
 
 local Paginator = class("Paginator", View)
 

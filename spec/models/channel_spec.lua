@@ -24,7 +24,7 @@ local mock_luv = {
 }
 package.loaded["luv"] = mock_luv
 
-local Channel = require("models.channel")
+local Channel = require("./models/channel")
 
 describe("Channel", function()
     describe("Channel.new", function()
@@ -112,7 +112,7 @@ describe("Channel", function()
             -- VoiceClient:connect() sends an IDENTIFY over the voice gateway
             -- websocket; stub the transport the same way voice_client_spec does,
             -- since this test only cares about the Channel -> VoiceClient wiring.
-            local voice_client_module = require("voice.voice_client")
+            local voice_client_module = require("./voice/voice_client")
             local original_new = voice_client_module.new
             voice_client_module.new = function(...)
                 local vc = original_new(...)

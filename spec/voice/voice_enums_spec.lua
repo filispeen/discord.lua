@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local enums = require("voice.enums")
+local enums = require("./voice/enums")
 
 describe("Voice Enums", function()
     it("should define IDENTIFY opcode", function()

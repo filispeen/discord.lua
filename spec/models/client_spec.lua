@@ -5,7 +5,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local Client = require("models.client")
+local Client = require("./models/client")
 
 describe("Client:get_channel", function()
     it("returns nil when the channel is not cached and there is no rest/http", function()

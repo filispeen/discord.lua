@@ -24,7 +24,7 @@
 --   User:system -> boolean
 --     True if this is a system user.
 
-local class = require("core.class")
+local class = require("./core/class")
 
 -- User class
 local User = class("User")

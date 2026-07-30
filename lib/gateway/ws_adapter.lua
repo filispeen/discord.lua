@@ -15,7 +15,7 @@
 --     The read loop must be pumped by calling ws:start_reading() once
 --     listeners are attached; this runs the receive loop in a coroutine.
 
-local Emitter = require("core.emitter")
+local Emitter = require("./core/emitter")
 
 local TEXT_OPCODE = 1
 

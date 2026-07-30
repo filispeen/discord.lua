@@ -3,8 +3,8 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local View = require("ui.view")
-local Button = require("ui.button")
+local View = require("./ui/view")
+local Button = require("./ui/button")
 
 local function make_button(id)
     return Button.new({ label = id, custom_id = id })

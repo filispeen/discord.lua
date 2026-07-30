@@ -4,7 +4,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local ComponentContext = require("interactions.component_context")
+local ComponentContext = require("./interactions/component_context")
 
 local function make_client(calls)
     return {

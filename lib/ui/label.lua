@@ -13,8 +13,8 @@
 --   label:to_component() -> table
 --     Serializes to the Discord Label component payload (type 18).
 
-local class = require("core.class")
-local Item = require("ui.item")
+local class = require("./core/class")
+local Item = require("./ui/item")
 
 local Label = class("Label", Item)
 

@@ -14,7 +14,7 @@
 --   item.view -> View or nil
 --     Set by View:add() when the item is attached.
 
-local class = require("core.class")
+local class = require("./core/class")
 
 local Item = class("Item")
 

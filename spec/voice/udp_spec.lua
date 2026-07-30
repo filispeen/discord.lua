@@ -49,7 +49,7 @@ local luv = {
 
 package.loaded["luv"] = luv
 
-local udp = require("voice.udp")
+local udp = require("./voice/udp")
 
 local function byte_string(...)
     return string.char(...)
@@ -353,7 +353,7 @@ describe("UDP", function()
         end)
 
         it("should encrypt on send and decrypt back to the original payload", function()
-            local crypto = require("voice.crypto")
+            local crypto = require("./voice/crypto")
 
             sent_packets = {}
             local client = udp.UDPClient.new("192.168.1.1:12345", "token123")

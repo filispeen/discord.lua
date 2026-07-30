@@ -13,8 +13,8 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;spec/voice/?.lua;" .. package.path
 
-local crypto = require("voice.crypto")
-local pure_lua = require("voice.le_salsa20poly1305")
+local crypto = require("./voice/crypto")
+local pure_lua = require("./voice/le_salsa20poly1305")
 
 describe("Crypto", function()
     it("exposes size constants", function()

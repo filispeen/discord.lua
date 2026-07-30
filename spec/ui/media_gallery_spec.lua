@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local MediaGallery = require("ui.media_gallery")
+local MediaGallery = require("./ui/media_gallery")
 
 describe("MediaGallery", function()
     it("creates a gallery with items", function()

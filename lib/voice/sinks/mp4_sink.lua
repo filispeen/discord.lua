@@ -5,8 +5,8 @@
 -- extension. Real MP4 muxing needs a container writer wired into
 -- :cleanup().
 
-local class = require("core.class")
-local OpusSink = require("voice.sinks.opus_sink")
+local class = require("./core/class")
+local OpusSink = require("./voice/sinks/opus_sink")
 
 local MP4Sink = class("MP4Sink", OpusSink)
 

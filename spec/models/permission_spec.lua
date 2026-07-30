@@ -17,7 +17,7 @@ package.loaded["luv"] = {
     now = function() return 0 end
 }
 
-local permission = require("models.permission")
+local permission = require("./models/permission")
 
 describe("Permissions", function()
     it("defines ADMINISTRATOR permission", function()

@@ -29,11 +29,11 @@
 --   Shard:close() -> nil
 --     Closes the connection.
 
-local class = require("core.class")
-local errors = require("core.errors")
-local opcodes = require("gateway.opcodes")
-local json = require("core.json_compat")
-local uv = require("core.luv_compat")
+local class = require("./core/class")
+local errors = require("./core/errors")
+local opcodes = require("./gateway/opcodes")
+local json = require("./core/json_compat")
+local uv = require("./core/luv_compat")
 
 -- Shard class
 local Shard = class("Shard")
@@ -90,7 +90,7 @@ function Shard:connect()
 
     -- Create WebSocket connection
     local websocket = require("coro-websocket")
-    local ws_adapter = require("gateway.ws_adapter")
+    local ws_adapter = require("./gateway/ws_adapter")
     local options, parse_err = websocket.parseUrl(gateway_info.url .. "/?v=10&encoding=json")
     if not options then
         error("Failed to parse gateway URL: " .. tostring(parse_err))
@@ -217,7 +217,7 @@ function Shard:dispatch(event)
         if self._state.session_id then
             self:resume(self._state.session_id, self._state.seq)
         else
-            local enums = require("core.enums")
+            local enums = require("./core/enums")
             local intents = self.client.intents or enums.default_intents()
 
             local identify_data = {

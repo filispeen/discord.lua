@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local Thumbnail = require("ui.thumbnail")
+local Thumbnail = require("./ui/thumbnail")
 
 describe("Thumbnail", function()
     it("creates a thumbnail with a url", function()

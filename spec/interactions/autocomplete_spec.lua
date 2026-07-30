@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local M = require("interactions.autocomplete")
+local M = require("./interactions/autocomplete")
 
 describe("basic_autocomplete", function()
     it("filters a static list case-insensitively against ctx.value", function()

@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local Sound = require("models.sound")
+local Sound = require("./models/sound")
 
 local function make_http()
     local calls = {}

@@ -59,7 +59,7 @@
 --     JSON-vs-multipart caveat.
 --     POST /channels/{id}/invites.
 
-local class = require("core.class")
+local class = require("./core/class")
 
 -- Channel class
 local Channel = class("Channel")
@@ -143,7 +143,7 @@ function Channel:connect(client)
         error("Channel:connect() requires a client argument", 0)
     end
 
-    local VoiceClient = require("voice.voice_client")
+    local VoiceClient = require("./voice/voice_client")
     local voice_client = VoiceClient.new(client, self)
     local ok, err = voice_client:connect()
     if not ok then
@@ -164,7 +164,7 @@ function Channel:send_soundboard_sound(sound)
         error("Channel:send_soundboard_sound() requires a sound", 0)
     end
 
-    local Route = require("http.route")
+    local Route = require("./http/route")
     local route = Route.new(self.http)
 
     local payload = { sound_id = sound.id or sound.sound_id }
@@ -182,8 +182,8 @@ function Channel:create_invite(opts)
         error("Channel has no http client attached, cannot create an invite", 0)
     end
 
-    local Route = require("http.route")
-    local Invite = require("models.invite")
+    local Route = require("./http/route")
+    local Invite = require("./models/invite")
     local route = Route.new(self.http)
 
     local payload = {

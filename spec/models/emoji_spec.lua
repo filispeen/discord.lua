@@ -17,7 +17,7 @@ package.loaded["luv"] = {
     now = function() return 0 end
 }
 
-local Emoji = require("models.emoji")
+local Emoji = require("./models/emoji")
 
 describe("Emoji", function()
     it("creates a new emoji", function()

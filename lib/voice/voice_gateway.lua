@@ -37,10 +37,10 @@
 --       up to MAX_RECONNECT_ATTEMPTS, emitting "reconnecting" per attempt
 --       and "reconnect_failed" if attempts are exhausted
 
-local class = require("core.class")
-local enums = require("voice.enums")
-local errors = require("voice.errors")
-local uv = require("core.luv_compat")
+local class = require("./core/class")
+local enums = require("./voice/enums")
+local errors = require("./voice/errors")
+local uv = require("./core/luv_compat")
 
 local VoiceGateway = class("VoiceGateway")
 
@@ -143,7 +143,7 @@ function VoiceGateway:connect(endpoint, token, session_id)
     -- this the same :on/:send/:close surface the rest of this function
     -- (and VoiceGateway:_send/:close elsewhere in this file) expects.
     local websocket = require("coro-websocket")
-    local ws_adapter = require("gateway.ws_adapter")
+    local ws_adapter = require("./gateway/ws_adapter")
 
     local options, parse_err = websocket.parseUrl(url)
     if not options then
@@ -173,7 +173,7 @@ function VoiceGateway:connect(endpoint, token, session_id)
     end)
 
     ws:on("message", function(_, msg)
-        local json = require("core.json_compat")
+        local json = require("./core/json_compat")
         local ok, parsed = pcall(json.decode, msg)
         if not ok or type(parsed) ~= "table" then
             return
@@ -338,7 +338,7 @@ function VoiceGateway:_send(payload)
         return false, "WebSocket not connected"
     end
 
-    local json = require("core.json_compat")
+    local json = require("./core/json_compat")
     local data = {
         op = payload.op,
         d = payload.d,

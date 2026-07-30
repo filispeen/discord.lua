@@ -4,7 +4,7 @@
 -- Setup package path to find lib modules
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local class = require("core.class")
+local class = require("./core/class")
 
 -- busted.describe, busted.it, busted.assert are globals when run through busted runner
 describe("class.lua", function()

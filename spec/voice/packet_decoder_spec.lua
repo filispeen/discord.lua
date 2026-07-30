@@ -6,7 +6,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;spec/voice/?.lua;" .. package.path
 
-local opus = require("voice.opus")
+local opus = require("./voice/opus")
 
 local function header(sequence, timestamp)
     return { sequence = sequence, timestamp = timestamp or sequence * 960 }

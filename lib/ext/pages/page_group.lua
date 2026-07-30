@@ -14,7 +14,7 @@
 --       overriding it only for this group when selected. nil means "use the
 --       Paginator's own setting".
 
-local class = require("core.class")
+local class = require("./core/class")
 
 local PageGroup = class("PageGroup")
 

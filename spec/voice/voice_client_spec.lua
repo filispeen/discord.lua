@@ -31,8 +31,8 @@ local mock_luv = {
 
 package.loaded["luv"] = mock_luv
 
-local class = require("core.class")
-local emitter = require("core.emitter")
+local class = require("./core/class")
+local emitter = require("./core/emitter")
 
 -- Mock channel
 local MockChannel = class("MockChannel")
@@ -100,7 +100,7 @@ function MockClient.new()
     return self
 end
 
-local VoiceClient = require("voice.voice_client")
+local VoiceClient = require("./voice/voice_client")
 
 describe("VoiceClient", function()
     local mock_client
@@ -351,7 +351,7 @@ describe("VoiceClient", function()
 
     describe("Recording", function()
         local client
-        local Sink = require("voice.sinks.sink")
+        local Sink = require("./voice/sinks/sink")
 
         before_each(function()
             client = VoiceClient.new(mock_client, mock_channel)
@@ -460,7 +460,7 @@ describe("VoiceClient", function()
 
         it("routes an incoming UDP packet to _feed_recording via ssrc_map", function()
             client.state.connected = true
-            local Sink = require("voice.sinks.sink")
+            local Sink = require("./voice/sinks/sink")
             local sink = Sink.new()
             client:start_recording(sink, function() end)
 
@@ -475,7 +475,7 @@ describe("VoiceClient", function()
 
         it("drops an incoming packet from an unknown ssrc", function()
             client.state.connected = true
-            local Sink = require("voice.sinks.sink")
+            local Sink = require("./voice/sinks/sink")
             local sink = Sink.new()
             client:start_recording(sink, function() end)
 

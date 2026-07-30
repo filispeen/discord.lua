@@ -15,7 +15,7 @@ package.loaded["luv"] = {
     now = function() return 0 end
 }
 
-local Cache = require("lib.cache.store")
+local Cache = require("./lib/cache/store")
 
 describe("Cache Store", function()
     it("creates a new cache", function()

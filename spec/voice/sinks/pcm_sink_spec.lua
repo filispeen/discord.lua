@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local PCMSink = require("voice.sinks.pcm_sink")
+local PCMSink = require("./voice/sinks/pcm_sink")
 
 describe("PCMSink", function()
     it("sets encoding to pcm", function()

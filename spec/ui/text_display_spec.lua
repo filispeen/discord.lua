@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local TextDisplay = require("ui.text_display")
+local TextDisplay = require("./ui/text_display")
 
 describe("TextDisplay", function()
     it("creates a text display with content", function()

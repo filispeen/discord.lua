@@ -48,7 +48,7 @@
 --     file upload, the CSV content is sent as a JSON string field rather
 --     than an actual file part.
 
-local class = require("core.class")
+local class = require("./core/class")
 
 -- Invite class
 local Invite = class("Invite")
@@ -153,7 +153,7 @@ function Invite:fetch_target_users_job_status()
         error("Invite has no http client attached, cannot fetch target users job status", 0)
     end
 
-    local Route = require("http.route")
+    local Route = require("./http/route")
     local route = Route.new(self.http)
     return route:get_invite_target_users_job_status(self.code)
 end
@@ -167,7 +167,7 @@ function Invite:edit_target_users(opts)
         error("Invite:edit_target_users requires opts.target_users_file", 0)
     end
 
-    local Route = require("http.route")
+    local Route = require("./http/route")
     local route = Route.new(self.http)
     local updated = route:edit_invite_target_users(self.code, {
         target_users_file = opts.target_users_file,

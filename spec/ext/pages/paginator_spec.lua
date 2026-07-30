@@ -3,10 +3,10 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local Paginator = require("ext.pages.paginator")
-local Page = require("ext.pages.page")
-local PageGroup = require("ext.pages.page_group")
-local PaginatorButton = require("ext.pages.paginator_button")
+local Paginator = require("./ext/pages/paginator")
+local Page = require("./ext/pages/page")
+local PageGroup = require("./ext/pages/page_group")
+local PaginatorButton = require("./ext/pages/paginator_button")
 
 local function make_ctx()
     local calls = { respond = {}, edit = {} }

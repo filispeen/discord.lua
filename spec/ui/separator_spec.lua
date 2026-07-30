@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local Separator = require("ui.separator")
+local Separator = require("./ui/separator")
 
 describe("Separator", function()
     it("defaults to a visible small divider", function()

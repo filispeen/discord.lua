@@ -4,7 +4,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local ChannelStore = require("cache.channel_store")
+local ChannelStore = require("./cache/channel_store")
 
 describe("ChannelStore", function()
     it("returns nil for a channel never seen", function()

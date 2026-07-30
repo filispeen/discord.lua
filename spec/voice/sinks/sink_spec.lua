@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local Sink = require("voice.sinks.sink")
+local Sink = require("./voice/sinks/sink")
 
 describe("Sink", function()
     it("defaults encoding to raw", function()

@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local PageGroup = require("ext.pages.page_group")
+local PageGroup = require("./ext/pages/page_group")
 
 describe("PageGroup", function()
     it("requires a label", function()

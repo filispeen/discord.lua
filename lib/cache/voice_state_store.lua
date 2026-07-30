@@ -18,7 +18,7 @@
 --   VoiceStateStore:get_channel_id(guild_id, user_id) -> string or nil
 --     Convenience accessor for the channel_id field only.
 
-local create_cache = require("cache.store")
+local create_cache = require("./cache/store")
 
 -- Discord sends channel_id: null (JSON null) when a user leaves voice.
 -- The luvit json library decodes JSON null to its own sentinel table

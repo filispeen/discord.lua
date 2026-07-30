@@ -32,11 +32,11 @@
 --   client:stop_recording() -> boolean, string?
 --     Calls sink:cleanup() then the finished_callback with (sink, ...).
 
-local class = require("core.class")
-local opus = require("voice.opus")
-local udp = require("voice.udp")
-local VoiceGateway = require("voice.voice_gateway")
-local luv = require("core.luv_compat")
+local class = require("./core/class")
+local opus = require("./voice/opus")
+local udp = require("./voice/udp")
+local VoiceGateway = require("./voice/voice_gateway")
+local luv = require("./core/luv_compat")
 
 local VoiceClient = class("VoiceClient")
 function VoiceClient.new(client, channel)

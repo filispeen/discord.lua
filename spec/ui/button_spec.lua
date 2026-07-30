@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local Button = require("ui.button")
+local Button = require("./ui/button")
 
 describe("Button", function()
     it("creates a button with defaults", function()

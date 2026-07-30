@@ -1,5 +1,5 @@
 -- discord/lua.lua
--- Package entrypoint for discord.lua, resolved by require("discord.lua").
+-- Package entrypoint for discord.lua, resolved by require("./discord/lua").
 --
 -- Public Contract:
 --   Bot(ratelimiter, intents) -> Bot
@@ -12,12 +12,10 @@
 --
 --   discord.enums -> core.enums module
 --     INTENTS, combine_intents, default_intents, all_intents, OPTION_TYPE.
---     Exposed here so bots don't need a separate require("core.enums").
+--     Exposed here so bots don't need a separate require("./core/enums").
 
-package.path = package.path .. ";lib/?.lua;lib/?/?.lua;deps/?.lua;deps/?/init.lua;deps/secure-socket/?.lua"
-
-local Bot = require("commands.bot")
-local enums = require("core.enums")
+local Bot = require("./lib/commands/bot")
+local enums = require("./lib/core/enums")
 
 local M = {
     Bot = Bot,

@@ -4,7 +4,7 @@
 -- Setup package path to find lib modules
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local emitter = require("core.emitter")
+local emitter = require("./core/emitter")
 
 -- busted.describe, busted.it, busted.assert are globals when run through busted runner
 describe("emitter.lua", function()

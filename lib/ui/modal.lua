@@ -16,7 +16,7 @@
 --   modal.on_submit: function or nil
 --     Optional callback invoked with the interaction when the modal is submitted.
 
-local class = require("core.class")
+local class = require("./core/class")
 
 local MAX_ITEMS = 5
 

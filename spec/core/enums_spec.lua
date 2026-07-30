@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local enums = require("core.enums")
+local enums = require("./core/enums")
 
 local function has_bit(value, bit_flag)
     return math.floor(value / bit_flag) % 2 == 1

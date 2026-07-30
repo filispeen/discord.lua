@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local PaginatorButton = require("ext.pages.paginator_button")
+local PaginatorButton = require("./ext/pages/paginator_button")
 
 describe("PaginatorButton", function()
     it("errors on an invalid button type", function()

@@ -3,9 +3,9 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local Section = require("ui.section")
-local TextDisplay = require("ui.text_display")
-local Thumbnail = require("ui.thumbnail")
+local Section = require("./ui/section")
+local TextDisplay = require("./ui/text_display")
+local Thumbnail = require("./ui/thumbnail")
 
 describe("Section", function()
     it("creates a section with text displays and an accessory", function()

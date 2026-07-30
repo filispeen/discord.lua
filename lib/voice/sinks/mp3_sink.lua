@@ -4,8 +4,8 @@
 -- it stores raw concatenated Opus payloads under the .mp3 extension.
 -- Real MP3 encoding needs an external encoder wired into :cleanup().
 
-local class = require("core.class")
-local OpusSink = require("voice.sinks.opus_sink")
+local class = require("./core/class")
+local OpusSink = require("./voice/sinks/opus_sink")
 
 local MP3Sink = class("MP3Sink", OpusSink)
 

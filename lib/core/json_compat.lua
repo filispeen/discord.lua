@@ -2,7 +2,7 @@
 -- Resolves a JSON encode/decode module across different environments.
 --
 -- Public Contract:
---   require("core.json_compat") -> table with .encode(value) / .decode(str)
+--   require("./core/json_compat") -> table with .encode(value) / .decode(str)
 --
 -- Files loaded from disk under lib/ (as opposed to the bundle's own
 -- deps/) cannot see luvit/luvi's bundled "json" module, since a

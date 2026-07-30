@@ -4,7 +4,7 @@
 -- Setup package path to find lib modules
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local class = require("core.class")
+local class = require("./core/class")
 
 -- Mock luv for testing
 local uv = {
@@ -33,7 +33,7 @@ package.loaded["coro-websocket"] = {
     end,
 }
 
-local ShardManager = require("gateway.manager")
+local ShardManager = require("./gateway/manager")
 
 -- Mock HTTP client
 local MockHTTPClient = class("MockHTTPClient")

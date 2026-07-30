@@ -3,7 +3,7 @@
 
 package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
 
-local errors = require("voice.errors")
+local errors = require("./voice/errors")
 
 describe("Voice Errors", function()
     it("should export VoiceClientError", function()

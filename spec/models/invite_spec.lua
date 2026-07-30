@@ -17,7 +17,7 @@ package.loaded["luv"] = {
     now = function() return 0 end
 }
 
-local Invite = require("models.invite")
+local Invite = require("./models/invite")
 
 describe("Invite", function()
     it("creates a new invite", function()
