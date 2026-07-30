@@ -1,9 +1,9 @@
 name: Publish to Lit
 
 on:
-  push:
-    tags:
-      - "v[0-9]*.[0-9]*.[0-9]*"
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
 
 env:
   OPUS_TAG: v1.5.2
@@ -11,10 +11,15 @@ env:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Set up SSH key
         run: |
@@ -42,7 +47,7 @@ jobs:
       - name: Build libopus (Windows dlls)
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake make mingw-w64-gcc mingw-w64-binutils mingw-w64-crt mingw-w64-headers mingw-w64-winpthreads
+          sudo apt-get install -y cmake make gcc-mingw-w64 binutils-mingw-w64-i686 binutils-mingw-w64-x86-64
           git clone --depth 1 --branch "${OPUS_TAG}" https://github.com/xiph/opus.git opus-src
           mkdir -p ./lib/dlls
 
@@ -81,7 +86,7 @@ jobs:
 
       - name: Write a version into package.lua
         run: |
-          REF=${{ github.ref_name }}
+          REF=${{ github.event.workflow_run.head_branch }}
           version=${REF#v}
           sed -i "s/version = \"REPLACE_ME\"/version = \"${version}\"/" package.lua
 
