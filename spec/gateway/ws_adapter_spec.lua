@@ -6,7 +6,7 @@
 -- with "cannot resume running coroutine" if the connection's own read
 -- coroutine happened to be active at the same time.
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local ws_adapter = require("./gateway/ws_adapter")
 

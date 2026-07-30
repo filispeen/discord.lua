@@ -1,7 +1,7 @@
 -- spec/commands/cog_spec.lua
 -- Tests for cog class
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local M = require("./commands/cog")
 

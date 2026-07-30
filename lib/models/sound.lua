@@ -22,8 +22,8 @@
 --   sound:delete(reason) -> nil
 --     Only valid for guild sounds.
 
-local class = require("./core/class")
-local Route = require("./http/route")
+local class = require("../core/class")
+local Route = require("../http/route")
 
 local Sound = class("Sound")
 

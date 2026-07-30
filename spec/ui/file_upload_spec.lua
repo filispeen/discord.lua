@@ -1,7 +1,7 @@
 -- spec/ui/file_upload_spec.lua
 -- Tests for the File (FileUpload) UI component (Components V2)
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local FileUpload = require("./ui/file_upload")
 

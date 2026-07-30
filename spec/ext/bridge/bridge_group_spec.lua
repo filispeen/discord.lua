@@ -1,7 +1,7 @@
 -- spec/ext/bridge/bridge_group_spec.lua
 -- Tests for BridgeGroup
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local Bot = require("./commands/bot")
 

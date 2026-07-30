@@ -1,7 +1,7 @@
 -- spec/voice/sinks/wave_sink_spec.lua
 -- Tests for WaveSink
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local WaveSink = require("./voice/sinks/wave_sink")
 

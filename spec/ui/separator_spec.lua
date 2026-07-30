@@ -1,7 +1,7 @@
 -- spec/ui/separator_spec.lua
 -- Tests for the Separator UI component (Components V2)
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local Separator = require("./ui/separator")
 

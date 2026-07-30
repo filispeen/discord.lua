@@ -45,7 +45,7 @@
 --     Returns sink.audio_data[user_id], mirrors pycord's
 --     Sink.get_user_audio(user_id).
 
-local class = require("./core/class")
+local class = require("../../core/class")
 
 local Sink = class("Sink")
 

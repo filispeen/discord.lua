@@ -1,7 +1,7 @@
 -- spec/voice/sinks/opus_sink_spec.lua
 -- Tests for the shared OpusSink base (MP3/OGG/MKA/MKV/MP4/M4A sinks)
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local OpusSink = require("./voice/sinks/opus_sink")
 

@@ -1,7 +1,7 @@
 -- spec/ui/select_spec.lua
 -- Tests for the Select UI component
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local Select = require("./ui/select")
 

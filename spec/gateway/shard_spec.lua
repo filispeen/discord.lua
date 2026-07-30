@@ -2,7 +2,7 @@
 -- Tests for shard connection
 
 -- Setup package path to find lib modules
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local class = require("./core/class")
 

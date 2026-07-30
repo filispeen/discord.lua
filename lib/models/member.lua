@@ -28,7 +28,7 @@
 --   Member:nick -> string or nil
 --     Member's nickname (nil if none).
 
-local class = require("./core/class")
+local class = require("../core/class")
 
 -- Member class
 local Member = class("Member")

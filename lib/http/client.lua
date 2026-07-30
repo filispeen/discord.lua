@@ -33,9 +33,9 @@
 --   Client:throw_error(status, data) -> exception
 --     Creates appropriate error based on status code.
 
-local class = require("./core/class")
-local errors = require("./core/errors")
-local json = require("./core/json_compat")
+local class = require("../core/class")
+local errors = require("../core/errors")
+local json = require("../core/json_compat")
 
 -- HTTP client class
 local Client = class("Client")

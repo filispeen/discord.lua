@@ -1,7 +1,7 @@
 -- spec/ui/modal_spec.lua
 -- Tests for the Modal component
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local Modal = require("./ui/modal")
 

@@ -2,7 +2,7 @@
 -- Resolves the libuv binding module across different luvit/luvi builds.
 --
 -- Public Contract:
---   require("./core/luv_compat") -> the libuv binding table
+--   require("./luv_compat") -> the libuv binding table
 --
 -- Some luvit/luvi builds expose the binding as require("luv"), others
 -- (observed on luvit 2.18.1 / luvi 2.14.0) only expose it as

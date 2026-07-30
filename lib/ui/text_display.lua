@@ -9,8 +9,8 @@
 --   text_display:to_component() -> table
 --     Serializes to the Discord TextDisplay component payload (type 10).
 
-local class = require("./core/class")
-local Item = require("./ui/item")
+local class = require("../core/class")
+local Item = require("./item")
 
 local TextDisplay = class("TextDisplay", Item)
 

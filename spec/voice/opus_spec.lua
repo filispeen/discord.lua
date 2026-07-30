@@ -5,7 +5,8 @@
 -- Full tests require FFI (libffi) and libopus to be available.
 -- These tests verify the module structure and API even without actual FFI.
 
-package.path = "lib/?.lua;lib/?/?.lua;spec/voice/?.lua;" .. package.path
+require("spec_helper")
+package.path = "spec/voice/?.lua;" .. package.path
 
 -- Stub opus module for testing without FFI
 local M = {

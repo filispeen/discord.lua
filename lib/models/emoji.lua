@@ -23,7 +23,7 @@
 --   Emoji:animated -> boolean
 --     True if emoji is animated.
 
-local class = require("./core/class")
+local class = require("../core/class")
 
 -- Emoji class
 local Emoji = class("Emoji")

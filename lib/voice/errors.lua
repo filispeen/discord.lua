@@ -8,8 +8,8 @@
 --     VoiceDisconnectError - Disconnection failures
 --     VoiceAudioError - Audio processing errors
 
-local class = require("./core/class")
-local errors = require("./core/errors")
+local class = require("../core/class")
+local errors = require("../core/errors")
 
 -- Base voice error (extends HTTPException)
 local VoiceClientError = class("VoiceClientError", errors.HTTPException)

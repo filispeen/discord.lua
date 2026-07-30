@@ -2,7 +2,7 @@
 -- Main test runner for busted
 
 -- Setup package path
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 -- Load busted
 local busted = require("busted")

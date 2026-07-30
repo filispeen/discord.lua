@@ -28,7 +28,7 @@
 --   view.on_timeout: function or nil
 --     Optional callback invoked when the timeout elapses.
 
-local class = require("./core/class")
+local class = require("../core/class")
 
 local MAX_ROWS = 5
 

@@ -35,9 +35,9 @@
 --   ShardManager:wait_for_shard(shard_id, timeout) -> boolean
 --     Wait for a shard to be ready (deprecated, use on_shard_ready).
 
-local class = require("./core/class")
-local Shard = require("./gateway/shard")
-local uv = require("./core/luv_compat")
+local class = require("../core/class")
+local Shard = require("./shard")
+local uv = require("../core/luv_compat")
 
 -- ShardManager class
 local ShardManager = class("ShardManager")

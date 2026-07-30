@@ -10,8 +10,8 @@
 --   section:to_component() -> table
 --     Serializes to the Discord Section component payload (type 9).
 
-local class = require("./core/class")
-local Item = require("./ui/item")
+local class = require("../core/class")
+local Item = require("./item")
 
 local MAX_TEXT_DISPLAYS = 3
 

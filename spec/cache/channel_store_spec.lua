@@ -2,7 +2,7 @@
 -- Tests for the channel cache, built from GUILD_CREATE/CHANNEL_CREATE/
 -- CHANNEL_UPDATE/CHANNEL_DELETE payloads.
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local ChannelStore = require("./cache/channel_store")
 

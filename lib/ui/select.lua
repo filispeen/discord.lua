@@ -18,8 +18,8 @@
 --   select:to_component() -> table
 --     Serializes to the Discord select component payload.
 
-local class = require("./core/class")
-local Item = require("./ui/item")
+local class = require("../core/class")
+local Item = require("./item")
 
 local TYPE_NUMBERS = {
     string = 3,

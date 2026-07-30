@@ -1,7 +1,7 @@
 -- spec/models/channel_spec.lua
 -- Tests for Channel model, including Channel:connect() voice wiring
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 -- Mock luv for voice_client's transitive requires (opus/udp), same
 -- approach as spec/voice/voice_client_spec.lua.

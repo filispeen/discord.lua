@@ -1,7 +1,7 @@
 -- spec/voice/voice_errors_spec.lua
 -- Tests for voice errors
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local errors = require("./voice/errors")
 

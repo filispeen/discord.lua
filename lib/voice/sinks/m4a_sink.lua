@@ -5,8 +5,8 @@
 -- extension. Real M4A muxing needs a container writer wired into
 -- :cleanup().
 
-local class = require("./core/class")
-local OpusSink = require("./voice/sinks/opus_sink")
+local class = require("../../core/class")
+local OpusSink = require("./opus_sink")
 
 local M4ASink = class("M4ASink", OpusSink)
 

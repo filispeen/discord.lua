@@ -1,7 +1,7 @@
 -- spec/models/guild_spec.lua
 -- Tests for the Guild model, focused on soundboard integration
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local Guild = require("./models/guild")
 

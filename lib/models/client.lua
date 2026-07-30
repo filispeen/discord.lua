@@ -44,15 +44,15 @@
 --   Client:get_guild(id) -> Guild
 --     Get a guild by ID.
 
-local class = require("./core/class")
+local class = require("../core/class")
 
 -- Client class
 local Client = class("Client")
 
 function Client.new(token, ratelimiter, intents)
-    local enums = require("./core/enums")
-    local VoiceStateStore = require("./cache/voice_state_store")
-    local ChannelStore = require("./cache/channel_store")
+    local enums = require("../core/enums")
+    local VoiceStateStore = require("../cache/voice_state_store")
+    local ChannelStore = require("../cache/channel_store")
     local self = {
         token = token,
         ratelimiter = ratelimiter or {},
@@ -123,9 +123,9 @@ end
 
 -- Create HTTP client
 function Client:_create_http()
-    local ratelimiter = require("./http/ratelimiter")
-    local client = require("./http/client")
-    local Route = require("./http/route")
+    local ratelimiter = require("../http/ratelimiter")
+    local client = require("../http/client")
+    local Route = require("../http/route")
 
     local manager = ratelimiter.Manager.new()
     self.ratelimiter = manager
@@ -139,7 +139,7 @@ end
 
 -- Create and start gateway
 function Client:start_gateway()
-    local gateway_manager = require("./gateway/manager")
+    local gateway_manager = require("../gateway/manager")
 
     self.gateway = gateway_manager.new(self, 1)
 
@@ -164,7 +164,7 @@ function Client:start_gateway()
     end)
 
     self.gateway:on_dispatch("MESSAGE_CREATE", function(data)
-        local Message = require("./models/message")
+        local Message = require("./message")
         self:emit("message_create", Message.new(data, self.http))
     end)
 
@@ -324,7 +324,7 @@ function Client.get_member(_self, _id)
 end
 
 function Client:get_channel(id)
-    local Channel = require("./models/channel")
+    local Channel = require("./channel")
 
     local data = self.channels:get(id)
     if not data then

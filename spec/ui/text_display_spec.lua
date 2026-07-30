@@ -1,7 +1,7 @@
 -- spec/ui/text_display_spec.lua
 -- Tests for the TextDisplay UI component (Components V2)
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local TextDisplay = require("./ui/text_display")
 

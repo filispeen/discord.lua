@@ -1,7 +1,7 @@
 -- spec/ext/pages/page_spec.lua
 -- Tests for Page
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local Page = require("./ext/pages/page")
 

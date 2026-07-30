@@ -9,7 +9,7 @@
 --   ContextMenuCommand:execute(ctx) -> response
 --     Execute the command.
 
-local class = require("./core/class")
+local class = require("../core/class")
 
 -- ContextMenuCommand class
 local ContextMenuCommand = class("ContextMenuCommand")

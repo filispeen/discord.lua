@@ -14,8 +14,8 @@
 --     48kHz), not Opus. Appended to audio_data[user_id].file as-is with
 --     no framing, matching PCMSink's lack of a container format.
 
-local class = require("./core/class")
-local Sink = require("./voice/sinks/sink")
+local class = require("../../core/class")
+local Sink = require("./sink")
 
 local PCMSink = class("PCMSink", Sink)
 

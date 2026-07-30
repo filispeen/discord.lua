@@ -1,7 +1,7 @@
 -- spec/ui/view_spec.lua
 -- Tests for the View container
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local View = require("./ui/view")
 local Button = require("./ui/button")

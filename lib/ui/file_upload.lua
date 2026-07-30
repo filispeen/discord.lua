@@ -11,8 +11,8 @@
 --   file_upload:to_component() -> table
 --     Serializes to the Discord File component payload (type 13).
 
-local class = require("./core/class")
-local Item = require("./ui/item")
+local class = require("../core/class")
+local Item = require("./item")
 
 local FileUpload = class("FileUpload", Item)
 

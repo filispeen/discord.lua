@@ -1,6 +1,6 @@
 -- lib/commands/checks.lua
 -- Command checks for ext.commands
-local permission = require("./models/permission")
+local permission = require("../models/permission")
 local M = {}
 
 -- Helper to extract id from author (handles both string and table)

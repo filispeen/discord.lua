@@ -57,7 +57,7 @@
 --     POST /guilds/{guild_id}/soundboard-sounds, mirrors pycord's
 --     Guild.create_sound().
 
-local class = require("./core/class")
+local class = require("../core/class")
 
 -- Guild class
 local Guild = class("Guild")
@@ -109,8 +109,8 @@ function Guild:fetch_sounds()
         error("Guild has no http client attached, cannot fetch sounds", 0)
     end
 
-    local Route = require("./http/route")
-    local Sound = require("./models/sound")
+    local Route = require("../http/route")
+    local Sound = require("./sound")
     local route = Route.new(self.http)
     local response = route:get_guild_sounds(self.id)
 
@@ -134,8 +134,8 @@ function Guild:create_sound(opts)
         error("Guild:create_sound requires opts.sound", 0)
     end
 
-    local Route = require("./http/route")
-    local Sound = require("./models/sound")
+    local Route = require("../http/route")
+    local Sound = require("./sound")
     local route = Route.new(self.http)
 
     local payload = {

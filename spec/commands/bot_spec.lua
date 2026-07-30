@@ -2,7 +2,7 @@
 -- Tests for bot class
 
 -- Setup package path to find lib modules
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 -- Mock json so Bot:connect() -> Client:_create_http() -> http.client can
 -- load without a real luvit environment; nothing in this spec's tests

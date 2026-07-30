@@ -1,7 +1,8 @@
 -- spec/voice/voice_gateway_spec.lua
 -- Tests for voice gateway
 
-package.path = "lib/?.lua;lib/?/?.lua;spec/voice/?.lua;" .. package.path
+require("spec_helper")
+package.path = "spec/voice/?.lua;" .. package.path
 
 -- Mock luv for testing
 local created_timers = {}
@@ -459,7 +460,7 @@ describe("VoiceGateway", function()
                     return {}, function() end, function() end
                 end,
             }
-            package.loaded["./gateway/ws_adapter"] = {
+            package.loaded["../gateway/ws_adapter"] = {
                 wrap = function(_res, _read, _write)
                     return opened_ws
                 end,
@@ -468,7 +469,7 @@ describe("VoiceGateway", function()
         end)
 
         after_each(function()
-            package.loaded["./gateway/ws_adapter"] = nil
+            package.loaded["../gateway/ws_adapter"] = nil
         end)
 
         it("opens a wss url built from the raw endpoint host", function()
@@ -608,7 +609,7 @@ describe("VoiceGateway", function()
                     return { url = options.url }, function() end, function() end
                 end,
             }
-            package.loaded["./gateway/ws_adapter"] = {
+            package.loaded["../gateway/ws_adapter"] = {
                 wrap = function(res, _read, _write)
                     local ws = MockWebSocket.new()
                     ws.url = res.url
@@ -629,7 +630,7 @@ describe("VoiceGateway", function()
         end)
 
         after_each(function()
-            package.loaded["./gateway/ws_adapter"] = nil
+            package.loaded["../gateway/ws_adapter"] = nil
         end)
 
         it("does not reconnect on a clean close (code 1000)", function()

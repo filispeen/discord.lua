@@ -23,7 +23,7 @@
 --   ChannelStore:remove(channel_id) -> nil
 --     Drops the channel from the store (CHANNEL_DELETE).
 
-local create_cache = require("./cache/store")
+local create_cache = require("./store")
 
 local ChannelStore = {}
 ChannelStore.__index = ChannelStore

@@ -1,7 +1,7 @@
 -- spec/core/errors_spec.lua
 -- Tests for core error classes
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local errors = require("./core/errors")
 

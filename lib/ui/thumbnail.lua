@@ -11,8 +11,8 @@
 --   thumbnail:to_component() -> table
 --     Serializes to the Discord Thumbnail component payload (type 11).
 
-local class = require("./core/class")
-local Item = require("./ui/item")
+local class = require("../core/class")
+local Item = require("./item")
 
 local Thumbnail = class("Thumbnail", Item)
 

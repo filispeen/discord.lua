@@ -35,8 +35,8 @@
 --     Raised (via error(...)) when a command is invoked while on cooldown.
 --     retry_after: number - seconds remaining before the command becomes usable again.
 
-local class = require("./core/class")
-local errors = require("./core/errors")
+local class = require("../core/class")
+local errors = require("../core/errors")
 
 local CommandOnCooldown = class("CommandOnCooldown", errors.DiscordException)
 

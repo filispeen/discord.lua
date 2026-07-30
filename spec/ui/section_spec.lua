@@ -1,7 +1,7 @@
 -- spec/ui/section_spec.lua
 -- Tests for the Section UI component (Components V2)
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local Section = require("./ui/section")
 local TextDisplay = require("./ui/text_display")

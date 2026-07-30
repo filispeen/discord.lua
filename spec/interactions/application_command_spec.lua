@@ -1,7 +1,7 @@
 -- spec/interactions/application_command_spec.lua
 -- Tests for ApplicationCommand construction and Discord API serialization.
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local ApplicationCommand = require("./interactions/application_command")
 

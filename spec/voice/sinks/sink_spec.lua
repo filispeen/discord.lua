@@ -1,7 +1,7 @@
 -- spec/voice/sinks/sink_spec.lua
 -- Tests for the base Sink class
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local Sink = require("./voice/sinks/sink")
 

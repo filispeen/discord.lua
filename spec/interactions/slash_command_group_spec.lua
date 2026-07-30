@@ -1,7 +1,7 @@
 -- spec/interactions/slash_command_group_spec.lua
 -- Tests for SlashCommandGroup
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local SlashCommandGroup = require("./interactions/slash_command_group")
 

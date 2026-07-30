@@ -1,7 +1,7 @@
 -- spec/ui/button_spec.lua
 -- Tests for the Button UI component
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local Button = require("./ui/button")
 

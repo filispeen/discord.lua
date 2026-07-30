@@ -34,8 +34,8 @@
 --     Used by command_tree/bot dispatch to resolve a nested interaction
 --     call down to the ApplicationCommand that should actually run.
 
-local class = require("./core/class")
-local ApplicationCommand = require("./interactions/application_command")
+local class = require("../core/class")
+local ApplicationCommand = require("./application_command")
 
 local SUB_COMMAND = 1
 local SUB_COMMAND_GROUP = 2

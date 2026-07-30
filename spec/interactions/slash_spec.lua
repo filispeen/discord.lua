@@ -1,7 +1,7 @@
 -- spec/interactions/slash_spec.lua
 -- Tests for SlashCommandContext, focused on context menu target resolution
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local slash = require("./interactions/slash")
 

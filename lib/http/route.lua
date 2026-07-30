@@ -12,7 +12,7 @@
 --   returns whatever http.client:request(...) returns (a decoded table, or
 --   throws a typed error from core.errors on failure).
 
-local class = require("./core/class")
+local class = require("../core/class")
 
 local Route = class("Route")
 

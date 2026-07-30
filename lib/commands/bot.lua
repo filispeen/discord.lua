@@ -1,9 +1,9 @@
 -- lib/commands/bot.lua
 -- Bot class for ext.commands
 
-local class = require("./core/class")
-local Embed = require("./models/embed")
-local CommandTree = require("./interactions/command_tree")
+local class = require("../core/class")
+local Embed = require("../models/embed")
+local CommandTree = require("../interactions/command_tree")
 
 local Bot = class('Bot')
 
@@ -86,7 +86,7 @@ function Bot:register_application_command(name, options)
         options = options.options or {},
     }
 
-    local ApplicationCommand = require("./interactions/application_command")
+    local ApplicationCommand = require("../interactions/application_command")
     local cmd = ApplicationCommand.new(name, options.description or name, options.options)
     cmd.guild_ids = options.guild_ids
     cmd.callback = options.callback
@@ -113,7 +113,7 @@ end
 -- the same name/description and checks.
 function Bot:bridge_command(name, options)
     options = options or {}
-    local BridgeContext = require("./ext/bridge/bridge_context")
+    local BridgeContext = require("../ext/bridge/bridge_context")
     local callback = options.callback
 
     self:register_command(name, function(message)
@@ -138,7 +138,7 @@ end
 -- bridge_group. options.callback, if given, is the group's own bare
 -- invocation (see BridgeGroup:map_to to expose it as a slash subcommand too).
 function Bot:bridge_group(name, options)
-    local BridgeGroup = require("./ext/bridge/bridge_group")
+    local BridgeGroup = require("../ext/bridge/bridge_group")
     return BridgeGroup.new(self, name, options)
 end
 
@@ -148,7 +148,7 @@ end
 -- pycord's "User commands give a member param" contract.
 function Bot:user_command(options)
     options = options or {}
-    local ApplicationCommand = require("./interactions/application_command")
+    local ApplicationCommand = require("../interactions/application_command")
 
     local name = options.name
     if not name then
@@ -174,7 +174,7 @@ end
 -- where message is the resolved target message from the interaction.
 function Bot:message_command(options)
     options = options or {}
-    local ApplicationCommand = require("./interactions/application_command")
+    local ApplicationCommand = require("../interactions/application_command")
 
     local name = options.name
     if not name then
@@ -284,7 +284,7 @@ end
 -- M.new contract for how context_class is applied) or pass cls explicitly.
 function Bot:get_application_context(interaction, cls)
     cls = cls or self.application_context_class
-    local slash = require("./interactions/slash")
+    local slash = require("../interactions/slash")
     return slash.new(interaction, self.client, cls)
 end
 
@@ -372,7 +372,7 @@ function Bot:wait_for(event_name, opts)
                 end
                 cleanup()
                 if on_timeout then
-                    local errors = require("./core/errors")
+                    local errors = require("../core/errors")
                     on_timeout(errors.TimeoutError.new("Timed out waiting for " .. event_name))
                 end
             end)
@@ -434,8 +434,8 @@ function Bot:fetch_default_sounds()
         error("Bot has no http client, call Bot:run() or Bot:connect() first", 0)
     end
 
-    local Route = require("./http/route")
-    local Sound = require("./models/sound")
+    local Route = require("../http/route")
+    local Sound = require("../models/sound")
     local route = Route.new(self.http)
     local response = route:get_default_sounds()
 
@@ -531,7 +531,7 @@ function Bot:dispatch_interaction(interaction)
     -- MESSAGE_COMPONENT interactions, never on the interaction's top level.
     local custom_id = interaction.data and interaction.data.custom_id
     if custom_id then
-        local ComponentContext = require("./interactions/component_context")
+        local ComponentContext = require("../interactions/component_context")
         local ctx = ComponentContext.new(interaction, self.client)
 
         for _, view in ipairs(self.components) do
@@ -580,7 +580,7 @@ function Bot:connect()
     -- bot:interaction/bot:component registrations on top of stale ones.
     self:clear_interactions()
 
-    local Client = require("./models/client")
+    local Client = require("../models/client")
     self.client = Client.new(self.token, self.ratelimiter, self.intents)
     self.client:_create_http()
     self.http = self.client.http

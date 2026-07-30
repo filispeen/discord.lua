@@ -1,7 +1,7 @@
 -- spec/voice/voice_client_spec.lua
 -- Tests for voice client
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 -- Mock luv for testing
 local mock_luv = {

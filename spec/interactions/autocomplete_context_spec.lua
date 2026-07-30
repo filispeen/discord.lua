@@ -1,7 +1,7 @@
 -- spec/interactions/autocomplete_context_spec.lua
 -- Tests for AutocompleteContext
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local AutocompleteContext = require("./interactions/autocomplete_context")
 

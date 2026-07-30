@@ -1,7 +1,7 @@
 -- spec/ext/pages/paginator_spec.lua
 -- Tests for Paginator
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local Paginator = require("./ext/pages/paginator")
 local Page = require("./ext/pages/page")

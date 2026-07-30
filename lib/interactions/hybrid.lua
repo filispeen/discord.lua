@@ -4,7 +4,7 @@
 -- Hybrid commands are defined once and work as both prefix commands
 -- and application commands.
 
-local class = require("./core/class")
+local class = require("../core/class")
 
 -- HybridCommand class
 local HybridCommand = class("HybridCommand")

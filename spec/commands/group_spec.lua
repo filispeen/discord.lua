@@ -1,7 +1,7 @@
 -- spec/commands/group_spec.lua
 -- Tests for group class
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local M = require("./commands/group")
 

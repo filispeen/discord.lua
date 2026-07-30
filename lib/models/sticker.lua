@@ -26,7 +26,7 @@
 --   Sticker:user -> User or nil
 --     Sticker pack owner (for premium stickers).
 
-local class = require("./core/class")
+local class = require("../core/class")
 
 -- Sticker class
 local Sticker = class("Sticker")

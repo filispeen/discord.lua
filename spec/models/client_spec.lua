@@ -3,7 +3,7 @@
 -- (Client:get_channel, GUILD_CREATE/CHANNEL_CREATE/CHANNEL_UPDATE/
 -- CHANNEL_DELETE dispatch handling).
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local Client = require("./models/client")
 
@@ -73,9 +73,9 @@ describe("Client channel cache dispatch wiring", function()
         -- Re-run the same registration block start_gateway uses, without
         -- actually requiring gateway.manager or opening a real connection.
         local gateway_manager_stub = { new = function() return client.gateway end }
-        package.loaded["./gateway/manager"] = gateway_manager_stub
+        package.loaded["../gateway/manager"] = gateway_manager_stub
         client:start_gateway()
-        package.loaded["./gateway/manager"] = nil
+        package.loaded["../gateway/manager"] = nil
 
         return client, dispatch_handlers
     end

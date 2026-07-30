@@ -35,7 +35,7 @@
 --   Role:emoji -> table or nil
 --     Role's custom emoji.
 
-local class = require("./core/class")
+local class = require("../core/class")
 
 -- Role class
 local Role = class("Role")

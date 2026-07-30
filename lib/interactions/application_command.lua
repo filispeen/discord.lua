@@ -14,7 +14,7 @@
 --     Serializes the command to the Discord API application command schema,
 --     used by interactions.command_tree for registration and diffing.
 
-local class = require("./core/class")
+local class = require("../core/class")
 
 -- ApplicationCommand class
 local ApplicationCommand = class("ApplicationCommand")

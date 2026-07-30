@@ -20,7 +20,7 @@
 --   Policy:create_default() -> table
 --     Gets default policy for each resource type.
 
-local class = require("./core/class")
+local class = require("../core/class")
 
 -- Default cache policies
 local DEFAULT_POLICIES = {

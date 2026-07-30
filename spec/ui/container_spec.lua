@@ -1,7 +1,7 @@
 -- spec/ui/container_spec.lua
 -- Tests for the Container UI component (Components V2)
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local Container = require("./ui/container")
 local TextDisplay = require("./ui/text_display")

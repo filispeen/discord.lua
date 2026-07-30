@@ -32,8 +32,8 @@
 --   Webhook:send(content, options) -> table
 --     Sends a message via webhook.
 
-local class = require("./core/class")
-local json = require("./core/json_compat")
+local class = require("../core/class")
+local json = require("../core/json_compat")
 
 -- Webhook class
 local Webhook = class("Webhook")
@@ -68,7 +68,7 @@ function Webhook:send(content, options)
     }
 
     local url = "https://discord.com/api/v10/webhooks/" .. self.id
-    local http = require("./http/client")
+    local http = require("../http/client")
     local response, err = http.request(url, {
         method = "POST",
         headers = headers,

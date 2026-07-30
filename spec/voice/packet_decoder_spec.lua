@@ -4,7 +4,8 @@
 -- pure Lua with no FFI/libopus dependency, so it runs identically under
 -- PUC Lua 5.1 and LuaJIT without needing a real Opus codec.
 
-package.path = "lib/?.lua;lib/?/?.lua;spec/voice/?.lua;" .. package.path
+require("spec_helper")
+package.path = "spec/voice/?.lua;" .. package.path
 
 local opus = require("./voice/opus")
 

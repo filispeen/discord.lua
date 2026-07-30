@@ -1,7 +1,7 @@
 -- spec/ext/bridge/bridge_context_spec.lua
 -- Tests for BridgeContext
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local BridgeContext = require("./ext/bridge/bridge_context")
 

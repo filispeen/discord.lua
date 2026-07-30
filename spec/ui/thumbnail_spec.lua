@@ -1,7 +1,7 @@
 -- spec/ui/thumbnail_spec.lua
 -- Tests for the Thumbnail UI component (Components V2)
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local Thumbnail = require("./ui/thumbnail")
 

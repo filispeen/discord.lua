@@ -1,7 +1,7 @@
 -- spec/cache/store_spec.lua
 -- Tests for cache store
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 package.loaded["luv"] = {
     timer = {

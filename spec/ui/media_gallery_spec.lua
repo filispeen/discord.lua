@@ -1,7 +1,7 @@
 -- spec/ui/media_gallery_spec.lua
 -- Tests for the MediaGallery UI component (Components V2)
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local MediaGallery = require("./ui/media_gallery")
 

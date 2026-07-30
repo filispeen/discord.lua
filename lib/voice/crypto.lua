@@ -98,7 +98,7 @@ load_sodium()
 -- Pure-Lua fallback, used whenever the libsodium FFI backend above did
 -- not come up. Loaded lazily/unconditionally here since it is cheap
 -- (no C calls, no external state) and always available.
-local pure_lua = require("./voice/le_salsa20poly1305")
+local pure_lua = require("./le_salsa20poly1305")
 
 local Crypto = {}
 

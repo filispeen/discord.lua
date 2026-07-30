@@ -14,8 +14,8 @@
 --   media_gallery:to_component() -> table
 --     Serializes to the Discord MediaGallery component payload (type 12).
 
-local class = require("./core/class")
-local Item = require("./ui/item")
+local class = require("../core/class")
+local Item = require("./item")
 
 local MAX_ITEMS = 10
 

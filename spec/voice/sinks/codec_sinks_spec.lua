@@ -2,7 +2,7 @@
 -- Tests for the thin OpusSink subclasses: MP3Sink, OGGSink, MKASink,
 -- MKVSink, MP4Sink, M4ASink
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local sinks = {
     { name = "MP3Sink", module = "voice.sinks.mp3_sink", encoding = "mp3" },

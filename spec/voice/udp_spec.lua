@@ -7,7 +7,8 @@
 -- which does not match the real data shape and let a real data[i]-on-a-
 -- string bug in udp.lua go unnoticed. Rewritten to use real byte strings.
 
-package.path = "lib/?.lua;lib/?/?.lua;spec/voice/?.lua;" .. package.path
+require("spec_helper")
+package.path = "spec/voice/?.lua;" .. package.path
 
 -- Mock luv for testing
 local sent_packets = {}

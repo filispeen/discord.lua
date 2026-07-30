@@ -31,7 +31,7 @@
 --     Error raised for permission denied errors
 --     message: string - error message
 
-local class = require("./core/class")
+local class = require("./class")
 local DiscordException = class("DiscordException")
 
 -- Base DiscordException

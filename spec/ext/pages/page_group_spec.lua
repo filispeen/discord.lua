@@ -1,7 +1,7 @@
 -- spec/ext/pages/page_group_spec.lua
 -- Tests for PageGroup
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local PageGroup = require("./ext/pages/page_group")
 

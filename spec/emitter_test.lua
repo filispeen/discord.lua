@@ -2,7 +2,7 @@
 -- Tests for lib/core/emitter.lua
 
 -- Setup package path to find lib modules
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local emitter = require("./core/emitter")
 

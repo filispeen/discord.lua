@@ -35,7 +35,7 @@
 --   Message:reactions -> table
 --     Message reactions.
 
-local class = require("./core/class")
+local class = require("../core/class")
 
 -- Message class
 local Message = class("Message")

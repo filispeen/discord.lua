@@ -2,7 +2,7 @@
 -- Tests for the application command tree: registration, diffing, sync,
 -- and autocomplete dispatch.
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local CommandTree = require("./interactions/command_tree")
 local ApplicationCommand = require("./interactions/application_command")

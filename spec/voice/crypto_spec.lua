@@ -11,7 +11,8 @@
 -- one is picked, and that both produce mutually-compatible ciphertext)
 -- is covered separately below.
 
-package.path = "lib/?.lua;lib/?/?.lua;spec/voice/?.lua;" .. package.path
+require("spec_helper")
+package.path = "spec/voice/?.lua;" .. package.path
 
 local crypto = require("./voice/crypto")
 local pure_lua = require("./voice/le_salsa20poly1305")

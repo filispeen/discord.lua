@@ -1,7 +1,7 @@
 -- spec/commands/cooldown_spec.lua
 -- Tests for cooldown
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local M = require("./commands/cooldown")
 

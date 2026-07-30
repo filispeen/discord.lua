@@ -1,7 +1,7 @@
 -- spec/cache/voice_state_store_spec.lua
 -- Tests for the voice state cache, built from VOICE_STATE_UPDATE payloads.
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local VoiceStateStore = require("./cache/voice_state_store")
 

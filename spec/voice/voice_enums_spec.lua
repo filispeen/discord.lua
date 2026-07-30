@@ -1,7 +1,7 @@
 -- spec/voice/voice_enums_spec.lua
 -- Tests for voice opcodes and enums
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local enums = require("./voice/enums")
 

@@ -1,7 +1,7 @@
 -- spec/voice/sinks/pcm_sink_spec.lua
 -- Tests for PCMSink
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local PCMSink = require("./voice/sinks/pcm_sink")
 

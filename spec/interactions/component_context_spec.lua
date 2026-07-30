@@ -2,7 +2,7 @@
 -- Tests for ComponentContext, the response helper for button/select
 -- (MESSAGE_COMPONENT) interactions.
 
-package.path = "lib/?.lua;lib/?/?.lua;" .. package.path
+require("spec_helper")
 
 local ComponentContext = require("./interactions/component_context")
 
