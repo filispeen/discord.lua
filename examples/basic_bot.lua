@@ -5,7 +5,7 @@
 -- command. Good starting point to copy for a new bot before adding
 -- slash commands, buttons, or voice.
 
-local discord = require("./discord/lua")
+local discord = require("../init")
 
 -- The ping command below is a prefix command, so it needs GUILD_MESSAGES
 -- to see the message and MESSAGE_CONTENT (privileged, enable it on the

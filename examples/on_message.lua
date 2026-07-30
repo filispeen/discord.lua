@@ -6,7 +6,7 @@
 -- match a prefix command below. Use it for logging, auto-moderation, or
 -- reacting to messages that are not commands at all.
 
-local discord = require("./discord/lua")
+local discord = require("../init")
 
 -- Reading message.content needs GUILD_MESSAGES to see the message and
 -- MESSAGE_CONTENT (privileged, enable it on the dev portal too).

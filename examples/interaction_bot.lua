@@ -5,7 +5,7 @@
 -- options. ctx:respond/reply must be called within Discord's 3 second
 -- interaction window; ctx:edit can update the response afterward.
 
-local discord = require("./discord/lua")
+local discord = require("../init")
 
 -- Interactions arrive over the same gateway connection, but reading them
 -- does not need a privileged intent. GUILDS is enough to cache the guild

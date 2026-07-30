@@ -4,7 +4,7 @@
 -- Component callbacks receive a ComponentContext (ctx) with
 -- respond/update/defer for answering the interaction.
 
-local discord = require("./discord/lua")
+local discord = require("../init")
 local View = require("./ui/view")
 local Button = require("./ui/button")
 

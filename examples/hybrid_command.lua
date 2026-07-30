@@ -9,7 +9,7 @@
 -- no single "hybrid" registration helper, so the same handler is passed
 -- to both command and slash_command.
 
-local discord = require("./discord/lua")
+local discord = require("../init")
 
 -- Prefix command below needs GUILD_MESSAGES to see the message and
 -- MESSAGE_CONTENT (privileged, enable it on the dev portal too) to read
