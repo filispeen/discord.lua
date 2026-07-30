@@ -46,7 +46,7 @@ describe("VoiceStateStore", function()
 
     it("removes the state when channel_id is the json.null sentinel", function()
         package.loaded["json"] = { null = setmetatable({}, {}) }
-        package.loaded["cache.voice_state_store"] = nil
+        package.loaded["./cache/voice_state_store"] = nil
         local FreshStore = require("./cache/voice_state_store")
 
         local store = FreshStore.new()
@@ -56,7 +56,7 @@ describe("VoiceStateStore", function()
         assert.is_nil(store:get("guild1", "user1"))
 
         package.loaded["json"] = nil
-        package.loaded["cache.voice_state_store"] = nil
+        package.loaded["./cache/voice_state_store"] = nil
     end)
 
     it("keeps voice states separate per guild for the same user", function()

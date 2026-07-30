@@ -43,7 +43,7 @@ package.loaded["luv"] = mock_luv
 local class = require("./core/class")
 local enums = require("./voice/enums")
 local errors = require("./voice/errors")
-local json = require("json")
+local json = require("deps/json")
 
 -- Mock WebSocket. Real connections send JSON-encoded string frames (see
 -- VoiceGateway:_send), so this decodes them back to tables for
@@ -459,7 +459,7 @@ describe("VoiceGateway", function()
                     return {}, function() end, function() end
                 end,
             }
-            package.loaded["gateway.ws_adapter"] = {
+            package.loaded["./gateway/ws_adapter"] = {
                 wrap = function(_res, _read, _write)
                     return opened_ws
                 end,
@@ -468,7 +468,7 @@ describe("VoiceGateway", function()
         end)
 
         after_each(function()
-            package.loaded["gateway.ws_adapter"] = nil
+            package.loaded["./gateway/ws_adapter"] = nil
         end)
 
         it("opens a wss url built from the raw endpoint host", function()
@@ -608,7 +608,7 @@ describe("VoiceGateway", function()
                     return { url = options.url }, function() end, function() end
                 end,
             }
-            package.loaded["gateway.ws_adapter"] = {
+            package.loaded["./gateway/ws_adapter"] = {
                 wrap = function(res, _read, _write)
                     local ws = MockWebSocket.new()
                     ws.url = res.url
@@ -629,7 +629,7 @@ describe("VoiceGateway", function()
         end)
 
         after_each(function()
-            package.loaded["gateway.ws_adapter"] = nil
+            package.loaded["./gateway/ws_adapter"] = nil
         end)
 
         it("does not reconnect on a clean close (code 1000)", function()
