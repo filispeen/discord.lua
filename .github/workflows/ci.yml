@@ -57,7 +57,7 @@ jobs:
         run: sudo luarocks install busted
 
       - name: Run busted tests
-        run: LUA_PATH="./deps/?.lua;./deps/?/init.lua;;" busted -p "_test.lua" -p "_spec.lua" -r spec
+        run: LUA_PATH="./spec/?.lua;./deps/?.lua;./deps/?/init.lua;;" busted -p "_test.lua" -p "_spec.lua" -r spec
 
       - name: Update test badge
         uses: schneegans/dynamic-badges-action@v1.9.0
