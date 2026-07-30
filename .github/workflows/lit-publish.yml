@@ -5,6 +5,9 @@ on:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
 
+env:
+  OPUS_TAG: v1.5.2
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -39,24 +42,41 @@ jobs:
       - name: Build libopus (Windows dlls)
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake mingw-w64
-          git clone --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git opus-src
+          sudo apt-get install -y cmake make mingw-w64-gcc mingw-w64-binutils mingw-w64-crt mingw-w64-headers mingw-w64-winpthreads
+          git clone --depth 1 --branch "${OPUS_TAG}" https://github.com/xiph/opus.git opus-src
           mkdir -p ./lib/dlls
 
           declare -A targets=( [x64]=x86_64-w64-mingw32 [Win32]=i686-w64-mingw32 )
           for arch in "${!targets[@]}"; do
-            host="${targets[$arch]}"
-            build_dir="opus-build-$arch"
-            cmake -S opus-src -B "$build_dir" \
-              -DCMAKE_SYSTEM_NAME=Windows \
-              -DCMAKE_C_COMPILER="${host}-gcc" \
-              -DCMAKE_RC_COMPILER="${host}-windres" \
-              -DOPUS_BUILD_SHARED_LIBRARY=ON \
-              -DOPUS_BUILD_PROGRAMS=OFF \
-              -DOPUS_BUILD_TESTING=OFF
-            cmake --build "$build_dir" --config Release
-            find "$build_dir" -iname "opus.dll" -exec cp {} "./lib/dlls/opus-$arch.dll" \;
-            echo "Built opus.dll for $arch"
+              host="${targets[$arch]}"
+
+              if ! command -v "${host}-gcc" >/dev/null 2>&1; then
+                  echo "SKIP ${arch}: ${host}-gcc not found (this arch's mingw-w64 target isn't installed)"
+                  continue
+              fi
+
+              echo "==> Building opus.dll for ${arch} (${host})"
+              build_dir="opus-build-${arch}"
+              cmake -S opus-src -B "${build_dir}" \
+                  -DCMAKE_SYSTEM_NAME=Windows \
+                  -DCMAKE_C_COMPILER="${host}-gcc" \
+                  -DCMAKE_RC_COMPILER="${host}-windres" \
+                  -DOPUS_BUILD_SHARED_LIBRARY=ON \
+                  -DOPUS_BUILD_PROGRAMS=OFF \
+                  -DOPUS_BUILD_TESTING=OFF
+              cmake --build "${build_dir}" --config Release --parallel "$(nproc)"
+
+              if ! find "${build_dir}" -iname "libopus.dll" -exec cp {} "./lib/dlls/opus-${arch}.dll" \; ; then
+                  echo "FAIL ${arch}: build finished but opus.dll was not found"
+                  exit 1
+              fi
+
+              if [ ! -f "./lib/dlls/opus-${arch}.dll" ]; then
+                  echo "FAIL ${arch}: opus.dll was not produced"
+                  exit 1
+              fi
+
+              echo "OK ${arch}: $(file "./lib/dlls/opus-${arch}.dll")"
           done
 
       - name: Authenticate with lit
