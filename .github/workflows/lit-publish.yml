@@ -79,6 +79,12 @@ jobs:
               echo "OK ${arch}: $(file "./lib/dlls/opus-${arch}.dll")"
           done
 
+      - name: Write a version into package.lua
+        run: |
+          REF=${{ github.ref_name }}
+          version=${REF#v}
+          sed -i "s/version = \"REPLACE_ME\"/version = \"${version}\"/" package.lua
+
       - name: Authenticate with lit
         run: ./lit auth ${{ secrets.LIT_GITHUB_USERNAME }} "${{ secrets.LIT_GITHUB_USERNAME }}" ""
 
