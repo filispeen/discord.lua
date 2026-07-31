@@ -9,6 +9,6 @@
 # Usage: ./run_luajit_busted.sh [busted args, e.g. a spec path]
 
 cd "$(dirname "$0")"
-LUA_PATH="./deps/?.lua;./deps/?/init.lua;;" \
+LUA_PATH="./deps/?.lua;./deps/?/init.lua;./spec/?.lua;;" \
 LUAROCKS_SYSCONFDIR='/etc/luarocks' \
 exec luajit -e 'package.path="/usr/share/lua/5.1/?.lua;/usr/share/lua/5.1/?/init.lua;"..package.path;package.cpath="/usr/lib/lua/5.1/?.so;"..package.cpath;local k,l,_=pcall(require,"luarocks.loader") _=k and l.add_context("busted","2.3.0-1")' '/usr/lib/luarocks/rocks-5.1/busted/2.3.0-1/bin/busted' "$@"

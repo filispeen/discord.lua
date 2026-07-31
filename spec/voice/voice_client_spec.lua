@@ -436,6 +436,115 @@ describe("VoiceClient", function()
         end)
     end)
 
+    describe("Recording Opus decode", function()
+        local client
+        local Sink = require("./voice/sinks/sink")
+        local OpusSink = require("./voice/sinks/opus_sink")
+
+        local function mock_decoder(decode_fn)
+            return {
+                decoder = true,
+                decode = decode_fn or function(_, opus_data)
+                    return "pcm:" .. opus_data
+                end,
+                destroy = function() end,
+            }
+        end
+
+        before_each(function()
+            client = VoiceClient.new(mock_client, mock_channel)
+            client.state.connected = true
+        end)
+
+        it("_feed_recording decodes via a per-user decoder when one is present", function()
+            local sink = Sink.new()
+            client:start_recording(sink, function() end)
+            client.state.recording_decoders["user1"] = mock_decoder()
+
+            client:_feed_recording("user1", "opusdata")
+
+            assert.equals("pcm:opusdata", sink.audio_data["user1"].file[1])
+        end)
+
+        it("_get_recording_decoder caches one decoder instance per user", function()
+            local sink = Sink.new()
+            client:start_recording(sink, function() end)
+            local decoder = mock_decoder()
+            client.state.recording_decoders["user1"] = decoder
+
+            local first = client:_get_recording_decoder("user1")
+            local second = client:_get_recording_decoder("user1")
+
+            assert.equals(decoder, first)
+            assert.equals(first, second)
+        end)
+
+        it("_feed_recording falls back to raw Opus when decode returns nil", function()
+            local sink = Sink.new()
+            client:start_recording(sink, function() end)
+            client.state.recording_decoders["user1"] = mock_decoder(function()
+                return nil
+            end)
+
+            client:_feed_recording("user1", "opusdata")
+
+            assert.equals("opusdata", sink.audio_data["user1"].file[1])
+        end)
+
+        it("_feed_recording skips decoding for sinks with wants_raw_opus", function()
+            local sink = OpusSink.new(nil, "mp3")
+            client:start_recording(sink, function() end)
+            client.state.recording_decoders["user1"] = mock_decoder()
+
+            client:_feed_recording("user1", "opusdata")
+
+            assert.equals("opusdata", sink.audio_data["user1"].file[1])
+        end)
+
+        it("stop_recording destroys and clears per-user decoders", function()
+            local sink = Sink.new()
+            client:start_recording(sink, function() end)
+            local destroyed = false
+            client.state.recording_decoders["user1"] = mock_decoder()
+            client.state.recording_decoders["user1"].destroy = function()
+                destroyed = true
+            end
+
+            client:stop_recording()
+
+            assert.is_true(destroyed)
+            assert.is_nil(client.state.recording_decoders["user1"])
+        end)
+
+        local opus = require("./voice/opus")
+        local real_decoder = opus.Decoder.new()
+        local libopus_available = real_decoder ~= nil and real_decoder.decoder ~= nil
+        if real_decoder and real_decoder.destroy then
+            real_decoder:destroy()
+        end
+
+        if libopus_available then
+            it("_get_recording_decoder returns a real decoder when libopus/FFI is available", function()
+                local sink = Sink.new()
+                client:start_recording(sink, function() end)
+
+                local decoder = client:_get_recording_decoder("user_with_libopus")
+
+                assert.is_not_nil(decoder)
+                assert.is_not_nil(decoder.decoder)
+            end)
+        else
+            it("_get_recording_decoder returns nil when opus.Decoder has no decoder field", function()
+                local sink = Sink.new()
+                client:start_recording(sink, function() end)
+
+                local decoder = client:_get_recording_decoder("user_without_libopus")
+
+                assert.is_nil(decoder)
+            end)
+        end
+    end)
+
     describe("SSRC to user_id routing", function()
         local client
 
