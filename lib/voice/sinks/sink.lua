@@ -5,11 +5,16 @@
 -- RTP receive pipeline: lib/voice/udp.lua decrypts and RTP-decodes
 -- incoming packets, VoiceClient routes each SSRC's payloads through a
 -- jitter buffer (opus.PacketDecoder) to reorder them, and a timer
--- flushes reordered packets into Sink:write(user_id, opus_data) per user
--- (see VoiceClient:_flush_jitter_buffers / :_feed_recording). Note this
--- delivers raw Opus payloads, not decoded PCM: sinks that need PCM
--- (e.g. WaveSink) must decode it themselves; there is no automatic
--- Opus -> PCM decode step in this pipeline yet.
+-- flushes reordered packets into Sink:write(user_id, data) per user
+-- (see VoiceClient:_flush_jitter_buffers / :_feed_recording).
+-- _feed_recording decodes Opus to PCM (16-bit stereo, 48kHz) using a
+-- per-user libopus decoder before calling write(), when libopus/FFI is
+-- available (LuaJIT with libopus installed). If decoding is unavailable
+-- or fails for a packet, the raw Opus payload is passed through instead.
+-- A sink can opt out of decoding entirely by setting
+-- self.wants_raw_opus = true (see opus_sink.lua), so sinks that store
+-- raw Opus always get the untouched RTP payload; sinks that assume PCM
+-- (WaveSink, PCMSink) require libopus/FFI to get correct output.
 --
 -- Public Contract:
 --   Sink.new(opts) -> sink

@@ -3,9 +3,11 @@
 -- contract mirrors pycord's discord.sinks.WaveSink.
 --
 -- See lib/voice/sinks/sink.lua for how the RTP receive pipeline feeds
--- write(): it delivers raw Opus payloads, not PCM. This sink assumes it
--- is fed already-decoded PCM (16-bit signed, stereo, 48kHz); pairing it
--- with real Opus data requires the not-yet-built Opus decode step.
+-- write(): it decodes incoming Opus payloads to PCM per user before
+-- calling write(), when libopus/FFI is available. This sink assumes it
+-- is fed already-decoded PCM (16-bit signed, stereo, 48kHz); without
+-- libopus/FFI, write() instead receives raw Opus and the resulting
+-- WAV file will not be valid audio.
 --
 -- Public Contract:
 --   WaveSink.new(opts) -> sink

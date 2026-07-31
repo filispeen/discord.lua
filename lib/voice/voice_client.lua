@@ -25,9 +25,12 @@
 --     on_packet hook feeds each SSRC's per-user jitter buffer (see
 --     opus.PacketDecoder), and a timer (_start_jitter_timer,
 --     _flush_jitter_buffers) periodically drains reordered packets into
---     sink:write() via client:_feed_recording(user_id, data). Sinks still
---     receive raw Opus payloads, not decoded PCM; see lib/voice/sinks/
---     for which sinks expect which.
+--     sink:write() via client:_feed_recording(user_id, data).
+--     _feed_recording decodes Opus to PCM per user (own libopus decoder
+--     instance per SSRC/user, see _get_recording_decoder) before handing
+--     data to the sink when libopus/FFI is available; otherwise the raw
+--     Opus payload is passed through. See lib/voice/sinks/ for which
+--     sinks expect which.
 --
 --   client:stop_recording() -> boolean, string?
 --     Calls sink:cleanup() then the finished_callback with (sink, ...).
@@ -63,6 +66,7 @@ function VoiceClient.new(client, channel)
             ssrc_map = {},
             known_users = {},
             jitter_buffers = {},
+            recording_decoders = {},
         },
         gateway = nil,
         udp = nil,
@@ -539,14 +543,57 @@ function VoiceClient:start_recording(sink, finished_callback, ...)
     return true
 end
 
+-- Returns a per-user Opus decoder for the recording pipeline, creating
+-- one on first use. Each user needs its own decoder instance: libopus
+-- decoder state (packet loss concealment, sample history) is per-stream,
+-- and mixing SSRCs through one decoder would corrupt the decoded audio.
+-- Returns nil if libopus/FFI is not available (e.g. PUC Lua), so the
+-- caller can fall back to delivering raw Opus payloads.
+function VoiceClient:_get_recording_decoder(user_id)
+    local state = self.state
+    local decoder = state.recording_decoders[user_id]
+    if decoder then
+        return decoder
+    end
+
+    decoder = opus.Decoder.new()
+    if not decoder or not decoder.decoder then
+        return nil
+    end
+
+    state.recording_decoders[user_id] = decoder
+    return decoder
+end
+
 -- Feeds one Opus RTP payload for user_id into the active recording sink.
 -- Called automatically from _flush_jitter_buffers as reordered packets
 -- become ready; can also be called directly for tests or manual feeds.
+--
+-- If libopus is available and the sink hasn't opted out (see
+-- self.wants_raw_opus in lib/voice/sinks/opus_sink.lua), the payload is
+-- decoded to PCM before being handed to the sink, since sinks like
+-- WaveSink/PCMSink expect decoded PCM (see lib/voice/sinks/sink.lua).
+-- If decoding is unavailable, opted out, or fails, the raw Opus payload
+-- is passed through unchanged.
 function VoiceClient:_feed_recording(user_id, opus_data)
     if not self._recording then
         return false, "Not recording"
     end
-    self._recording.sink:write(user_id, opus_data)
+
+    local sink = self._recording.sink
+    local data = opus_data
+
+    if not sink.wants_raw_opus then
+        local decoder = self:_get_recording_decoder(user_id)
+        if decoder then
+            local pcm = decoder:decode(opus_data)
+            if pcm then
+                data = pcm
+            end
+        end
+    end
+
+    sink:write(user_id, data)
     return true
 end
 
@@ -559,6 +606,11 @@ function VoiceClient:stop_recording()
 
     local recording = self._recording
     self._recording = nil
+
+    for user_id, decoder in pairs(self.state.recording_decoders) do
+        decoder:destroy()
+        self.state.recording_decoders[user_id] = nil
+    end
 
     recording.sink:cleanup()
 

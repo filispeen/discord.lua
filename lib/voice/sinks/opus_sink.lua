@@ -9,8 +9,9 @@
 -- mp4/m4a file. Real encoding requires wiring an external tool (ffmpeg
 -- subprocess, or a Lua encoding library) into :cleanup().
 --
--- See lib/voice/sinks/sink.lua for how the RTP receive pipeline feeds
--- write() (raw Opus payloads, no decoded PCM), which also applies here.
+-- These sinks want raw Opus, not PCM. self.wants_raw_opus = true tells
+-- VoiceClient:_feed_recording (see lib/voice/sinks/sink.lua) to skip its
+-- Opus decode step and hand this sink the untouched RTP payload.
 --
 -- Public Contract:
 --   OpusSink.new(opts, encoding) -> sink
@@ -33,6 +34,7 @@ local OpusSink = class("OpusSink", Sink)
 function OpusSink.new(opts, encoding)
     local self = setmetatable(Sink.new(opts), OpusSink)
     self.encoding = encoding
+    self.wants_raw_opus = true
     return self
 end
 

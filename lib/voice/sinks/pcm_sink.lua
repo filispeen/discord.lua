@@ -3,9 +3,9 @@
 -- pycord's discord.sinks.PCMSink.
 --
 -- See lib/voice/sinks/sink.lua for how the RTP receive pipeline feeds
--- write(): it delivers raw Opus payloads, not PCM, so pairing this sink
--- with real voice data requires decoding Opus to PCM before calling
--- write(), which nothing in this codebase does automatically yet.
+-- write(): it decodes incoming Opus payloads to PCM per user before
+-- calling write(), when libopus/FFI is available. Without libopus/FFI,
+-- write() instead receives raw Opus payloads.
 --
 -- Public Contract:
 --   PCMSink.new(opts) -> sink
