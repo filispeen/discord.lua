@@ -22,6 +22,8 @@ if not ffi_ok then
     ffi = nil
 end
 
+local native_lib = require("./native_lib")
+
 -- Load libopus
 local opus_lib = nil
 local function load_opus()
@@ -32,8 +34,19 @@ local function load_opus()
 
     if opus_lib then return end
 
+    -- Prefer the dll bundled in lib/dlls/ (see native_lib.lua) on
+    -- Windows, since a bare ffi.load("opus") only checks the OS's
+    -- normal library search path and won't find it there on its own.
+    -- Falls back to the bare name so a system-installed libopus (the
+    -- expected setup on Linux/macOS) still works.
+    local bundled_path = native_lib.resolve("opus")
+
     local success = pcall(function()
-        opus_lib = ffi.load("opus") or ffi.load("libopus")
+        if bundled_path then
+            opus_lib = ffi.load(bundled_path)
+        else
+            opus_lib = ffi.load("opus") or ffi.load("libopus")
+        end
     end)
 
     if not success then

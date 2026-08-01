@@ -40,6 +40,8 @@ if not ffi_ok then
     ffi = nil
 end
 
+local native_lib = require("./native_lib")
+
 local KEY_SIZE = 32
 local NONCE_SIZE = 24
 local MACBYTES = 16
@@ -56,8 +58,19 @@ local function load_sodium()
         return
     end
 
+    -- Prefer the dll bundled in lib/dlls/ (see native_lib.lua) on
+    -- Windows, since a bare ffi.load("sodium") only checks the OS's
+    -- normal library search path and won't find it there on its own.
+    -- Falls back to the bare name so a system-installed libsodium (the
+    -- expected setup on Linux/macOS) still works.
+    local bundled_path = native_lib.resolve("libsodium")
+
     local success = pcall(function()
-        sodium_lib = ffi.load("sodium")
+        if bundled_path then
+            sodium_lib = ffi.load(bundled_path)
+        else
+            sodium_lib = ffi.load("sodium")
+        end
     end)
 
     if not success or not sodium_lib then
