@@ -104,6 +104,19 @@ function Invite.new(data, http)
     return self
 end
 
+-- os.time() interprets a table as local time with no way to ask for
+-- UTC directly, but Discord's ISO 8601 timestamps ("...Z") are always
+-- UTC. This computes the local timezone's offset from UTC in seconds,
+-- accounting for DST, so parse_timestamp can convert a UTC wall-clock
+-- reading back to the correct Unix timestamp regardless of the
+-- machine's local timezone.
+local function utc_offset_seconds()
+    local now = os.time()
+    local utc = os.date("!*t", now)
+    utc.isdst = os.date("*t", now).isdst
+    return os.difftime(now, os.time(utc))
+end
+
 -- Parse ISO 8601 timestamp to Unix timestamp
 local function parse_timestamp(ts)
     if not ts then return 0 end
@@ -112,7 +125,7 @@ local function parse_timestamp(ts)
 
     local year, month, day, hour, min, sec = string.match(ts, "(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)")
     if year then
-        return os.time {
+        local as_local = os.time {
             year = tonumber(year),
             month = tonumber(month),
             day = tonumber(day),
@@ -120,6 +133,7 @@ local function parse_timestamp(ts)
             min = tonumber(min),
             sec = tonumber(sec)
         }
+        return as_local + utc_offset_seconds()
     end
     return 0
 end
