@@ -563,8 +563,18 @@ function VoiceGateway:_trigger_reconnect(close_code, close_reason)
         state = enums.DISCONNECTED,
     }
 
+    -- Explicitly close the dead socket rather than just dropping our
+    -- reference to it: leaving the underlying TCP connection open to
+    -- the old voice server lets Discord's voice server keep treating
+    -- the old session as still live on its side. Observed live: after
+    -- a 4006, a fresh voice_state_update (even with an explicit
+    -- leave+rejoin) kept getting back the exact same session_id AND
+    -- the exact same endpoint, forever, which only makes sense if
+    -- Discord's voice server hadn't yet noticed the client was gone.
     if self.ws then
+        local old_ws = self.ws
         self.ws = nil
+        old_ws:close()
     end
 
     if session_invalid then
