@@ -181,7 +181,7 @@ function VoiceClient:setup()
         -- voice server endpoint, forever (confirmed live). A short
         -- delay gives the leave time to actually land before we ask
         -- for a new session.
-        local rejoin_timer = luv.timer:new()
+        local rejoin_timer = luv.new_timer()
         rejoin_timer:start(500, 0, function()
             rejoin_timer:stop()
             self.client:voice_state_update(self.guild.id, self.channel.id, false, false)
@@ -266,7 +266,7 @@ function VoiceClient:_start_jitter_timer()
         self._jitter_timer:stop()
     end
 
-    self._jitter_timer = luv.timer:new()
+    self._jitter_timer = luv.new_timer()
     self._jitter_timer:start(JITTER_HOLD_MS, JITTER_HOLD_MS, function()
         self:_flush_jitter_buffers()
     end)
@@ -511,7 +511,7 @@ function VoiceClient:_start_playback()
     -- Frame timing: 20ms Opus frames
     local frame_interval = 20  -- milliseconds
 
-    self._timer = luv.timer:new()
+    self._timer = luv.new_timer()
     self._timer:start(0, frame_interval, function()
         if not source:is_playing() then
             return

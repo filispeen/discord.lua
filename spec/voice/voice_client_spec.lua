@@ -4,27 +4,33 @@
 require("spec_helper")
 
 -- Mock luv for testing
+-- created_timers records every timer new_timer() hands out, in
+-- creation order, so tests exercising a delayed action (e.g.
+-- voice_client.lua's leave-then-rejoin on session_invalidated) can
+-- reach in and invoke timer.callback() manually rather than the mock
+-- firing it synchronously; mirrors voice_gateway_spec.lua's mock and
+-- matches how the real timer is genuinely async.
+local created_timers = {}
 local mock_luv = {
-    timer = {
-        -- start() invokes callback synchronously: tests don't care
-        -- about real timing, only that a delayed action (e.g.
-        -- voice_client.lua's leave-then-rejoin on session_invalidated)
-        -- eventually happens.
-        new = function()
-            local timer = {
-                _stopped = false,
-                start = function(self, _delay, _repeat_ms, callback)
-                    if callback and not self._stopped then
-                        callback()
-                    end
-                end,
-                stop = function(self)
-                    self._stopped = true
-                end,
-            }
-            return timer
-        end
-    },
+    -- new_timer is a top-level function on the real uv module (see
+    -- lib/core/luv_compat.lua), not a field under a "timer" table.
+    new_timer = function()
+        local timer = {
+            started = false,
+            stopped = false,
+            start = function(self, interval, repeat_interval, callback)
+                self.started = true
+                self.interval = interval
+                self.repeat_interval = repeat_interval
+                self.callback = callback
+            end,
+            stop = function(self)
+                self.stopped = true
+            end,
+        }
+        table.insert(created_timers, timer)
+        return timer
+    end,
     socket = function()
         return 1
     end,
@@ -636,19 +642,36 @@ describe("VoiceClient", function()
             client = VoiceClient.new(mock_client, mock_channel)
         end)
 
-        it("session_invalidated clears session_id and re-requests a voice state update", function()
+        it("session_invalidated clears session_id, leaves, then rejoins after a delay", function()
             client.state.session_id = "old_session"
-            local called_guild, called_channel
+            local calls = {}
             mock_client.voice_state_update = function(_self, guild_id, channel_id)
-                called_guild = guild_id
-                called_channel = channel_id
+                table.insert(calls, { guild_id = guild_id, channel_id = channel_id })
             end
 
+            local timers_before = #created_timers
             client.gateway:emit("session_invalidated", { code = 4006 })
 
             assert.is_nil(client.state.session_id)
-            assert.equals(mock_guild.id, called_guild)
-            assert.equals(mock_channel.id, called_channel)
+
+            -- The leave (channel_id=nil) fires immediately.
+            assert.equals(1, #calls)
+            assert.equals(mock_guild.id, calls[1].guild_id)
+            assert.is_nil(calls[1].channel_id)
+
+            -- The rejoin is deferred behind a one-shot timer, not sent
+            -- back to back with the leave (see voice_client.lua's
+            -- session_invalidated handler for why: Discord needs the
+            -- leave to actually land before a rejoin gets a fresh
+            -- session/endpoint instead of an echo of the dead one).
+            assert.equals(timers_before + 1, #created_timers)
+            local rejoin_timer = created_timers[#created_timers]
+            assert.equals(1, #calls)
+            rejoin_timer.callback()
+
+            assert.equals(2, #calls)
+            assert.equals(mock_guild.id, calls[2].guild_id)
+            assert.equals(mock_channel.id, calls[2].channel_id)
         end)
 
         it("session_invalidated dispatches VOICE_CLIENT_SESSION_INVALIDATED on the client", function()
