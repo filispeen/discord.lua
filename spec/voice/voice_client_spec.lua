@@ -6,10 +6,21 @@ require("spec_helper")
 -- Mock luv for testing
 local mock_luv = {
     timer = {
+        -- start() invokes callback synchronously: tests don't care
+        -- about real timing, only that a delayed action (e.g.
+        -- voice_client.lua's leave-then-rejoin on session_invalidated)
+        -- eventually happens.
         new = function()
             local timer = {
-                start = function() end,
-                stop = function() end,
+                _stopped = false,
+                start = function(self, _delay, _repeat_ms, callback)
+                    if callback and not self._stopped then
+                        callback()
+                    end
+                end,
+                stop = function(self)
+                    self._stopped = true
+                end,
             }
             return timer
         end

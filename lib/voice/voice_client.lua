@@ -172,7 +172,21 @@ function VoiceClient:setup()
         state.token = nil
         state.endpoint = nil
         self.client:voice_state_update(self.guild.id, nil, false, false)
-        self.client:voice_state_update(self.guild.id, self.channel.id, false, false)
+
+        -- Sending the leave and the rejoin back to back, with no gap
+        -- at all, let Discord's voice server keep treating the old
+        -- session as live: it never got a chance to actually process
+        -- the leave before the rejoin arrived, so every retry kept
+        -- getting back the exact same session_id AND the exact same
+        -- voice server endpoint, forever (confirmed live). A short
+        -- delay gives the leave time to actually land before we ask
+        -- for a new session.
+        local rejoin_timer = luv.timer:new()
+        rejoin_timer:start(500, 0, function()
+            rejoin_timer:stop()
+            self.client:voice_state_update(self.guild.id, self.channel.id, false, false)
+        end)
+
         self.client:dispatch('VOICE_CLIENT_SESSION_INVALIDATED', data)
     end)
 
