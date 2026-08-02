@@ -568,6 +568,7 @@ function VoiceGateway:_trigger_reconnect(close_code, close_reason)
     end
 
     if session_invalid then
+        self._is_reconnect = false
         self.reconnect_attempts = 0
         self:emit("session_invalidated", { code = close_code, close_reason = close_reason })
         return

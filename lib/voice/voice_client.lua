@@ -151,11 +151,19 @@ function VoiceClient:setup()
 
     -- Session-invalid close code (4006/4009): the gateway already cleared
     -- session_id/token/seq on its side since RESUME would fail against a
-    -- dead session. Clear our copy of session_id too so a later
-    -- voice_state_update reply is treated as fresh, then re-request a
-    -- new session the same way connect() does.
+    -- dead session. Clear our copy of session_id, token and endpoint too:
+    -- _maybe_connect_gateway fires as soon as all three are non-nil, and
+    -- Discord's re-sent VOICE_STATE_UPDATE echo can arrive without a
+    -- fresh VOICE_SERVER_UPDATE alongside it. Leaving token/endpoint set
+    -- let _maybe_connect_gateway fire on session_id alone, reconnecting
+    -- with the exact same now-invalid session and endpoint, which
+    -- Discord immediately 4006s again forever. Clearing all three means
+    -- we only reconnect once Discord actually sends a fresh
+    -- VOICE_SERVER_UPDATE.
     self.gateway:on('session_invalidated', function(data)
         state.session_id = nil
+        state.token = nil
+        state.endpoint = nil
         self.client:voice_state_update(self.guild.id, self.channel.id, false, false)
         self.client:dispatch('VOICE_CLIENT_SESSION_INVALIDATED', data)
     end)
