@@ -52,6 +52,9 @@ end
 -- spec/spec_helper.lua's relative_searcher already relies on to resolve
 -- "./x" requires, so this stays correct under luvit, plain lua5.1, and
 -- LuaJIT alike.
+-- Package root's dlls/ dir. this_dir() gives lib/voice (where this
+-- module lives), but the bundled dlls live one level up in lib/dlls/
+-- (see lit-publish.yml), not lib/voice/dlls/.
 local function this_dir()
     local info = debug.getinfo(1, "S")
     local source = info and info.source
@@ -61,7 +64,11 @@ local function this_dir()
 
     local path = source:sub(2)
     local dir = path:match("^(.*)[/\\][^/\\]+$")
-    return dir
+    if not dir then
+        return nil
+    end
+
+    return dir:match("^(.*)[/\\][^/\\]+$") or dir
 end
 
 -- base_name: "libsodium" or "opus"

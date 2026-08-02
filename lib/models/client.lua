@@ -184,6 +184,12 @@ function Client:start_gateway()
     self.gateway:on_dispatch("GUILD_CREATE", function(data)
         if data and data.id then
             self.channels:put_many(data.channels, data.id)
+            if data.voice_states then
+                for _, vs in ipairs(data.voice_states) do
+                    vs.guild_id = vs.guild_id or data.id
+                    self.voice_states:update(vs)
+                end
+            end
         end
         self:emit("guild_create", data)
     end)

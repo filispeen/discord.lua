@@ -107,6 +107,16 @@ bot:slash_command("record", {
 
         local voice_client = voice_client_or_err
 
+        voice_client.gateway:on("error", function(err)
+            print("voice gateway error: " .. tostring(err))
+        end)
+        voice_client.client:on("VOICE_CLIENT_RECONNECT_FAILED", function(data)
+            print("voice reconnect failed: " .. tostring(data))
+        end)
+        voice_client.client:on("VOICE_CLIENT_SESSION_INVALIDATED", function(data)
+            print("voice session invalidated: " .. tostring(data))
+        end)
+
         -- Voice gateway connect is async (VOICE_STATE_UPDATE +
         -- VOICE_SERVER_UPDATE round trip, see voice_client.lua's
         -- _maybe_connect_gateway), so start_recording has to wait for

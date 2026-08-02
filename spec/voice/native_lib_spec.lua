@@ -50,7 +50,7 @@ describe("native_lib", function()
 
         local native_lib = reload_native_lib()
 
-        local tmp_dir = "lib/voice/dlls"
+        local tmp_dir = "lib/dlls"
         os.execute("mkdir -p " .. tmp_dir)
         local f = io.open(tmp_dir .. "/opus-x64.dll", "wb")
         f:write("stub")
@@ -75,7 +75,7 @@ describe("native_lib", function()
             package.loaded["ffi"] = { os = "Windows", arch = case.arch }
             local native_lib = reload_native_lib()
 
-            local tmp_dir = "lib/voice/dlls"
+            local tmp_dir = "lib/dlls"
             os.execute("mkdir -p " .. tmp_dir)
             local filename = "libsodium-" .. case.suffix .. ".dll"
             local f = io.open(tmp_dir .. "/" .. filename, "wb")

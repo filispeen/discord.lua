@@ -151,7 +151,23 @@ function VoiceGateway:connect(endpoint, token, session_id)
         return self
     end
 
-    local res, read, write = websocket.connect(options)
+    -- websocket.connect() blocks on coroutine.yield internally (async
+    -- TCP connect via luv, same as ws_adapter's send/close/start_reading
+    -- below). This is normally called from inside a slash/prefix command
+    -- callback, which itself runs nested inside the main gateway shard's
+    -- own read-loop coroutine (see ws_adapter.wrap's start_reading and
+    -- Shard's ws:on("message", ...)). Yielding there would suspend that
+    -- outer coroutine instead of just this call, silently stalling the
+    -- whole bot's gateway connection. Running the connect in its own
+    -- coroutine keeps the yield local to this call.
+    local connect_co = coroutine.create(function()
+        return websocket.connect(options)
+    end)
+    local resume_ok, res, read, write = coroutine.resume(connect_co)
+    if not resume_ok then
+        self:emit("error", errors.VoiceConnectError.new("Voice connect coroutine error: " .. tostring(res)))
+        return self
+    end
     if not res then
         self:emit("error", errors.VoiceConnectError.new("Failed to connect to voice endpoint: " .. tostring(read)))
         return self
