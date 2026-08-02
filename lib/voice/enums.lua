@@ -68,6 +68,14 @@ local CLOSE_UNKNOWN_PROTOCOL = 4012
 local CLOSE_DISCONNECTED = 4014
 local CLOSE_VOICE_SERVER_CRASHED = 4015
 local CLOSE_UNKNOWN_ENCRYPTION_MODE = 4016
+-- Sent when the voice channel/server requires Discord's DAVE (MLS-based
+-- E2EE) protocol and the client's IDENTIFY did not offer it (this
+-- library always sends max_dave_protocol_version = 0, see
+-- VoiceGateway:identify, since it does not implement the DAVE MLS key
+-- exchange). Not resumable and not worth retrying: every retry will
+-- IDENTIFY with the same max_dave_protocol_version = 0 and get the
+-- same 4017 again, forever, until DAVE support is actually added.
+local CLOSE_DAVE_PROTOCOL_REQUIRED = 4017
 
 -- Close codes after which Discord explicitly says resuming is safe.
 local RESUMABLE_CLOSE_CODES = {
@@ -87,6 +95,7 @@ local SESSION_INVALID_CLOSE_CODES = {
 -- backs this voice session was dropped).
 local FATAL_CLOSE_CODES = {
     [CLOSE_DISCONNECTED] = true,
+    [CLOSE_DAVE_PROTOCOL_REQUIRED] = true,
 }
 
 local M = {
@@ -132,6 +141,7 @@ local M = {
     CLOSE_DISCONNECTED = CLOSE_DISCONNECTED,
     CLOSE_VOICE_SERVER_CRASHED = CLOSE_VOICE_SERVER_CRASHED,
     CLOSE_UNKNOWN_ENCRYPTION_MODE = CLOSE_UNKNOWN_ENCRYPTION_MODE,
+    CLOSE_DAVE_PROTOCOL_REQUIRED = CLOSE_DAVE_PROTOCOL_REQUIRED,
     RESUMABLE_CLOSE_CODES = RESUMABLE_CLOSE_CODES,
     SESSION_INVALID_CLOSE_CODES = SESSION_INVALID_CLOSE_CODES,
     FATAL_CLOSE_CODES = FATAL_CLOSE_CODES,
