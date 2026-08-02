@@ -151,19 +151,27 @@ function VoiceClient:setup()
 
     -- Session-invalid close code (4006/4009): the gateway already cleared
     -- session_id/token/seq on its side since RESUME would fail against a
-    -- dead session. Clear our copy of session_id, token and endpoint too:
-    -- _maybe_connect_gateway fires as soon as all three are non-nil, and
-    -- Discord's re-sent VOICE_STATE_UPDATE echo can arrive without a
-    -- fresh VOICE_SERVER_UPDATE alongside it. Leaving token/endpoint set
-    -- let _maybe_connect_gateway fire on session_id alone, reconnecting
-    -- with the exact same now-invalid session and endpoint, which
-    -- Discord immediately 4006s again forever. Clearing all three means
-    -- we only reconnect once Discord actually sends a fresh
-    -- VOICE_SERVER_UPDATE.
+    -- dead session. Clear our copy of session_id, token and endpoint too,
+    -- so _maybe_connect_gateway won't fire again off stale values.
+    --
+    -- Re-sending voice_state_update with the same channel_id alone is
+    -- not enough to force a fresh VOICE_SERVER_UPDATE: from Discord's
+    -- point of view our voice state hasn't changed (still "in" that
+    -- channel), so it can reply with only a VOICE_STATE_UPDATE echo
+    -- (same session_id, no VOICE_SERVER_UPDATE at all), leaving
+    -- token/endpoint nil forever and the reconnect stuck (confirmed
+    -- live: session_id was identical across the retry, and no second
+    -- voice_server_update ever arrived). Explicitly leaving first
+    -- (channel_id=nil) then rejoining forces Discord to treat this as
+    -- a real state transition and issue both events again, mirroring
+    -- how pycord/discord.py's connect() always restarts the handshake
+    -- from a fully torn-down state (prepare_handshake) rather than
+    -- assuming the previous channel_id is still "fresh".
     self.gateway:on('session_invalidated', function(data)
         state.session_id = nil
         state.token = nil
         state.endpoint = nil
+        self.client:voice_state_update(self.guild.id, nil, false, false)
         self.client:voice_state_update(self.guild.id, self.channel.id, false, false)
         self.client:dispatch('VOICE_CLIENT_SESSION_INVALIDATED', data)
     end)
