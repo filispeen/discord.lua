@@ -240,6 +240,13 @@ function VoiceGateway:identify()
             token = self.state.token,
             shard = 0,  -- TODO: get from client
             total_shards = 1,
+            -- No DAVE (E2EE) protocol support: this library does not
+            -- implement the MLS-based DAVE key exchange, only transport
+            -- (XSalsa20-Poly1305) encryption. Explicit 0 rather than
+            -- omitting the field, since Discord's own docs treat both
+            -- the same but some voice gateway builds have been seen
+            -- rejecting IDENTIFY payloads that omit it entirely.
+            max_dave_protocol_version = 0,
         },
     }
 

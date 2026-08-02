@@ -58,7 +58,19 @@ function M.wrap(_res, read, write)
                 local message = self._read()
                 if not message then
                     self._closed = true
-                    self:emit("close", 1000, "Connection closed")
+                    self:emit("close", 1006, "Connection closed without a close frame")
+                    return
+                end
+                if message.opcode == 8 then
+                    self._closed = true
+                    local payload = message.payload or ""
+                    local code = 1005
+                    local reason = ""
+                    if #payload >= 2 then
+                        code = payload:byte(1) * 256 + payload:byte(2)
+                        reason = payload:sub(3)
+                    end
+                    self:emit("close", code, reason)
                     return
                 end
                 self:emit("message", message.payload)

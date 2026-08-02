@@ -110,11 +110,30 @@ bot:slash_command("record", {
         voice_client.gateway:on("error", function(err)
             print("voice gateway error: " .. tostring(err))
         end)
+        voice_client.gateway:on("close", function(data)
+            print("voice gateway closed: code=" .. tostring(data and data.code) .. " reason=" .. tostring(data and data.reason))
+        end)
+        voice_client.gateway:on("ready", function(data)
+            print("voice gateway ready: ssrc=" .. tostring(data and data.ssrc) .. " ip=" .. tostring(data and data.ip) .. " port=" .. tostring(data and data.port))
+        end)
+        voice_client.gateway:on("session_description", function(data)
+            print("voice session_description received, mode=" .. tostring(data and data.mode))
+        end)
         voice_client.client:on("VOICE_CLIENT_RECONNECT_FAILED", function(data)
             print("voice reconnect failed: " .. tostring(data))
         end)
         voice_client.client:on("VOICE_CLIENT_SESSION_INVALIDATED", function(data)
             print("voice session invalidated: " .. tostring(data))
+        end)
+        voice_client.client:on("voice_state_update", function(data)
+            if data and data.guild_id == ctx.guild.id then
+                print("voice_state_update: user=" .. tostring(data.user_id) .. " channel=" .. tostring(data.channel_id) .. " session=" .. tostring(data.session_id))
+            end
+        end)
+        voice_client.client:on("voice_server_update", function(data)
+            if data and data.guild_id == ctx.guild.id then
+                print("voice_server_update: endpoint=" .. tostring(data.endpoint) .. " token_present=" .. tostring(data.token ~= nil))
+            end
         end)
 
         -- Voice gateway connect is async (VOICE_STATE_UPDATE +
