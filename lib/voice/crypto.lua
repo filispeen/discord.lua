@@ -1,13 +1,18 @@
 -- lib/voice/crypto.lua
--- XSalsa20-Poly1305 encryption for Discord voice payloads.
+-- XSalsa20-Poly1305 (legacy, discontinued by Discord Nov 2024) and
+-- AEAD XChaCha20-Poly1305 (current, required) encryption for Discord
+-- voice payloads.
 --
 -- Prefers libsodium via FFI (LuaJIT + libsodium installed) since it is
 -- an audited, constant-time, native implementation. When that is not
--- available, falls back to a pure-Lua XSalsa20-
--- Poly1305 implementation (le_salsa20poly1305.lua) that has no
--- external dependency and runs unmodified on any Lua 5.1+. This means
--- voice encryption works everywhere discord.lua runs, not only on
--- Linux with a system libsodium package installed.
+-- available, the legacy XSalsa20-Poly1305 secretbox API falls back to a
+-- pure-Lua implementation (le_salsa20poly1305.lua) with no external
+-- dependency. The AEAD XChaCha20-Poly1305 API has no pure-Lua fallback:
+-- it is only usable when the libsodium backend is active (see
+-- Crypto.aead_available()); hand-rolling ChaCha20-Poly1305 AEAD in pure
+-- Lua was judged not worth the risk of a subtly wrong from-scratch
+-- implementation of a security-critical primitive, versus just
+-- requiring libsodium for this mode.
 --
 -- Public Contract:
 --   Crypto.available() - true if either backend (libsodium or the
@@ -15,12 +20,15 @@
 --     since the pure-Lua backend has no external requirements; kept for
 --     API compatibility and to signal which backend is actually active
 --     via Crypto.backend().
---   Crypto.backend() - "libsodium" or "pure_lua", whichever is active.
+--   Crypto.backend() - "libsodium" if the FFI backend is active, otherwise nil (no pure-Lua fallback for AEAD). This is the only way to detect which backend is active.
+--     Crypto
 --   Crypto.key_size() - required secret key length in bytes (32)
 --   Crypto.nonce_size() - required nonce length in bytes (24)
 --   Crypto.macbytes() - Poly1305 MAC length in bytes (16)
---   Crypto.encrypt(plaintext, nonce, key) - returns ciphertext string or nil, err
---   Crypto.decrypt(ciphertext, nonce, key) - returns plaintext string or nil, err
+--   Crypto.encrypt(plaintext, nonce, key) - XSalsa20-Poly1305 secretbox,
+--     returns ciphertext string or nil, err
+--   Crypto.decrypt(ciphertext, nonce, key) - XSalsa20-Poly1305 secretbox,
+--     returns plaintext string or nil, err
 --   Crypto.random_nonce() - returns nonce_size() random bytes. Uses
 --     libsodium's CSPRNG when that backend is active, otherwise libuv's
 --     uv_random (getrandom()/BCryptGenRandom/arc4random depending on
@@ -28,12 +36,31 @@
 --     directly for nonces; nonce reuse breaks XSalsa20-Poly1305's
 --     confidentiality guarantees.
 --
+--   Crypto.aead_available() - true only when the libsodium backend is
+--     active; the AEAD API has no pure-Lua fallback.
+--   Crypto.aead_key_size() - required secret key length in bytes (32)
+--   Crypto.aead_nonce_size() - required nonce length in bytes (24,
+--     XChaCha20's extended nonce; Discord's wire nonce is a 4-byte
+--     counter that must be zero-extended to this size by the caller,
+--     see udp.lua)
+--   Crypto.aead_macbytes() - Poly1305 tag length in bytes (16)
+--   Crypto.aead_encrypt(plaintext, nonce, key, aad) - AEAD
+--     XChaCha20-Poly1305 (IETF), aad is additional authenticated data
+--     (not encrypted, included in the tag) and may be "" or nil.
+--     Returns ciphertext..tag string or nil, err.
+--   Crypto.aead_decrypt(ciphertext_and_tag, nonce, key, aad) - inverse
+--     of aead_encrypt. Returns plaintext string or nil, err.
+--
 -- All strings are treated as raw byte strings (Lua strings), not byte-index
 -- tables. nonce must be exactly nonce_size() bytes, key exactly key_size()
 -- bytes. Discord's xsalsa20_poly1305_suffix mode appends the 24-byte nonce
 -- to the end of the RTP packet; xsalsa20_poly1305_lite/xsalsa20_poly1305
 -- use different nonce placement, but nonce construction is the caller's
--- responsibility, not this module's.
+-- responsibility, not this module's. Both xsalsa20_poly1305_suffix and
+-- the legacy modes were discontinued by Discord on November 18th, 2024;
+-- aead_xchacha20_poly1305_rtpsize (see the aead_* API above) is the
+-- mode discord.lua actually uses now, kept here so this module still
+-- has a legacy secretbox implementation for reference/tests.
 
 local ffi_ok, ffi = pcall(require, "ffi")
 if not ffi_ok then
@@ -45,6 +72,10 @@ local native_lib = require("./native_lib")
 local KEY_SIZE = 32
 local NONCE_SIZE = 24
 local MACBYTES = 16
+
+local AEAD_KEY_SIZE = 32
+local AEAD_NONCE_SIZE = 24
+local AEAD_MACBYTES = 16
 
 local sodium_lib = nil
 local sodium_ready = false
@@ -86,6 +117,18 @@ local function load_sodium()
             int crypto_secretbox_open_easy(unsigned char *m, const unsigned char *c,
                 unsigned long long clen, const unsigned char *n, const unsigned char *k);
             void randombytes_buf(void *const buf, const size_t size);
+            int crypto_aead_xchacha20poly1305_ietf_encrypt(
+                unsigned char *c, unsigned long long *clen_p,
+                const unsigned char *m, unsigned long long mlen,
+                const unsigned char *ad, unsigned long long adlen,
+                const unsigned char *nsec,
+                const unsigned char *npub, const unsigned char *k);
+            int crypto_aead_xchacha20poly1305_ietf_decrypt(
+                unsigned char *m, unsigned long long *mlen_p,
+                unsigned char *nsec,
+                const unsigned char *c, unsigned long long clen,
+                const unsigned char *ad, unsigned long long adlen,
+                const unsigned char *npub, const unsigned char *k);
         ]])
     end)
 
@@ -108,22 +151,17 @@ end
 
 load_sodium()
 
--- Pure-Lua fallback, used whenever the libsodium FFI backend above did
--- not come up. Loaded lazily/unconditionally here since it is cheap
--- (no C calls, no external state) and always available.
-local pure_lua = require("./le_salsa20poly1305")
-
 local Crypto = {}
 
 function Crypto.available()
-    return sodium_ready or pure_lua ~= nil
+    return sodium_ready or nil
 end
 
 function Crypto.backend()
     if sodium_ready then
         return "libsodium"
     end
-    return "pure_lua"
+    return nil
 end
 
 function Crypto.key_size()
@@ -149,7 +187,7 @@ function Crypto.encrypt(plaintext, nonce, key)
     end
 
     if not sodium_ready then
-        return pure_lua.encrypt(plaintext, nonce, key)
+        return nil, "XSalsa20-Poly1305 requires the libsodium backend, which is unavailable"
     end
 
     local mlen = #plaintext
@@ -182,7 +220,7 @@ function Crypto.decrypt(ciphertext, nonce, key)
     end
 
     if not sodium_ready then
-        return pure_lua.decrypt(ciphertext, nonce, key)
+        return nil, "XSalsa20-Poly1305 requires the libsodium backend, which is unavailable"
     end
 
     local clen = #ciphertext
@@ -206,12 +244,109 @@ end
 -- even that is unavailable).
 function Crypto.random_nonce()
     if not sodium_ready then
-        return pure_lua.random_nonce()
+        return nil, "random nonce requires the libsodium backend, which is unavailable"
     end
 
     local buf = ffi.new("unsigned char[?]", NONCE_SIZE)
     sodium_lib.randombytes_buf(buf, NONCE_SIZE)
     return ffi.string(buf, NONCE_SIZE)
+end
+
+-- ===== AEAD XChaCha20-Poly1305 (IETF), libsodium-only =====
+-- This is Discord's current required voice encryption mode
+-- (aead_xchacha20_poly1305_rtpsize). No pure-Lua fallback exists; see
+-- the module header for why.
+
+function Crypto.aead_available()
+    return sodium_ready
+end
+
+function Crypto.aead_key_size()
+    return AEAD_KEY_SIZE
+end
+
+function Crypto.aead_nonce_size()
+    return AEAD_NONCE_SIZE
+end
+
+function Crypto.aead_macbytes()
+    return AEAD_MACBYTES
+end
+
+-- Encrypt plaintext with AEAD XChaCha20-Poly1305, returns ciphertext..tag.
+-- aad (additional authenticated data) is authenticated but not
+-- encrypted; pass "" or nil if there is none.
+function Crypto.aead_encrypt(plaintext, nonce, key, aad)
+    if not sodium_ready then
+        return nil, "AEAD XChaCha20-Poly1305 requires the libsodium backend, which is unavailable"
+    end
+
+    if #nonce ~= AEAD_NONCE_SIZE then
+        return nil, "invalid nonce size, expected " .. AEAD_NONCE_SIZE .. " bytes"
+    end
+
+    if #key ~= AEAD_KEY_SIZE then
+        return nil, "invalid key size, expected " .. AEAD_KEY_SIZE .. " bytes"
+    end
+
+    aad = aad or ""
+
+    local mlen = #plaintext
+    local clen_max = mlen + AEAD_MACBYTES
+    local c = ffi.new("unsigned char[?]", clen_max)
+    local clen_p = ffi.new("unsigned long long[1]")
+    local m = ffi.cast("const unsigned char*", plaintext)
+    local ad = ffi.cast("const unsigned char*", aad)
+    local n = ffi.cast("const unsigned char*", nonce)
+    local k = ffi.cast("const unsigned char*", key)
+
+    local status = sodium_lib.crypto_aead_xchacha20poly1305_ietf_encrypt(
+        c, clen_p, m, mlen, ad, #aad, nil, n, k
+    )
+    if status ~= 0 then
+        return nil, "crypto_aead_xchacha20poly1305_ietf_encrypt failed"
+    end
+
+    return ffi.string(c, tonumber(clen_p[0]))
+end
+
+-- Decrypt ciphertext..tag with AEAD XChaCha20-Poly1305, returns plaintext.
+function Crypto.aead_decrypt(ciphertext_and_tag, nonce, key, aad)
+    if not sodium_ready then
+        return nil, "AEAD XChaCha20-Poly1305 requires the libsodium backend, which is unavailable"
+    end
+
+    if #nonce ~= AEAD_NONCE_SIZE then
+        return nil, "invalid nonce size, expected " .. AEAD_NONCE_SIZE .. " bytes"
+    end
+
+    if #key ~= AEAD_KEY_SIZE then
+        return nil, "invalid key size, expected " .. AEAD_KEY_SIZE .. " bytes"
+    end
+
+    if #ciphertext_and_tag < AEAD_MACBYTES then
+        return nil, "ciphertext too short"
+    end
+
+    aad = aad or ""
+
+    local clen = #ciphertext_and_tag
+    local mlen_max = clen - AEAD_MACBYTES
+    local m = ffi.new("unsigned char[?]", mlen_max)
+    local mlen_p = ffi.new("unsigned long long[1]")
+    local c = ffi.cast("const unsigned char*", ciphertext_and_tag)
+    local ad = ffi.cast("const unsigned char*", aad)
+    local n = ffi.cast("const unsigned char*", nonce)
+    local k = ffi.cast("const unsigned char*", key)
+
+    local status = sodium_lib.crypto_aead_xchacha20poly1305_ietf_decrypt(
+        m, mlen_p, nil, c, clen, ad, #aad, n, k
+    )
+    if status ~= 0 then
+        return nil, "decryption failed, invalid mac or corrupted data"
+    end
+
+    return ffi.string(m, tonumber(mlen_p[0]))
 end
 
 return Crypto

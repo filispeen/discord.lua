@@ -60,9 +60,8 @@ describe("Voice Enums", function()
 
     it("should define SUPPORTED_MODES table", function()
         assert.is_table(enums.SUPPORTED_MODES)
-        assert.equals(2, #enums.SUPPORTED_MODES)
-        assert.equals("xsalsa20_poly1305_suffix", enums.SUPPORTED_MODES[1])
-        assert.equals("aead_xchacha20_poly1305_rtpsize", enums.SUPPORTED_MODES[2])
+        assert.equals(1, #enums.SUPPORTED_MODES)
+        assert.equals("aead_xchacha20_poly1305_rtpsize", enums.SUPPORTED_MODES[1])
     end)
 
     it("should define DISCONNECTED state", function()

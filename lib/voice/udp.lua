@@ -5,24 +5,41 @@
 --   UDPClient:new(endpoint, token) - Create UDP client
 --   udp:connect() - Connect to voice endpoint
 --   udp:send(payload) - Send RTP packet, payload is a raw byte string.
---     Encrypted with udp._state.secret_key if set (xsalsa20_poly1305_suffix).
+--     Encrypted with udp._state.secret_key if set, per udp._state.mode
+--     (aead_xchacha20_poly1305_rtpsize, Discord's current required
+--     mode; xsalsa20_poly1305_suffix, legacy, kept for reference only).
 --   udp:receive(timeout_ms) - Receive one decoded RTP packet, coroutine-based
 --   udp._state.secret_key - set by VoiceClient after SESSION_DESCRIPTION;
 --     when present, _decode_packet decrypts incoming RTP payloads and
 --     send() encrypts outgoing ones. When absent, payloads pass through
---     unencrypted (this only happens before the handshake completes, or
---     if libsodium/ffi are unavailable, see crypto.lua's degradation).
+--     unencrypted (this only happens before the handshake completes).
+--   udp._state.mode - encryption mode string from SESSION_DESCRIPTION,
+--     selects which nonce placement/AEAD send()/_decode_packet use.
 --   RTP header construction (12 bytes)
 --   IP discovery packet parsing
 --
 -- Wire format note: everything that touches the network in this module is
--- a raw Lua byte string, never a table of byte-value numbers. luv.onread
--- delivers received datagrams as a string, and luv.sendto expects a
--- string too, so RTP headers and discovery packets are built with
--- string.char()/table.concat() into strings rather than as number arrays.
+-- a raw Lua byte string, never a table of byte-value numbers. uv's udp
+-- recv_start callback delivers received datagrams as a string, and
+-- sock:send expects a string too, so RTP headers and discovery packets
+-- are built with string.char()/table.concat() into strings rather than
+-- as number arrays.
+--
+-- uv here is the real libuv binding (require("../core/luv_compat")),
+-- whose UDP handle is a userdata with methods: uv.new_udp(), then
+-- sock:bind(host, port), sock:getsockname(), sock:recv_start(cb),
+-- sock:send(data, host, port, cb), sock:close(). This is not the same
+-- shape as the old luv.socket()/luv.bind()/luv.sendto() free-function
+-- API this file used to assume; that API does not exist on luvit's uv.
 
-local luv = require("../core/luv_compat")
+local uv = require("../core/luv_compat")
 local crypto = require("./crypto")
+
+-- aead_xchacha20_poly1305_rtpsize's wire nonce is a 4 byte big-endian
+-- incrementing counter (distinct from the 24 byte XChaCha20 nonce
+-- crypto.aead_* actually operates on; see the send()/_handle_rtp nonce
+-- construction, which zero-extends this to crypto.aead_nonce_size()).
+local RTPSIZE_WIRE_NONCE_SIZE = 4
 
 local UDPClient = {
     _state = {
@@ -55,6 +72,7 @@ function UDPClient.new(endpoint, token)
             receive_waiter = nil,
             sequence = 0,
             ssrc = 0,
+            nonce_counter = 0,
         },
     }
     setmetatable(self, { __index = UDPClient })
@@ -78,41 +96,51 @@ function UDPClient:connect()
     state.remote_port = port
 
     -- Create UDP socket
-    local sock, err = luv.socket(luv.AF_INET, luv.SOCK_DGRAM)
+    local sock = uv.new_udp()
     if not sock then
-        error("Failed to create UDP socket: " .. tostring(err))
+        error("Failed to create UDP socket")
     end
 
-    -- Bind to local port
-    local local_port = 0  -- Let OS assign
-    luv.bind(sock, "0.0.0.0", local_port)
-
-    if luv.getsockname(sock, nil, local_port) then
-        error("Failed to get local port: " .. tostring(luv.getsockname(sock)))
+    -- Bind to local port, letting the OS assign one
+    local bind_ok, bind_err = sock:bind("0.0.0.0", 0)
+    if not bind_ok then
+        error("Failed to bind UDP socket: " .. tostring(bind_err))
     end
 
-    state.local_port = local_port
+    local name, name_err = sock:getsockname()
+    if not name then
+        error("Failed to get local port: " .. tostring(name_err))
+    end
+
+    state.local_port = name.port
     state.udp = sock
 
     -- Start reading packets
-    self:read_loop(sock, 1000)
+    self:read_loop(sock)
 
     state.connected = true
     return self
 end
 
 -- Read loop for incoming packets
-function UDPClient:read_loop(sock, buffer_size)
-    self._state.buffer = buffer_size or 2048
+function UDPClient:read_loop(sock)
+    self._state.buffer = 2048
 
-    luv.onread(sock, function(n, data)
-        if n <= 0 then
+    local ok, err = sock:recv_start(function(read_err, data, _addr)
+        if read_err then
             return
+        end
+        if not data then
+            return  -- nil data with no error is just an empty read, not a packet
         end
 
         -- Handle RTP packet
-        self:_handle_rtp(data, n)
+        self:_handle_rtp(data, #data)
     end)
+
+    if not ok then
+        error("Failed to start UDP recv: " .. tostring(err))
+    end
 end
 
 -- Parse a 12 byte RTP header from a raw byte string
@@ -134,6 +162,20 @@ end
 function UDPClient:_handle_rtp(data, n)
     local state = self._state
 
+    -- IP discovery response: type 0x0002, distinct from any RTP packet
+    -- (RTP's first byte always has the version bits set, 0x80+, so this
+    -- can't collide with a real RTP header). Route it to discover_ip's
+    -- waiter instead of treating it as RTP.
+    if state.discovery_waiter and n >= 74 and data:byte(1) == 0x00 and data:byte(2) == 0x02 then
+        local ip, port = self:_parse_discovery_response(data)
+        if ip and port then
+            state.ip = ip
+            state.port = port
+        end
+        self:_resolve_discovery_waiter(ip, port)
+        return
+    end
+
     if #data < 12 then
         return  -- Too small for RTP header
     end
@@ -149,12 +191,22 @@ function UDPClient:_handle_rtp(data, n)
         payload_end = n - padding_length
     end
 
-    -- xsalsa20_poly1305_suffix mode appends a 24 byte nonce after the
-    -- encrypted payload; strip it off before treating the rest as
-    -- ciphertext. Only applies once a secret_key negotiated the suffix
-    -- mode; see _decode_packet.
+    -- aead_xchacha20_poly1305_rtpsize (Discord's current required mode)
+    -- appends a 4 byte big-endian counter nonce after the encrypted
+    -- payload (ciphertext + 16 byte Poly1305 tag). The legacy
+    -- xsalsa20_poly1305_suffix mode appended a 24 byte random nonce
+    -- instead; both are stripped here before treating the rest as
+    -- ciphertext, kept only for reference since Discord discontinued
+    -- xsalsa20_poly1305_suffix in November 2024 (see enums.SUPPORTED_MODES).
     local nonce = nil
-    if state.secret_key and state.mode == "xsalsa20_poly1305_suffix" then
+    if state.secret_key and state.mode == "aead_xchacha20_poly1305_rtpsize" then
+        if payload_end - payload_start + 1 < RTPSIZE_WIRE_NONCE_SIZE then
+            return  -- Too small to contain the wire nonce
+        end
+        local wire_nonce = data:sub(payload_end - RTPSIZE_WIRE_NONCE_SIZE + 1, payload_end)
+        nonce = wire_nonce .. string.rep("\0", crypto.aead_nonce_size() - RTPSIZE_WIRE_NONCE_SIZE)
+        payload_end = payload_end - RTPSIZE_WIRE_NONCE_SIZE
+    elseif state.secret_key and state.mode == "xsalsa20_poly1305_suffix" then
         if payload_end - payload_start + 1 < crypto.nonce_size() then
             return  -- Too small to contain a suffix nonce
         end
@@ -164,9 +216,17 @@ function UDPClient:_handle_rtp(data, n)
 
     local payload = data:sub(payload_start, payload_end)
 
+    -- AAD for the rtpsize AEAD mode is the unencrypted RTP header bytes
+    -- (the same bytes parse_rtp_header just read); the legacy suffix
+    -- mode has no AAD concept.
+    local aad = nil
+    if state.mode == "aead_xchacha20_poly1305_rtpsize" then
+        aad = data:sub(1, 12)
+    end
+
     -- Dispatch to packet decoder
     if state.ip and state.port then
-        local decoded = self:_decode_packet(rtp_header, payload, nonce)
+        local decoded = self:_decode_packet(rtp_header, payload, nonce, aad)
         if decoded then
             self:_dispatch_packet(rtp_header, decoded)
         end
@@ -176,6 +236,7 @@ function UDPClient:_handle_rtp(data, n)
             header = rtp_header,
             payload = payload,
             nonce = nonce,
+            aad = aad,
             timestamp = os.time() * 1000,
         }
         if not state.packets then
@@ -186,9 +247,11 @@ function UDPClient:_handle_rtp(data, n)
 end
 
 -- Decode RTP packet: decrypt the payload if a secret_key is set, otherwise
--- pass it through unchanged. nonce is the 24 byte suffix nonce extracted
--- by _handle_rtp when mode is xsalsa20_poly1305_suffix; nil otherwise.
-function UDPClient:_decode_packet(_rtp_header, payload, nonce)
+-- pass it through unchanged. nonce is the nonce extracted by _handle_rtp
+-- (24 bytes zero-extended from the rtpsize mode's 4 byte wire counter,
+-- or the legacy suffix mode's 24 byte random nonce); nil if no secret_key
+-- or mode is set. aad is only used by the AEAD rtpsize mode.
+function UDPClient:_decode_packet(_rtp_header, payload, nonce, aad)
     local state = self._state
 
     if not state.secret_key then
@@ -202,7 +265,12 @@ function UDPClient:_decode_packet(_rtp_header, payload, nonce)
         return nil
     end
 
-    local plaintext = crypto.decrypt(payload, nonce, state.secret_key)
+    local plaintext
+    if state.mode == "aead_xchacha20_poly1305_rtpsize" then
+        plaintext = crypto.aead_decrypt(payload, nonce, state.secret_key, aad)
+    else
+        plaintext = crypto.decrypt(payload, nonce, state.secret_key)
+    end
     if not plaintext then
         return nil
     end
@@ -242,8 +310,16 @@ function UDPClient:_resolve_waiter(rtp_header, payload)
 end
 
 -- Send RTP packet. payload must be a raw byte string. If udp._state.
--- secret_key is set, payload is encrypted (xsalsa20_poly1305_suffix: a
--- fresh random 24 byte nonce is appended after the ciphertext).
+-- secret_key is set, payload is encrypted per udp._state.mode:
+--   aead_xchacha20_poly1305_rtpsize (Discord's current required mode):
+--     AEAD-encrypted with the RTP header as additional authenticated
+--     data, then a 4 byte big-endian incrementing counter (the "wire
+--     nonce") is appended after the ciphertext+tag. The 24 byte nonce
+--     crypto.aead_encrypt actually needs is this counter zero-extended;
+--     see _next_aead_nonce.
+--   xsalsa20_poly1305_suffix (legacy, discontinued by Discord Nov 2024,
+--     kept only for reference/tests): a fresh random 24 byte nonce is
+--     appended after the ciphertext instead.
 function UDPClient:send(payload)
     local state = self._state
 
@@ -259,27 +335,62 @@ function UDPClient:send(payload)
     local body = payload
 
     if state.secret_key then
-        local nonce, nerr = crypto.random_nonce()
-        if not nonce then
-            error("Failed to generate nonce: " .. tostring(nerr))
-        end
+        if state.mode == "aead_xchacha20_poly1305_rtpsize" then
+            local wire_nonce, nonce = self:_next_aead_nonce()
 
-        local ciphertext, err = crypto.encrypt(payload, nonce, state.secret_key)
-        if not ciphertext then
-            error("Failed to encrypt payload: " .. tostring(err))
-        end
+            local ciphertext, err = crypto.aead_encrypt(payload, nonce, state.secret_key, rtp_header)
+            if not ciphertext then
+                error("Failed to encrypt payload: " .. tostring(err))
+            end
 
-        body = ciphertext .. nonce
+            body = ciphertext .. wire_nonce
+        else
+            local nonce, nerr = crypto.random_nonce()
+            if not nonce then
+                error("Failed to generate nonce: " .. tostring(nerr))
+            end
+
+            local ciphertext, err = crypto.encrypt(payload, nonce, state.secret_key)
+            if not ciphertext then
+                error("Failed to encrypt payload: " .. tostring(err))
+            end
+
+            body = ciphertext .. nonce
+        end
     end
 
     local full_packet = rtp_header .. body
 
-    local success, err = luv.sendto(state.udp, full_packet, state.ip, state.port)
+    local success, err = state.udp:send(full_packet, state.ip, state.port)
     if not success then
         error("Failed to send UDP packet: " .. tostring(err))
     end
 
     return true
+end
+
+-- Returns (wire_nonce, aead_nonce) for the next outgoing aead_xchacha20_
+-- poly1305_rtpsize packet: wire_nonce is the 4 byte big-endian counter
+-- that actually goes on the wire (appended after the ciphertext, see
+-- send()), aead_nonce is that same counter zero-extended to the 24
+-- bytes crypto.aead_encrypt requires. The counter increments on every
+-- call and wraps at 2^32, matching the "32-bit incremental integer"
+-- nonce Discord's docs specify for this mode.
+function UDPClient:_next_aead_nonce()
+    local state = self._state
+    local counter = state.nonce_counter or 0
+
+    local wire_nonce = string.char(
+        math.floor(counter / 16777216) % 256,
+        math.floor(counter / 65536) % 256,
+        math.floor(counter / 256) % 256,
+        counter % 256
+    )
+
+    state.nonce_counter = (counter + 1) % 4294967296
+
+    local aead_nonce = wire_nonce .. string.rep("\0", crypto.aead_nonce_size() - RTPSIZE_WIRE_NONCE_SIZE)
+    return wire_nonce, aead_nonce
 end
 
 -- Construct RTP header (12 bytes), returned as a raw byte string
@@ -341,7 +452,7 @@ function UDPClient:receive(timeout_ms)
 
     timeout_ms = timeout_ms or 1000
 
-    local timer = luv.timer:new()
+    local timer = uv.new_timer()
     state.receive_waiter = { co = co, timer = timer }
 
     timer:start(timeout_ms, 0, function()
@@ -356,9 +467,23 @@ function UDPClient:receive(timeout_ms)
     return coroutine.yield()
 end
 
--- Discover IP address (UDP discovery)
+-- Discover IP address (UDP discovery). Must be called from inside a
+-- coroutine: it yields while waiting for the discovery response, the
+-- same pattern as receive(). The response arrives through the same
+-- recv_start callback as RTP packets (see _handle_rtp), which routes
+-- it here via state.discovery_waiter instead of the normal packet path
+-- whenever a discovery request is outstanding.
 function UDPClient:discover_ip()
     local state = self._state
+
+    if not state.udp then
+        return false, "UDP socket not initialized"
+    end
+
+    local co = coroutine.running()
+    if not co then
+        error("UDPClient:discover_ip must be called from within a coroutine")
+    end
 
     -- Discovery packet: 74 bytes total.
     -- Byte 1-2: packet type (0x1 = request)
@@ -378,39 +503,39 @@ function UDPClient:discover_ip()
     local padding = string.rep("\0", 66)
     local discovery_packet = header .. padding
 
-    local success, err = luv.sendto(
-        state.udp,
-        discovery_packet,
-        state.remote_ip,
-        state.remote_port
-    )
-
+    local success, err = state.udp:send(discovery_packet, state.remote_ip, state.remote_port)
     if not success then
         return false, "Failed to send discovery packet: " .. tostring(err)
     end
 
-    -- Wait for response
-    local timeout = 1000  -- 1 second
-    local start = os.time() * 1000
+    local timer = uv.new_timer()
+    state.discovery_waiter = { co = co, timer = timer }
 
-    while (os.time() * 1000) - start < timeout do
-        local data = luv.recvfrom(state.udp)
-
-        if data then
-            -- Parse response
-            local ip, port = self:_parse_discovery_response(data)
-            if ip and port then
-                state.ip = ip
-                state.port = port
-                return true, "IP discovered: " .. ip .. ":" .. port
-            end
+    timer:start(1000, 0, function()
+        local waiter = state.discovery_waiter
+        if not waiter or waiter.co ~= co then
+            return
         end
+        state.discovery_waiter = nil
+        coroutine.resume(co, nil, "timeout")
+    end)
 
-        -- Wait a bit before next attempt
-        luv.sleep(0.05)  -- 50ms
+    return coroutine.yield()
+end
+
+-- Resume the coroutine parked in discover_ip(), if any, with a parsed
+-- ip/port. No-op if nothing is currently waiting.
+function UDPClient:_resolve_discovery_waiter(ip, port)
+    local state = self._state
+    local waiter = state.discovery_waiter
+    if not waiter then
+        return
     end
-
-    return false, "Timeout waiting for discovery response"
+    state.discovery_waiter = nil
+    if waiter.timer then
+        waiter.timer:stop()
+    end
+    coroutine.resume(waiter.co, ip, port)
 end
 
 -- Parse discovery response (raw byte string, 74 bytes)
@@ -456,8 +581,17 @@ function UDPClient:close()
         coroutine.resume(waiter.co, nil, "closed")
     end
 
+    if state.discovery_waiter then
+        local waiter = state.discovery_waiter
+        state.discovery_waiter = nil
+        if waiter.timer then
+            waiter.timer:stop()
+        end
+        coroutine.resume(waiter.co, nil, "closed")
+    end
+
     if state.udp then
-        luv.close(state.udp)
+        state.udp:close()
         state.udp = nil
     end
 

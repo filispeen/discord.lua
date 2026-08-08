@@ -41,6 +41,14 @@ local udp = require("./udp")
 local VoiceGateway = require("./voice_gateway")
 local luv = require("../core/luv_compat")
 
+-- Backoff for the leave+rejoin retry loop after a session-invalid close
+-- (4006/4009). See the session_invalidated handler below for why a
+-- fixed delay isn't reliable. Base/max mirror voice_gateway.lua's own
+-- BASE_DELAY_MS/MAX_DELAY_MS reconnect backoff.
+local SESSION_INVALID_BASE_DELAY_MS = 500
+local SESSION_INVALID_MAX_DELAY_MS = 8000
+local MAX_SESSION_INVALID_ATTEMPTS = 8
+
 local VoiceClient = class("VoiceClient")
 function VoiceClient.new(client, channel)
     local self = {
@@ -67,6 +75,7 @@ function VoiceClient.new(client, channel)
             known_users = {},
             jitter_buffers = {},
             recording_decoders = {},
+            session_invalid_attempts = 0,
         },
         gateway = nil,
         udp = nil,
@@ -101,7 +110,7 @@ function VoiceClient:setup()
     self.udp = udp.UDPClient:new(nil, nil)
 
     -- Create gateway
-    self.gateway = VoiceGateway.new(self.client, self.guild.id)
+    self.gateway = VoiceGateway.new(self.client, self.guild.id, self.channel.id)
     self.gateway._voice_client = self
 
     -- Track VOICE_STATE_UPDATE/VOICE_SERVER_UPDATE dispatches from the
@@ -134,11 +143,22 @@ function VoiceClient:setup()
 
     -- Add listeners
     self.gateway:on('ready', function(data)
+        state.session_invalid_attempts = 0
         self:_on_ready(data)
     end)
 
     self.gateway:on('client_connect', function(data)
         self:_on_client_connect(data)
+    end)
+
+    -- DAVE opcode (11), plural: announces which user IDs are now
+    -- expected media session members, with no per-user ssrc (see
+    -- clients_connect in voice_gateway.lua's public contract). Only
+    -- registers known_users so DAVE add-proposal validation has
+    -- something to check against; ssrc mapping still comes from the
+    -- legacy client_connect (12) event or from RTP SSRC discovery.
+    self.gateway:on('clients_connect', function(data)
+        self:_on_clients_connect(data)
     end)
 
     self.gateway:on('client_disconnect', function(data)
@@ -167,22 +187,40 @@ function VoiceClient:setup()
     -- how pycord/discord.py's connect() always restarts the handshake
     -- from a fully torn-down state (prepare_handshake) rather than
     -- assuming the previous channel_id is still "fresh".
+    --
+    -- A single fixed delay is not reliable: confirmed live that even
+    -- with a working leave+rejoin (fresh voice_server_update/token
+    -- every retry), Discord's voice session manager can keep handing
+    -- back the exact same session_id for several retries in a row
+    -- before it actually expires the old one server-side, independent
+    -- of anything the client does. Backing off exponentially between
+    -- attempts (session_invalid_attempts, reset on ready) gives that
+    -- server-side expiry time to happen instead of hammering retries
+    -- at a fixed short interval, and MAX_SESSION_INVALID_ATTEMPTS stops
+    -- it from retrying forever if the session never clears.
     self.gateway:on('session_invalidated', function(data)
         state.session_id = nil
         state.token = nil
         state.endpoint = nil
+
+        state.session_invalid_attempts = (state.session_invalid_attempts or 0) + 1
+        if state.session_invalid_attempts > MAX_SESSION_INVALID_ATTEMPTS then
+            state.session_invalid_attempts = 0
+            state.connected = false
+            self.client:dispatch('VOICE_CLIENT_RECONNECT_FAILED', {
+                reason = 'session_invalid_attempts_exceeded',
+            })
+            return
+        end
+
         self.client:voice_state_update(self.guild.id, nil, false, false)
 
-        -- Sending the leave and the rejoin back to back, with no gap
-        -- at all, let Discord's voice server keep treating the old
-        -- session as live: it never got a chance to actually process
-        -- the leave before the rejoin arrived, so every retry kept
-        -- getting back the exact same session_id AND the exact same
-        -- voice server endpoint, forever (confirmed live). A short
-        -- delay gives the leave time to actually land before we ask
-        -- for a new session.
+        local delay = math.min(
+            SESSION_INVALID_BASE_DELAY_MS * (2 ^ (state.session_invalid_attempts - 1)),
+            SESSION_INVALID_MAX_DELAY_MS
+        )
         local rejoin_timer = luv.new_timer()
-        rejoin_timer:start(500, 0, function()
+        rejoin_timer:start(delay, 0, function()
             rejoin_timer:stop()
             self.client:voice_state_update(self.guild.id, self.channel.id, false, false)
         end)
@@ -203,6 +241,12 @@ function VoiceClient:setup()
     -- RTP payloads over UDP. Store it on state and hand it to the UDP
     -- client so incoming packets can be decrypted (see udp.lua's
     -- _decode_packet, which reads udp._state.secret_key).
+    --
+    -- VOICE_CLIENT_CONNECTED fires here, not right after select_protocol
+    -- in _on_ready: start_recording/audio playback both need
+    -- secret_key/mode to actually decrypt or encrypt RTP payloads, and
+    -- those only exist once this event arrives (the server's reply to
+    -- our select_protocol).
     self.gateway:on('session_description', function(data)
         state.secret_key = data.secret_key
         state.mode = data.mode
@@ -210,6 +254,7 @@ function VoiceClient:setup()
             self.udp._state.secret_key = data.secret_key
             self.udp._state.mode = data.mode
         end
+        self.client:dispatch('VOICE_CLIENT_CONNECTED', self)
     end)
 
     -- Routes decrypted RTP payloads from the UDP client into a per-SSRC
@@ -339,6 +384,7 @@ function VoiceClient:disconnect(force)
     state.connected = false
     state.playing = false
     state.source = nil
+    state.session_invalid_attempts = 0
 
     return true
 end
@@ -666,26 +712,52 @@ function VoiceClient:_on_ready(data)
     if self.udp then
         self.udp._state.endpoint = data.ip .. ":" .. tostring(data.port)
         self.udp:connect()
+
+        -- IP discovery must complete (and yield while it waits, see
+        -- udp.lua's discover_ip) before SELECT_PROTOCOL can be sent:
+        -- Discord needs our externally-visible address/port, not our
+        -- local bind address, and select_protocol is what triggers the
+        -- server's SESSION_DESCRIPTION reply carrying secret_key. This
+        -- handler already runs inside a coroutine (see ws_adapter.lua's
+        -- receive loop), so the yield here is safe.
+        local discovered_ip, discovered_port = self.udp:discover_ip()
+        if discovered_ip and discovered_port then
+            self:_start_jitter_timer()
+            if self.gateway then
+                self.gateway:select_protocol(discovered_ip, discovered_port)
+            end
+        else
+            self.client:dispatch('VOICE_CLIENT_RECONNECT_FAILED', {
+                reason = 'ip_discovery_failed',
+            })
+            return false
+        end
     end
-
-    self:_start_jitter_timer()
-
-    -- Send session description
-    if self.gateway then
-        self.gateway:send_session_description()
-    end
-
-    -- Dispatch connected event
-    self.client:dispatch('VOICE_CLIENT_CONNECTED', self)
 
     return true
 end
 
--- Internal: on client connect
+-- Internal: on clients connect (DAVE opcode 11, plural, no ssrc). See
+-- the clients_connect listener in setup() for why this is separate from
+-- _on_client_connect.
+function VoiceClient:_on_clients_connect(data)
+    local state = self.state
+    local user_ids = data.user_ids or {}
+    for _, user_id in ipairs(user_ids) do
+        if not state.known_users[user_id] then
+            state.known_users[user_id] = { user_id = user_id }
+        end
+    end
+    return true
+end
+
+-- Internal: on client connect (legacy singular opcode 12, has ssrc)
 function VoiceClient:_on_client_connect(data)
     local state = self.state
     state.known_users[data.user_id] = data
-    state.ssrc_map[data.ssrc] = data.user_id
+    if data.ssrc then
+        state.ssrc_map[data.ssrc] = data.user_id
+    end
 
     -- Dispatch event
     self.client:dispatch('VOICE_CLIENT_CONNECT', {
@@ -700,8 +772,10 @@ end
 function VoiceClient:_on_client_disconnect(data)
     local state = self.state
     state.known_users[data.user_id] = nil
-    state.ssrc_map[data.ssrc] = nil
-    state.jitter_buffers[data.ssrc] = nil
+    if data.ssrc then
+        state.ssrc_map[data.ssrc] = nil
+        state.jitter_buffers[data.ssrc] = nil
+    end
 
     -- Dispatch event
     self.client:dispatch('VOICE_CLIENT_DISCONNECT', {

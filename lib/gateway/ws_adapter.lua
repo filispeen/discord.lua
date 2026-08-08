@@ -10,14 +10,22 @@
 --     res: table - handshake response from coro-websocket.connect
 --     read: function - blocking coroutine read, returns {opcode, payload} or nil
 --     write: function - blocking coroutine write, accepts {opcode, payload}
---     Returns: ws object with :on(event, fn), :send(text), :close(code, reason)
+--     Returns: ws object with :on(event, fn), :send(text), :send_bytes(bytes),
+--     :close(code, reason)
 --     Events emitted: "open", "message", "close", "error"
+--       "message" passes (self, payload, is_binary): is_binary is true for
+--       WebSocket binary frames (opcode 2, used by the voice gateway's
+--       DAVE/MLS opcodes, see voice/dave_session.lua) and false for text
+--       frames (opcode 1, everything else). Callers that only care about
+--       JSON text frames (gateway.Shard) can keep ignoring the third
+--       argument exactly as before.
 --     The read loop must be pumped by calling ws:start_reading() once
 --     listeners are attached; this runs the receive loop in a coroutine.
 
 local Emitter = require("../core/emitter")
 
 local TEXT_OPCODE = 1
+local BINARY_OPCODE = 2
 
 local M = {}
 
@@ -33,6 +41,23 @@ function M.wrap(_res, read, write)
         end
         local co = coroutine.create(function()
             self._write({ opcode = TEXT_OPCODE, payload = text })
+        end)
+        local ok, err = coroutine.resume(co)
+        if not ok then
+            self:emit("error", err)
+        end
+    end
+
+    -- Sends a raw binary WebSocket frame (opcode 2). Used for the voice
+    -- gateway's DAVE/MLS payloads (mls_key_package, mls_commit_welcome,
+    -- mls_invalid_commit_welcome), which are not JSON and must not be
+    -- sent as a text frame.
+    function ws:send_bytes(bytes)
+        if self._closed then
+            return
+        end
+        local co = coroutine.create(function()
+            self._write({ opcode = BINARY_OPCODE, payload = bytes })
         end)
         local ok, err = coroutine.resume(co)
         if not ok then
@@ -73,7 +98,7 @@ function M.wrap(_res, read, write)
                     self:emit("close", code, reason)
                     return
                 end
-                self:emit("message", message.payload)
+                self:emit("message", message.payload, message.opcode == BINARY_OPCODE)
             end
         end)
 

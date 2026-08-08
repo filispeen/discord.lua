@@ -155,24 +155,26 @@ describe("VoiceGateway", function()
         end)
     end)
 
-    describe("Send session description", function()
+    describe("Select protocol", function()
         local gateway
 
         before_each(function()
             gateway = VoiceGateway.new(mock_client, "guild123")
             gateway.ws = MockWebSocket.new()
-            gateway.secret_key = {0, 1, 2, 3, 4, 5, 6, 7}
         end)
 
-        it("should send session description payload", function()
+        it("should send select_protocol payload with discovered address/port", function()
             local success, err = pcall(function()
-                gateway:send_session_description()
+                gateway:select_protocol("1.2.3.4", 5555)
             end)
 
             assert.is_true(success)
             assert.equals(1, #gateway.ws.messages)
-            assert.equals(enums.SESSION_DESCRIPTION, gateway.ws.messages[1].op)
-            assert.is_table(gateway.ws.messages[1].d.secret)
+            assert.equals(enums.SELECT_PROTOCOL, gateway.ws.messages[1].op)
+            assert.equals("udp", gateway.ws.messages[1].d.protocol)
+            assert.equals("1.2.3.4", gateway.ws.messages[1].d.data.address)
+            assert.equals(5555, gateway.ws.messages[1].d.data.port)
+            assert.is_string(gateway.ws.messages[1].d.data.mode)
         end)
     end)
 
@@ -527,7 +529,7 @@ describe("VoiceGateway", function()
                 d = { secret_key = { 1, 2, 3 }, mode = "xsalsa20_poly1305_suffix" },
             }))
 
-            assert.same({ 1, 2, 3 }, gateway.secret_key)
+            assert.same("\1\2\3", gateway.secret_key)
         end)
 
         it("routes CLIENT_CONNECT to the client_connect listener", function()

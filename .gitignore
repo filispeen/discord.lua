@@ -13,7 +13,7 @@ deps/
 */.rockbin/
 
 # Generated and temporary files
-*.dll
+!*.dll
 *.log
 *.zip
 *manual*.lua

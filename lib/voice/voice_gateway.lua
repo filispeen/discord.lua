@@ -5,12 +5,16 @@
 --   VoiceGateway:new(client, guild_id) - Create gateway
 --   gateway:connect(endpoint, token, session_id) - Open the voice
 --     WebSocket and route incoming frames to receive_hello/receive_ready/
---     receive_session_description and the client_connect/client_disconnect/
---     speaking/resumed events. endpoint is the raw host (no scheme/port)
---     as sent in VOICE_SERVER_UPDATE, e.g. "guildvoice.discord.gg".
+--     receive_session_description and the client_connect/clients_connect/
+--     client_disconnect/speaking/resumed events. endpoint is the raw host
+--     (no scheme/port) as sent in VOICE_SERVER_UPDATE, e.g.
+--     "guildvoice.discord.gg".
 --   gateway:identify() - Send identify payload
 --   gateway:send_heartbeat() - Send heartbeat
---   gateway:send_session_description() - Send encrypted session key
+--   gateway:select_protocol(address, port) - Send SELECT_PROTOCOL (op 1)
+--     with the externally-discovered UDP address/port; must be called
+--     from within a coroutine (see udp.lua's discover_ip). Triggers the
+--     server's SESSION_DESCRIPTION (op 4) reply.
 --   gateway:resume(session_id, seq) - Resume connection
 --   gateway:receive_hello() - Handle HELLO event (heartbeat_interval only,
 --     starts the heartbeat timer; does not emit "ready", that only
@@ -21,6 +25,13 @@
 --   gateway:send_client_connect(user_id, ssrc) - Client connected
 --   gateway:send_client_disconnect(user_id, ssrc) - Client disconnected
 --   gateway:send_speaking(user_id, ssrc, speaking) - Speaking update
+--   "client_connect" event - legacy singular opcode (12), data has
+--     user_id/audio_ssrc for one client.
+--   "clients_connect" event - DAVE opcode (11), data has
+--     user_ids = {snowflake, ...}, a plural list with no ssrc. Per the
+--     DAVE whitepaper this just tells the client which user IDs are now
+--     expected media session members (used to validate MLS add
+--     proposals); it carries no per-user ssrc, unlike client_connect.
 --   gateway:on(event, callback) - Subscribe to a gateway event
 --   gateway:off(event, callback?) - Unsubscribe from a gateway event
 --   gateway:emit(event, ...) - Emit a gateway event to subscribers
@@ -41,6 +52,8 @@ local class = require("../core/class")
 local enums = require("./enums")
 local errors = require("./errors")
 local uv = require("../core/luv_compat")
+local dave_ffi = require("./dave_ffi")
+local DaveSession = require("./dave_session")
 
 local VoiceGateway = class("VoiceGateway")
 
@@ -54,10 +67,11 @@ local MAX_RECONNECT_ATTEMPTS = 5
 local BASE_DELAY_MS = 1000
 local MAX_DELAY_MS = 30000
 
-function VoiceGateway.new(client, guild_id)
+function VoiceGateway.new(client, guild_id, channel_id)
     local self = {
         client = client,
         guild_id = guild_id,
+        channel_id = channel_id,
         ws = nil,
         state = {
             connected = false,
@@ -79,6 +93,13 @@ function VoiceGateway.new(client, guild_id)
         listeners = {},
         reconnect_attempts = 0,
         reconnect_timer = nil,
+        -- DAVE (E2EE) state. dave_session stays nil for the whole
+        -- connection lifetime when libdave is unavailable (see
+        -- dave_ffi.available below); every dave_* method in this file
+        -- guards on self.dave_session being non-nil first.
+        dave_session = nil,
+        dave_protocol_version = 0,
+        dave_pending_transition = nil,
     }
     setmetatable(self, VoiceGateway)
     return self
@@ -133,8 +154,13 @@ function VoiceGateway:connect(endpoint, token, session_id)
     state.endpoint = endpoint
     self._closing = false
 
-    local host = endpoint:match("^([^:]+)")
-    local url = "wss://" .. host .. "/?v=8"
+    local host, port = endpoint:match("^([^:]+):?(%d*)$")
+    local url
+    if port and port ~= "" then
+        url = "wss://" .. host .. ":" .. port .. "/?v=8"
+    else
+        url = "wss://" .. host .. "/?v=8"
+    end
 
     -- Mirrors gateway.Shard:connect(): coro-websocket.connect() needs a
     -- parsed options table (host/port/path/tls), not a raw URL string,
@@ -172,12 +198,18 @@ function VoiceGateway:connect(endpoint, token, session_id)
         end
     end)
 
-    ws:on("message", function(_, msg)
+    ws:on("message", function(_, msg, is_binary)
+        if is_binary then
+            self:_dispatch_binary(msg)
+            return
+        end
+
         local json = require("../core/json_compat")
         local ok, parsed = pcall(json.decode, msg)
         if not ok or type(parsed) ~= "table" then
             return
         end
+        print("DAVE DEBUG RECV JSON: " .. tostring(msg))
         self:_dispatch(parsed)
     end)
 
@@ -196,6 +228,19 @@ function VoiceGateway:connect(endpoint, token, session_id)
     ws:start_reading()
 
     return self
+end
+
+-- Builds the recognized_user_ids list DaveSession:process_proposals and
+-- :process_welcome expect: every user id announced via clients_connect
+-- (11) or client_connect (12) and not since removed by client_disconnect
+-- (13). Per the DAVE whitepaper, existing group members must refuse an
+-- add proposal for a user id not in this set.
+function VoiceGateway:_recognized_user_ids()
+    local ids = {}
+    for user_id in pairs(self.known_users) do
+        ids[#ids + 1] = user_id
+    end
+    return ids
 end
 
 -- Routes a decoded voice gateway payload { op, d, seq } to the matching
@@ -221,16 +266,263 @@ function VoiceGateway:_dispatch(payload)
         self._is_reconnect = false
         self.reconnect_attempts = 0
         self:emit("resumed", data)
-    elseif op == enums.CLIENT_CONNECT or op == enums.CLIENTS_CONNECT then
+    elseif op == enums.CLIENT_CONNECT then
+        if data and data.user_id then
+            self.known_users[tostring(data.user_id)] = true
+        end
         self:emit("client_connect", data)
+    elseif op == enums.CLIENTS_CONNECT then
+        if data and data.user_ids then
+            for _, user_id in ipairs(data.user_ids) do
+                self.known_users[tostring(user_id)] = true
+            end
+        end
+        self:emit("clients_connect", data)
     elseif op == enums.CLIENT_DISCONNECT then
+        if data and data.user_id then
+            self.known_users[tostring(data.user_id)] = nil
+        end
         self:emit("client_disconnect", data)
     elseif op == enums.SPEAKING then
         self:emit("speaking", data)
+    elseif self.state.dave_session then
+        if op == enums.DAVE_PREPARE_TRANSITION then
+            self:_handle_dave_prepare_transition(data)
+        elseif op == enums.DAVE_EXECUTE_TRANSITION then
+            self:_execute_dave_transition(data.transition_id)
+        elseif op == enums.DAVE_PREPARE_EPOCH then
+            self:_handle_dave_prepare_epoch(data)
+        end
     end
 end
 
+-- Mirrors pycord gateway.py's dave_prepare_transition handling: Discord
+-- announces an upcoming protocol version change; transition_id == 0
+-- applies immediately, otherwise we ack readiness and wait for
+-- dave_execute_transition.
+function VoiceGateway:_handle_dave_prepare_transition(data)
+    local state = self.state
+    state.dave_pending_transition = data
+
+    if data.transition_id == 0 then
+        self:_execute_dave_transition(data.transition_id)
+        return
+    end
+
+    if data.protocol_version == 0 and state.dave_session then
+        state.dave_session:set_passthrough_mode(true)
+    end
+
+    self:send_dave_transition_ready(data.transition_id)
+end
+
+-- Mirrors pycord's dave_prepare_epoch handling: epoch == 1 means a brand
+-- new MLS group is starting for protocol_version, so the session needs a
+-- fresh reinit (equivalent to pycord's state.reinit_dave_session()).
+function VoiceGateway:_handle_dave_prepare_epoch(data)
+    if data.epoch ~= 1 then
+        return
+    end
+
+    local state = self.state
+    state.dave_protocol_version = data.protocol_version
+    self:_reinit_dave_session()
+end
+
+-- (Re)creates the MLS group for state.dave_protocol_version and sends
+-- our MLS_KEY_PACKAGE, or resets/passthroughs the session when the
+-- negotiated version is 0. Mirrors pycord's reinit_dave_session in
+-- discord/voice/state.py.
+function VoiceGateway:_reinit_dave_session()
+    local state = self.state
+
+    if not state.dave_session then
+        return
+    end
+
+    if state.dave_protocol_version > 0 then
+        state.dave_session:reinit(state.dave_protocol_version)
+
+        local key_package = state.dave_session:get_serialized_key_package()
+        if key_package then
+            print("DAVE DEBUG KEY PACKAGE len=" .. #key_package)
+            local hex_parts = {}
+            for i = 1, #key_package do
+                hex_parts[i] = string.format("%02x", key_package:byte(i))
+            end
+            print("DAVE DEBUG KEY PACKAGE HEX: " .. table.concat(hex_parts))
+            self:send_as_bytes(enums.MLS_KEY_PACKAGE, key_package)
+        end
+    else
+        state.dave_session:reset()
+        state.dave_session:set_passthrough_mode(true)
+    end
+end
+
+-- Mirrors pycord's execute_dave_transition: applies a previously
+-- prepared transition, tracking up/downgrade so callers (voice_client)
+-- can react to is_dave_connection() flipping.
+function VoiceGateway:_execute_dave_transition(transition_id)
+    local state = self.state
+    local pending = state.dave_pending_transition
+
+    if not pending then
+        return
+    end
+
+    if transition_id == pending.transition_id then
+        local old_version = state.dave_protocol_version
+        state.dave_protocol_version = pending.protocol_version
+
+        if old_version ~= state.dave_protocol_version and state.dave_protocol_version == 0 then
+            self:emit("dave_downgraded", {})
+        elseif transition_id > 0 and old_version == 0 and state.dave_protocol_version > 0 then
+            if state.dave_session then
+                state.dave_session:set_passthrough_mode(false)
+            end
+            self:emit("dave_upgraded", {})
+        end
+
+        if state.dave_session then
+            state.dave_session:refresh_key_ratchet()
+        end
+    end
+
+    state.dave_pending_transition = nil
+end
+
+-- Mirrors pycord's recover_dave_from_invalid_commit: tells Discord we
+-- failed to process a commit/welcome (MLS_INVALID_COMMIT_WELCOME) and
+-- reinitializes our session from scratch so a subsequent welcome can
+-- succeed.
+function VoiceGateway:_recover_dave_from_invalid_commit(transition_id)
+    self:_send({
+        op = enums.MLS_INVALID_COMMIT_WELCOME,
+        d = { transition_id = transition_id },
+    })
+    self:_reinit_dave_session()
+end
+
+-- Routes a binary voice gateway frame: [op: u8][payload...], matching
+-- Discord's actual wire format for server-to-client MLS_* binary frames
+-- (confirmed live: no 2-byte sequence_number prefix despite the
+-- whitepaper's struct definition listing one - the opcode is always the
+-- first byte, same as the client-to-server format in send_as_bytes).
+-- Only MLS_* opcodes (25-31) are ever sent as binary frames.
+function VoiceGateway:_dispatch_binary(msg)
+    if #msg < 1 then
+        return
+    end
+
+    local hexdump = ""
+    for i = 1, math.min(10, #msg) do
+        hexdump = hexdump .. string.format("%02x ", msg:byte(i))
+    end
+    print("DAVE DEBUG: raw first bytes=" .. hexdump)
+    print("DAVE DEBUG: len=" .. #msg .. " byte1_as_op=" .. msg:byte(1) .. " byte3_as_op=" .. (msg:byte(3) or -1))
+
+    local op = msg:byte(1)
+    local state = self.state
+
+    if not state.dave_session then
+        return
+    end
+
+    if op == enums.MLS_EXTERNAL_SENDER_PACKAGE then
+        state.dave_session:set_external_sender(msg:sub(2))
+        state.dave_group_pending = true
+    elseif op == enums.MLS_PROPOSALS then
+        if #msg < 2 then
+            return
+        end
+        local op_byte = msg:byte(2)
+        local op_type = op_byte == 0 and "append" or "revoke"
+        local commit_welcome = state.dave_session:process_proposals(op_type, msg:sub(2), self:_recognized_user_ids())
+        if commit_welcome then
+            self:send_as_bytes(enums.MLS_COMMIT_WELCOME, commit_welcome)
+        end
+    elseif op == enums.MLS_COMMIT_TRANSITION then
+        if #msg < 3 then
+            return
+        end
+        local transition_id = msg:byte(2) * 256 + msg:byte(3)
+        local ok = state.dave_session:process_commit(msg:sub(4))
+        if ok then
+            state.dave_group_pending = false
+            if transition_id ~= 0 then
+                state.dave_pending_transition = {
+                    transition_id = transition_id,
+                    protocol_version = state.dave_protocol_version,
+                }
+                self:send_dave_transition_ready(transition_id)
+            else
+                state.dave_session:refresh_key_ratchet()
+            end
+        else
+            self:_recover_dave_from_invalid_commit(transition_id)
+        end
+    elseif op == enums.MLS_WELCOME then
+        if #msg < 3 then
+            return
+        end
+        local transition_id = msg:byte(2) * 256 + msg:byte(3)
+        local ok = state.dave_session:process_welcome(msg:sub(4), self:_recognized_user_ids())
+        if ok then
+            state.dave_group_pending = false
+            if transition_id ~= 0 then
+                state.dave_pending_transition = {
+                    transition_id = transition_id,
+                    protocol_version = state.dave_protocol_version,
+                }
+                self:send_dave_transition_ready(transition_id)
+            else
+                state.dave_session:refresh_key_ratchet()
+            end
+        else
+            self:_recover_dave_from_invalid_commit(transition_id)
+        end
+    end
+end
+
+-- Sends a binary voice gateway frame: [op: u8] + data, matching pycord's
+-- VoiceWebSocket.send_as_bytes. Used for MLS_KEY_PACKAGE,
+-- MLS_COMMIT_WELCOME, MLS_INVALID_COMMIT_WELCOME.
+function VoiceGateway:send_as_bytes(op, data)
+    local ws = self.ws
+
+    if not ws then
+        return false, "WebSocket not connected"
+    end
+
+    print("DAVE DEBUG SEND BYTES: op=" .. tostring(op) .. " len=" .. #data)
+    ws:send_bytes(string.char(op) .. data)
+    return true
+end
+
+-- Sends dave_transition_ready, acking our readiness for a Discord-
+-- announced transition_id (JSON opcode 23).
+function VoiceGateway:send_dave_transition_ready(transition_id)
+    return self:_send({
+        op = enums.DAVE_TRANSITION_READY,
+        d = { transition_id = transition_id },
+    })
+end
+
 function VoiceGateway:identify()
+    -- DAVE (E2EE) support: max_dave_protocol_version is
+    -- daveMaxSupportedProtocolVersion() when libdave (dave_ffi.lua) is
+    -- available, 0 otherwise. Explicit 0 rather than omitting the field
+    -- when unsupported, since Discord's own docs treat both the same
+    -- but some voice gateway builds have been seen rejecting IDENTIFY
+    -- payloads that omit it entirely.
+    local max_dave_version = 0
+    if dave_ffi.available() then
+        local supported = dave_ffi.max_supported_protocol_version()
+        if supported then
+            max_dave_version = supported
+        end
+    end
+
     local payload = {
         op = enums.IDENTIFY,
         d = {
@@ -240,13 +532,7 @@ function VoiceGateway:identify()
             token = self.state.token,
             shard = 0,  -- TODO: get from client
             total_shards = 1,
-            -- No DAVE (E2EE) protocol support: this library does not
-            -- implement the MLS-based DAVE key exchange, only transport
-            -- (XSalsa20-Poly1305) encryption. Explicit 0 rather than
-            -- omitting the field, since Discord's own docs treat both
-            -- the same but some voice gateway builds have been seen
-            -- rejecting IDENTIFY payloads that omit it entirely.
-            max_dave_protocol_version = 0,
+            max_dave_protocol_version = max_dave_version,
         },
     }
 
@@ -266,7 +552,7 @@ function VoiceGateway:send_heartbeat()
         op = enums.HEARTBEAT,
         d = {
             t = os.time() * 1000,
-            seq_ack = state.seq,
+            seq_ack = state.seq or -1,
         },
     }
 
@@ -275,13 +561,25 @@ function VoiceGateway:send_heartbeat()
     return self:_send(payload)
 end
 
--- Send session description (encrypted)
-function VoiceGateway:send_session_description()
+-- Send SELECT_PROTOCOL (op 1). This is the client's reply to READY: it
+-- tells the voice server which UDP mode/address/port to use, and must
+-- be sent before the server will ever send SESSION_DESCRIPTION (op 4)
+-- back. address/port are the externally-visible ip/port discovered via
+-- UDP IP discovery (see udp.lua's discover_ip, RFC-style STUN-like
+-- probe against the voice server), NOT the local bind address.
+--
+-- Must be called from inside a coroutine: discover_ip() yields while
+-- waiting for the discovery response.
+function VoiceGateway:select_protocol(address, port)
     local payload = {
-        op = enums.SESSION_DESCRIPTION,
+        op = enums.SELECT_PROTOCOL,
         d = {
-            mode = enums.SUPPORTED_MODES[1],  -- xsalsa20_poly1305_suffix
-            secret = self.secret_key,
+            protocol = "udp",
+            data = {
+                address = address,
+                port = port,
+                mode = enums.SUPPORTED_MODES[1],  -- xsalsa20_poly1305_suffix
+            },
         },
     }
 
@@ -293,11 +591,53 @@ end
 -- encrypt/decrypt RTP payloads (see lib/voice/crypto.lua). Routed here by
 -- VoiceGateway:_dispatch when a live connect() socket is active.
 function VoiceGateway:receive_session_description(data)
-    self.secret_key = data.secret_key
+    -- Discord sends secret_key as a JSON array of byte values (e.g.
+    -- [12, 34, 56, ...]), decoded by json_compat as a Lua table of
+    -- numbers, not a byte string. crypto.aead_decrypt/encrypt need a
+    -- real byte string (they ffi.cast it straight to unsigned char*),
+    -- so pack it here once at receipt time rather than at every
+    -- decrypt call.
+    local secret_key = data.secret_key
+    if type(secret_key) == "table" then
+        local bytes = {}
+        for i, byte in ipairs(secret_key) do
+            bytes[i] = string.char(byte)
+        end
+        secret_key = table.concat(bytes)
+    end
+
+    self.secret_key = secret_key
     self.mode = data.mode
 
+    local state = self.state
+    state.dave_protocol_version = data.dave_protocol_version or 0
+
+    -- Lazily create the DaveSession on the first session_description
+    -- that negotiates DAVE, mirroring pycord's reinit_dave_session
+    -- (dave_session stays nil the whole call for builds without
+    -- libdave, or for calls that never upgrade to DAVE).
+    if state.dave_protocol_version > 0 and not state.dave_session then
+        local session, err = DaveSession.new(self.client.user.id, self.channel_id)
+        if session then
+            state.dave_session = session
+            self.known_users[tostring(self.client.user.id)] = true
+        else
+            -- libdave unavailable or session creation failed: fall back
+            -- to non-DAVE transport encryption. This will only work if
+            -- Discord itself allows a passthrough/non-DAVE call; if the
+            -- channel mandates DAVE this connection will still get a
+            -- 4017 close from Discord's side, same as before dave_ffi
+            -- existed (see enums.CLOSE_DAVE_PROTOCOL_REQUIRED).
+            self:emit("dave_unavailable", { reason = err })
+        end
+    end
+
+    if state.dave_session then
+        self:_reinit_dave_session()
+    end
+
     self:emit("session_description", {
-        secret_key = data.secret_key,
+        secret_key = secret_key,
         mode = data.mode,
     })
 
@@ -329,7 +669,7 @@ function VoiceGateway:_send_heartbeat()
         op = enums.HEARTBEAT,
         d = {
             t = os.time() * 1000,
-            seq_ack = state.seq,
+            seq_ack = state.seq or -1,
         },
     }
 
@@ -351,7 +691,9 @@ function VoiceGateway:_send(payload)
         d = payload.d,
     }
 
-    ws:send(json.encode(data))
+    local encoded = json.encode(data)
+    print("DAVE DEBUG SEND JSON: op=" .. tostring(payload.op) .. " body=" .. encoded)
+    ws:send(encoded)
     return true
 end
 
@@ -366,7 +708,8 @@ end
 function VoiceGateway:receive_hello(data)
     local state = self.state
 
-    state.heartbeat_interval = data.heartbeat_interval
+    state.heartbeat_interval = math.min(data.heartbeat_interval, 5000)
+    print("DAVE DEBUG HELLO: heartbeat_interval=" .. tostring(data.heartbeat_interval) .. " (capped to " .. state.heartbeat_interval .. ") os.time=" .. tostring(os.time()))
 
     -- Start heartbeat timer
     self:_start_heartbeat()
@@ -378,6 +721,22 @@ end
 function VoiceGateway:receive_ready(data)
     local state = self.state
     state.seq = data.seq
+
+    -- READY carries its own heartbeat_interval (observed 5500ms), distinct
+    -- from and much shorter than HELLO's (observed 55000ms). Discord's
+    -- real voice gateway expects heartbeats at the READY interval, not
+    -- HELLO's; heartbeating only at HELLO's interval leaves the
+    -- connection looking dead to the server long before our first
+    -- heartbeat goes out, closing with 4020 well before that heartbeat
+    -- is even due. Restart the timer here so the correct interval wins.
+    if data.heartbeat_interval then
+        local capped = math.min(data.heartbeat_interval, 5000)
+        if capped ~= state.heartbeat_interval then
+            state.heartbeat_interval = capped
+            print("DAVE DEBUG READY: heartbeat_interval=" .. tostring(data.heartbeat_interval) .. " (capped to " .. capped .. ") os.time=" .. tostring(os.time()))
+            self:_start_heartbeat()
+        end
+    end
 
     -- Dispatch ready event
     self:_dispatch_ready({
@@ -405,7 +764,13 @@ function VoiceGateway:_start_heartbeat()
 
     local timer = uv.new_timer()
     timer:start(interval, interval, function()
-        self:send_heartbeat()
+        local co = coroutine.create(function()
+            self:send_heartbeat()
+        end)
+        local ok, err = coroutine.resume(co)
+        if not ok then
+            self:emit("error", err)
+        end
     end)
     state.heartbeat_timer = timer
 end
@@ -547,6 +912,15 @@ function VoiceGateway:_trigger_reconnect(close_code, close_reason)
         seq = 0
     end
 
+    -- state.dave_session owns FFI handles (dave_session.lua) that are
+    -- not garbage collected automatically; must be destroyed here since
+    -- the table below replaces self.state wholesale and would otherwise
+    -- leak the handle on every reconnect. A fresh session is created
+    -- again lazily on the next session_description (receive_session_description).
+    if state.dave_session then
+        state.dave_session:destroy()
+    end
+
     self.state = {
         connected = false,
         session_id = session_id,
@@ -561,6 +935,9 @@ function VoiceGateway:_trigger_reconnect(close_code, close_reason)
         missed_acks = 0,
         seq = seq,
         state = enums.DISCONNECTED,
+        dave_session = nil,
+        dave_protocol_version = 0,
+        dave_pending_transition = nil,
     }
 
     -- Explicitly close the dead socket rather than just dropping our
@@ -612,7 +989,21 @@ function VoiceGateway:_trigger_reconnect(close_code, close_reason)
     timer:start(delay, 0, function()
         self.reconnect_timer = nil
         self._is_reconnect = true
-        self:connect(endpoint, token, session_id)
+
+        -- connect() opens a new WebSocket via coro-websocket, which
+        -- yields internally (coro-net's TCP connect is coroutine-based).
+        -- uv timer callbacks run as plain C callbacks, not inside a Lua
+        -- coroutine, so a bare self:connect(...) here yields across a
+        -- C-call boundary and crashes ("attempt to yield across C-call
+        -- boundary", confirmed live). Wrap it in its own coroutine, the
+        -- same pattern ws_adapter.lua uses for ws:send/ws:close.
+        local co = coroutine.create(function()
+            self:connect(endpoint, token, session_id)
+        end)
+        local ok, err = coroutine.resume(co)
+        if not ok then
+            self:emit("error", err)
+        end
     end)
 end
 
@@ -625,6 +1016,11 @@ function VoiceGateway:close()
     if self.ws then
         self.ws:close()
         self.ws = nil
+    end
+
+    if self.state.dave_session then
+        self.state.dave_session:destroy()
+        self.state.dave_session = nil
     end
 
     self.state.connected = false

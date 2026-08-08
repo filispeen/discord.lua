@@ -10,45 +10,59 @@
 require("spec_helper")
 package.path = "spec/voice/?.lua;" .. package.path
 
--- Mock luv for testing
+-- Mock luv for testing. Real luv/uv UDP handles are userdata with
+-- methods (sock:bind, sock:getsockname, sock:recv_start, sock:send,
+-- sock:close), not free functions like luv.socket()/luv.sendto(); the
+-- mock mirrors that shape so udp.lua exercises the same call pattern
+-- it uses against the real binding.
 local sent_packets = {}
+local recv_callback = nil
 
-local luv = {
-    timer = {
-        new = function()
-            local timer
-            timer = {
-                _started = false,
-                _stop_count = 0,
-                _callback = nil,
-                start = function(self, timeout, repeat_ms, callback)
-                    timer._started = true
-                    timer._callback = callback
-                end,
-                stop = function()
-                    timer._stop_count = timer._stop_count + 1
-                end,
-            }
-            return timer
-        end
-    },
-    socket = function()
-        return 1
-    end,
-    bind = function() end,
-    getsockname = function() end,
-    onread = function() end,
-    sendto = function(sock, data, ip, port)
+local function make_mock_socket()
+    local sock = {}
+    function sock:bind(_host, _port)
+        return true, nil
+    end
+    function sock:getsockname()
+        return { ip = "0.0.0.0", port = 12345, family = "inet" }, nil
+    end
+    function sock:recv_start(callback)
+        recv_callback = callback
+        return true, nil
+    end
+    function sock:send(data, ip, port, _callback)
         table.insert(sent_packets, { data = data, ip = ip, port = port })
         return true, nil
+    end
+    function sock:close()
+        recv_callback = nil
+    end
+    return sock
+end
+
+local luv = {
+    new_udp = function()
+        return make_mock_socket()
     end,
-    recvfrom = function()
-        return nil
+    new_timer = function()
+        local timer
+        timer = {
+            _started = false,
+            _stop_count = 0,
+            _callback = nil,
+            start = function(self, timeout, repeat_ms, callback)
+                timer._started = true
+                timer._callback = callback
+            end,
+            stop = function()
+                timer._stop_count = timer._stop_count + 1
+            end,
+        }
+        return timer
     end,
-    close = function() end,
 }
 
-package.loaded["luv"] = luv
+package.loaded["mock_luv"] = luv
 
 local udp = require("./voice/udp")
 
@@ -428,5 +442,112 @@ describe("UDP", function()
 
             assert.equals(ciphertext, captured_payload)
         end)
+    end)
+
+    describe("aead_xchacha20_poly1305_rtpsize mode", function()
+        it("should strip the 4 byte wire nonce and pass the RTP header as AAD", function()
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
+            client:connect()
+            client._state.ip = "1.2.3.4"
+            client._state.port = 5555
+            client._state.secret_key = string.rep("k", 32)
+            client._state.mode = "aead_xchacha20_poly1305_rtpsize"
+
+            local header = byte_string(0x80, 0x78, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+            local ciphertext_and_tag = byte_string(9, 9, 9, 9)  -- fake, doesn't need to decrypt for this test
+            local wire_nonce = byte_string(0, 0, 0, 42)
+            local packet = header .. ciphertext_and_tag .. wire_nonce
+
+            local captured_payload, captured_nonce, captured_aad
+            client._decode_packet = function(self, rtp_header, payload, nonce, aad)
+                captured_payload = payload
+                captured_nonce = nonce
+                captured_aad = aad
+                return nil
+            end
+
+            client:_handle_rtp(packet, #packet)
+
+            assert.equals(ciphertext_and_tag, captured_payload)
+            assert.equals(header, captured_aad)
+            assert.equals(24, #captured_nonce)
+            assert.equals(wire_nonce, captured_nonce:sub(1, 4))
+            assert.equals(string.rep("\0", 20), captured_nonce:sub(5))
+        end)
+
+        it("should increment the wire nonce counter on each send", function()
+            sent_packets = {}
+            local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
+            client:connect()
+            client._state.ip = "1.2.3.4"
+            client._state.port = 5555
+
+            local wire1 = select(1, client:_next_aead_nonce())
+            local wire2 = select(1, client:_next_aead_nonce())
+
+            assert.equals(byte_string(0, 0, 0, 0), wire1)
+            assert.equals(byte_string(0, 0, 0, 1), wire2)
+        end)
+
+        if require("./voice/crypto").aead_available() then
+            it("should encrypt on send and decrypt back to the original payload", function()
+                local crypto = require("./voice/crypto")
+
+                sent_packets = {}
+                local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
+                client:connect()
+                client._state.ip = "1.2.3.4"
+                client._state.port = 5555
+                client._state.secret_key = string.rep("k", 32)
+                client._state.mode = "aead_xchacha20_poly1305_rtpsize"
+
+                local payload = byte_string(1, 2, 3, 4, 5)
+                client:send(payload)
+
+                local sent = sent_packets[1].data
+                local rtp_header = sent:sub(1, 12)
+                local ciphertext_and_tag_and_nonce = sent:sub(13)
+                local wire_nonce = ciphertext_and_tag_and_nonce:sub(-4)
+                local ciphertext_and_tag = ciphertext_and_tag_and_nonce:sub(1, -5)
+
+                assert.equals(#payload + crypto.aead_macbytes() + 4, #ciphertext_and_tag_and_nonce)
+
+                local nonce = wire_nonce .. string.rep("\0", crypto.aead_nonce_size() - 4)
+                local decrypted = crypto.aead_decrypt(ciphertext_and_tag, nonce, client._state.secret_key, rtp_header)
+
+                assert.equals(payload, decrypted)
+            end)
+
+            it("should round-trip a full incoming packet through _handle_rtp", function()
+                local crypto = require("./voice/crypto")
+
+                local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
+                client:connect()
+                client._state.ip = "1.2.3.4"
+                client._state.port = 5555
+                client._state.secret_key = string.rep("k", 32)
+                client._state.mode = "aead_xchacha20_poly1305_rtpsize"
+
+                local header = byte_string(0x80, 0x78, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+                local plaintext = byte_string(10, 20, 30, 40)
+                local wire_nonce = byte_string(0, 0, 0, 7)
+                local aead_nonce = wire_nonce .. string.rep("\0", crypto.aead_nonce_size() - 4)
+                local ciphertext_and_tag = crypto.aead_encrypt(plaintext, aead_nonce, client._state.secret_key, header)
+                local packet = header .. ciphertext_and_tag .. wire_nonce
+
+                local captured_header, captured_payload
+                client._dispatch_packet = function(self, rtp_header, decoded)
+                    captured_header = rtp_header
+                    captured_payload = decoded
+                end
+
+                client:_handle_rtp(packet, #packet)
+
+                assert.equals(plaintext, captured_payload)
+                assert.equals(1, captured_header.sequence)
+            end)
+        else
+            pending("aead_xchacha20_poly1305_rtpsize send/receive round-trip (requires LuaJIT + libsodium, not active in this environment)")
+        end
     end)
 end)
