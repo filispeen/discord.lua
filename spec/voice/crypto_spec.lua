@@ -1,21 +1,11 @@
 -- spec/voice/crypto_spec.lua
--- Tests for lib/voice/crypto.lua (XSalsa20-Poly1305, libsodium FFI or
--- pure-Lua fallback depending on the runtime)
---
--- Crypto.available() is now always true: when libsodium/ffi is not
--- available (plain Lua 5.1, or LuaJIT without libsodium installed), the
--- module falls back to a pure-Lua XSalsa20-Poly1305 implementation with
--- no external dependency. The round-trip and validation tests below run
--- unconditionally, exercising whichever backend Crypto.backend()
--- reports for the current environment. Backend-specific behavior (which
--- one is picked, and that both produce mutually-compatible ciphertext)
--- is covered separately below.
+-- Tests for lib/voice/crypto.lua (XSalsa20-Poly1305 and AEAD
+-- XChaCha20-Poly1305 using the libsodium FFI backend when available).
 
 require("spec_helper")
 package.path = "spec/voice/?.lua;" .. package.path
 
 local crypto = require("./voice/crypto")
-local pure_lua = require("./voice/le_salsa20poly1305")
 
 describe("Crypto", function()
     it("exposes size constants", function()
@@ -24,10 +14,12 @@ describe("Crypto", function()
         assert.equals(16, crypto.macbytes())
     end)
 
-    it("is always available, backed by libsodium or the pure-Lua fallback", function()
-        assert.is_true(crypto.available())
+    it("reports whether the libsodium backend is available", function()
+        assert.is_boolean(crypto.available())
+        assert.equals(crypto.available(), crypto.aead_available())
+
         local backend = crypto.backend()
-        assert.is_true(backend == "libsodium" or backend == "pure_lua")
+        assert.is_true(backend == nil or backend == "libsodium")
     end)
 
     it("round-trips plaintext through encrypt/decrypt", function()
@@ -77,41 +69,6 @@ describe("Crypto", function()
         assert.equals(crypto.nonce_size(), #n1)
         assert.equals(crypto.nonce_size(), #n2)
         assert.is_not_equal(n1, n2)
-    end)
-
-    describe("pure-Lua backend", function()
-        it("independently round-trips plaintext (used directly, bypassing libsodium)", function()
-            local key = string.rep("k", pure_lua.key_size)
-            local nonce = string.rep("n", pure_lua.nonce_size)
-            local plaintext = "cross-backend compatibility check"
-
-            local ciphertext, err = pure_lua.encrypt(plaintext, nonce, key)
-            assert.is_nil(err)
-            assert.is_string(ciphertext)
-
-            local decrypted, derr = pure_lua.decrypt(ciphertext, nonce, key)
-            assert.is_nil(derr)
-            assert.equals(plaintext, decrypted)
-        end)
-
-        if crypto.backend() == "libsodium" then
-            it("produces ciphertext byte-identical to the active libsodium backend", function()
-                -- Only meaningful when libsodium is actually active here
-                -- (e.g. under LuaJIT with libsodium installed): proves
-                -- the pure-Lua implementation is wire-compatible with
-                -- real libsodium, not just internally consistent.
-                local key = string.rep("k", crypto.key_size())
-                local nonce = string.rep("n", crypto.nonce_size())
-                local plaintext = "wire compatibility between backends"
-
-                local sodium_ct = crypto.encrypt(plaintext, nonce, key)
-                local pure_ct = pure_lua.encrypt(plaintext, nonce, key)
-
-                assert.equals(sodium_ct, pure_ct)
-            end)
-        else
-            pending("libsodium cross-check (requires LuaJIT + libsodium, not active in this environment)")
-        end
     end)
 
     describe("AEAD XChaCha20-Poly1305 (aead_xchacha20_poly1305_rtpsize)", function()

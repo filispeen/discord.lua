@@ -4,24 +4,17 @@
 -- voice payloads.
 --
 -- Prefers libsodium via FFI (LuaJIT + libsodium installed) since it is
--- an audited, constant-time, native implementation. When that is not
--- available, the legacy XSalsa20-Poly1305 secretbox API falls back to a
--- pure-Lua implementation (le_salsa20poly1305.lua) with no external
--- dependency. The AEAD XChaCha20-Poly1305 API has no pure-Lua fallback:
--- it is only usable when the libsodium backend is active (see
--- Crypto.aead_available()); hand-rolling ChaCha20-Poly1305 AEAD in pure
--- Lua was judged not worth the risk of a subtly wrong from-scratch
--- implementation of a security-critical primitive, versus just
--- requiring libsodium for this mode.
+-- an audited, constant-time, native implementation. The legacy
+-- XSalsa20-Poly1305 secretbox API is only available when the libsodium
+-- backend is active. The AEAD XChaCha20-Poly1305 API is also libsodium-
+-- only and is unusable without the native backend (see
+-- Crypto.aead_available()).
 --
 -- Public Contract:
---   Crypto.available() - true if either backend (libsodium or the
---     pure-Lua fallback) is ready. In practice this is always true now,
---     since the pure-Lua backend has no external requirements; kept for
---     API compatibility and to signal which backend is actually active
---     via Crypto.backend().
---   Crypto.backend() - "libsodium" if the FFI backend is active, otherwise nil (no pure-Lua fallback for AEAD). This is the only way to detect which backend is active.
---     Crypto
+--   Crypto.available() - true when the libsodium backend is ready.
+--   Crypto.backend() - "libsodium" when the FFI backend is active,
+--     otherwise nil.
+--   Crypto
 --   Crypto.key_size() - required secret key length in bytes (32)
 --   Crypto.nonce_size() - required nonce length in bytes (24)
 --   Crypto.macbytes() - Poly1305 MAC length in bytes (16)
@@ -29,15 +22,12 @@
 --     returns ciphertext string or nil, err
 --   Crypto.decrypt(ciphertext, nonce, key) - XSalsa20-Poly1305 secretbox,
 --     returns plaintext string or nil, err
---   Crypto.random_nonce() - returns nonce_size() random bytes. Uses
---     libsodium's CSPRNG when that backend is active, otherwise libuv's
---     uv_random (getrandom()/BCryptGenRandom/arc4random depending on
---     platform) via the pure-Lua backend. Do not use math.random
---     directly for nonces; nonce reuse breaks XSalsa20-Poly1305's
---     confidentiality guarantees.
+--   Crypto.random_nonce() - returns nonce_size() random bytes using
+--     libsodium's CSPRNG. Do not use math.random directly for nonces;
+--     nonce reuse breaks XSalsa20-Poly1305's confidentiality guarantees.
 --
 --   Crypto.aead_available() - true only when the libsodium backend is
---     active; the AEAD API has no pure-Lua fallback.
+--     active.
 --   Crypto.aead_key_size() - required secret key length in bytes (32)
 --   Crypto.aead_nonce_size() - required nonce length in bytes (24,
 --     XChaCha20's extended nonce; Discord's wire nonce is a 4-byte
@@ -154,7 +144,7 @@ load_sodium()
 local Crypto = {}
 
 function Crypto.available()
-    return sodium_ready or nil
+    return sodium_ready
 end
 
 function Crypto.backend()
@@ -238,10 +228,7 @@ function Crypto.decrypt(ciphertext, nonce, key)
     return ffi.string(m, mlen)
 end
 
--- Returns nonce_size() random bytes: via libsodium's randombytes_buf
--- when that backend is active, otherwise via the pure-Lua backend's
--- random_nonce (libuv's uv_random, with a weaker Lua-only fallback if
--- even that is unavailable).
+-- Returns nonce_size() random bytes via libsodium's randombytes_buf.
 function Crypto.random_nonce()
     if not sodium_ready then
         return nil, "random nonce requires the libsodium backend, which is unavailable"
@@ -254,8 +241,7 @@ end
 
 -- ===== AEAD XChaCha20-Poly1305 (IETF), libsodium-only =====
 -- This is Discord's current required voice encryption mode
--- (aead_xchacha20_poly1305_rtpsize). No pure-Lua fallback exists; see
--- the module header for why.
+-- (aead_xchacha20_poly1305_rtpsize).
 
 function Crypto.aead_available()
     return sodium_ready

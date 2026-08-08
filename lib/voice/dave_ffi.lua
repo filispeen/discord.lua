@@ -47,6 +47,7 @@ local native_lib = require("./native_lib")
 
 local dave_lib = nil
 local dave_ready = false
+local dave_log_sink = nil
 
 local CDEF = [[
 typedef struct DAVESessionHandle_s* DAVESessionHandle;
@@ -240,12 +241,32 @@ local function load_dave()
     end
 
     dave_ready = true
+
+    -- libdave logs internally (session.cpp etc) regardless of our own
+    -- DEBUG flag in voice_gateway.lua. Passing a NULL function pointer
+    -- here was tried first and had no effect on those session.cpp
+    -- lines (they may be hardcoded stdout writes not routed through
+    -- this sink at all), so a real no-op FFI callback is installed
+    -- instead. The cdata callback is kept alive on dave_log_sink so the
+    -- GC never collects it out from under libdave's held pointer.
+    local log_sink_ok, log_sink = pcall(function()
+        return ffi.cast("DAVELogSinkCallback", function(_, _, _, _)
+        end)
+    end)
+
+    if log_sink_ok and log_sink then
+        dave_log_sink = log_sink
+        pcall(function()
+            dave_lib.daveSetLogSinkCallback(log_sink)
+        end)
+    end
 end
 
 load_dave()
 
 local M = {
     lib = dave_lib,
+    log_sink = dave_log_sink,
 }
 
 function M.available()

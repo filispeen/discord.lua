@@ -90,8 +90,9 @@ function Shard:connect()
 
     -- Create WebSocket connection
     local websocket = require("coro-websocket")
+    local utils = require("../utils")
     local ws_adapter = require("./ws_adapter")
-    local options, parse_err = websocket.parseUrl(gateway_info.url .. "/?v=10&encoding=json")
+    local options, parse_err = utils.parseUrl(gateway_info.url .. "/?v=10&encoding=json")
     if not options then
         error("Failed to parse gateway URL: " .. tostring(parse_err))
     end

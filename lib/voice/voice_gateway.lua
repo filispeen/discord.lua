@@ -57,6 +57,16 @@ local DaveSession = require("./dave_session")
 
 local VoiceGateway = class("VoiceGateway")
 
+-- Set to true to log verbose DAVE/MLS handshake and heartbeat traffic
+-- (JSON payloads, key package bytes, binary frame opcodes) via dprint.
+local DEBUG = false
+
+local function dprint(...)
+    if DEBUG then
+        print(...)
+    end
+end
+
 -- Max automatic reconnect attempts before giving up and emitting
 -- "reconnect_failed" instead of trying again.
 local MAX_RECONNECT_ATTEMPTS = 5
@@ -169,9 +179,10 @@ function VoiceGateway:connect(endpoint, token, session_id)
     -- this the same :on/:send/:close surface the rest of this function
     -- (and VoiceGateway:_send/:close elsewhere in this file) expects.
     local websocket = require("coro-websocket")
+    local utils = require("../utils")
     local ws_adapter = require("../gateway/ws_adapter")
 
-    local options, parse_err = websocket.parseUrl(url)
+    local options, parse_err = utils.parseUrl(url)
     if not options then
         self:emit("error", errors.VoiceConnectError.new("Failed to parse voice endpoint: " .. tostring(parse_err)))
         return self
@@ -209,7 +220,7 @@ function VoiceGateway:connect(endpoint, token, session_id)
         if not ok or type(parsed) ~= "table" then
             return
         end
-        print("DAVE DEBUG RECV JSON: " .. tostring(msg))
+        dprint("DAVE DEBUG RECV JSON: " .. tostring(msg))
         self:_dispatch(parsed)
     end)
 
@@ -345,12 +356,12 @@ function VoiceGateway:_reinit_dave_session()
 
         local key_package = state.dave_session:get_serialized_key_package()
         if key_package then
-            print("DAVE DEBUG KEY PACKAGE len=" .. #key_package)
+            dprint("DAVE DEBUG KEY PACKAGE len=" .. #key_package)
             local hex_parts = {}
             for i = 1, #key_package do
                 hex_parts[i] = string.format("%02x", key_package:byte(i))
             end
-            print("DAVE DEBUG KEY PACKAGE HEX: " .. table.concat(hex_parts))
+            dprint("DAVE DEBUG KEY PACKAGE HEX: " .. table.concat(hex_parts))
             self:send_as_bytes(enums.MLS_KEY_PACKAGE, key_package)
         end
     else
@@ -403,25 +414,17 @@ function VoiceGateway:_recover_dave_from_invalid_commit(transition_id)
     self:_reinit_dave_session()
 end
 
--- Routes a binary voice gateway frame: [op: u8][payload...], matching
--- Discord's actual wire format for server-to-client MLS_* binary frames
--- (confirmed live: no 2-byte sequence_number prefix despite the
--- whitepaper's struct definition listing one - the opcode is always the
--- first byte, same as the client-to-server format in send_as_bytes).
--- Only MLS_* opcodes (25-31) are ever sent as binary frames.
+-- Routes a binary voice gateway frame: [seq: u16BE][op: u8][payload...],
+-- matching Discord's documented Gateway v8+ wire format for
+-- server-to-client MLS_* binary frames. Only MLS_* opcodes (25-31) are
+-- ever sent as binary frames.
 function VoiceGateway:_dispatch_binary(msg)
-    if #msg < 1 then
+    if #msg < 3 then
         return
     end
 
-    local hexdump = ""
-    for i = 1, math.min(10, #msg) do
-        hexdump = hexdump .. string.format("%02x ", msg:byte(i))
-    end
-    print("DAVE DEBUG: raw first bytes=" .. hexdump)
-    print("DAVE DEBUG: len=" .. #msg .. " byte1_as_op=" .. msg:byte(1) .. " byte3_as_op=" .. (msg:byte(3) or -1))
-
-    local op = msg:byte(1)
+    local op = msg:byte(3)
+    local payload = msg:sub(4)
     local state = self.state
 
     if not state.dave_session then
@@ -429,26 +432,24 @@ function VoiceGateway:_dispatch_binary(msg)
     end
 
     if op == enums.MLS_EXTERNAL_SENDER_PACKAGE then
-        state.dave_session:set_external_sender(msg:sub(2))
-        state.dave_group_pending = true
+        state.dave_session:set_external_sender(payload)
     elseif op == enums.MLS_PROPOSALS then
-        if #msg < 2 then
+        if #payload < 1 then
             return
         end
-        local op_byte = msg:byte(2)
+        local op_byte = payload:byte(1)
         local op_type = op_byte == 0 and "append" or "revoke"
-        local commit_welcome = state.dave_session:process_proposals(op_type, msg:sub(2), self:_recognized_user_ids())
+        local commit_welcome = state.dave_session:process_proposals(op_type, payload, self:_recognized_user_ids())
         if commit_welcome then
             self:send_as_bytes(enums.MLS_COMMIT_WELCOME, commit_welcome)
         end
     elseif op == enums.MLS_COMMIT_TRANSITION then
-        if #msg < 3 then
+        if #payload < 2 then
             return
         end
-        local transition_id = msg:byte(2) * 256 + msg:byte(3)
-        local ok = state.dave_session:process_commit(msg:sub(4))
+        local transition_id = payload:byte(1) * 256 + payload:byte(2)
+        local ok = state.dave_session:process_commit(payload:sub(3))
         if ok then
-            state.dave_group_pending = false
             if transition_id ~= 0 then
                 state.dave_pending_transition = {
                     transition_id = transition_id,
@@ -462,13 +463,12 @@ function VoiceGateway:_dispatch_binary(msg)
             self:_recover_dave_from_invalid_commit(transition_id)
         end
     elseif op == enums.MLS_WELCOME then
-        if #msg < 3 then
+        if #payload < 2 then
             return
         end
-        local transition_id = msg:byte(2) * 256 + msg:byte(3)
-        local ok = state.dave_session:process_welcome(msg:sub(4), self:_recognized_user_ids())
+        local transition_id = payload:byte(1) * 256 + payload:byte(2)
+        local ok = state.dave_session:process_welcome(payload:sub(3), self:_recognized_user_ids())
         if ok then
-            state.dave_group_pending = false
             if transition_id ~= 0 then
                 state.dave_pending_transition = {
                     transition_id = transition_id,
@@ -494,7 +494,7 @@ function VoiceGateway:send_as_bytes(op, data)
         return false, "WebSocket not connected"
     end
 
-    print("DAVE DEBUG SEND BYTES: op=" .. tostring(op) .. " len=" .. #data)
+    dprint("DAVE DEBUG SEND BYTES: op=" .. tostring(op) .. " len=" .. #data)
     ws:send_bytes(string.char(op) .. data)
     return true
 end
@@ -662,21 +662,6 @@ function VoiceGateway:resume(session_id, seq)
     return self:_send(payload)
 end
 
--- Send heartbeat
-function VoiceGateway:_send_heartbeat()
-    local state = self.state
-    local payload = {
-        op = enums.HEARTBEAT,
-        d = {
-            t = os.time() * 1000,
-            seq_ack = state.seq or -1,
-        },
-    }
-
-    state.last_heartbeat = os.time() * 1000
-    return self:_send(payload)
-end
-
 -- Send payload to WebSocket
 function VoiceGateway:_send(payload)
     local ws = self.ws
@@ -692,7 +677,7 @@ function VoiceGateway:_send(payload)
     }
 
     local encoded = json.encode(data)
-    print("DAVE DEBUG SEND JSON: op=" .. tostring(payload.op) .. " body=" .. encoded)
+    dprint("DAVE DEBUG SEND JSON: op=" .. tostring(payload.op) .. " body=" .. encoded)
     ws:send(encoded)
     return true
 end
@@ -709,7 +694,7 @@ function VoiceGateway:receive_hello(data)
     local state = self.state
 
     state.heartbeat_interval = math.min(data.heartbeat_interval, 5000)
-    print("DAVE DEBUG HELLO: heartbeat_interval=" .. tostring(data.heartbeat_interval) .. " (capped to " .. state.heartbeat_interval .. ") os.time=" .. tostring(os.time()))
+    dprint("DAVE DEBUG HELLO: heartbeat_interval=" .. tostring(data.heartbeat_interval) .. " (capped to " .. state.heartbeat_interval .. ") os.time=" .. tostring(os.time()))
 
     -- Start heartbeat timer
     self:_start_heartbeat()
@@ -733,7 +718,7 @@ function VoiceGateway:receive_ready(data)
         local capped = math.min(data.heartbeat_interval, 5000)
         if capped ~= state.heartbeat_interval then
             state.heartbeat_interval = capped
-            print("DAVE DEBUG READY: heartbeat_interval=" .. tostring(data.heartbeat_interval) .. " (capped to " .. capped .. ") os.time=" .. tostring(os.time()))
+            dprint("DAVE DEBUG READY: heartbeat_interval=" .. tostring(data.heartbeat_interval) .. " (capped to " .. capped .. ") os.time=" .. tostring(os.time()))
             self:_start_heartbeat()
         end
     end

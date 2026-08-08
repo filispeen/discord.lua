@@ -5,7 +5,7 @@
 
 local discord = require("../init")
 
-local CHANNEL_ID = "1432435826473701531"
+local CHANNEL_ID = "1432435826473701530"
 
 local intents = discord.enums.combine_intents(
     discord.enums.INTENTS.GUILDS,
