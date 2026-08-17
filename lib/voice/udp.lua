@@ -199,12 +199,30 @@ function UDPClient:_handle_rtp(data, n)
     -- payload_start offset are wrong, which makes every AEAD packet fail
     -- to authenticate even though secret_key/nonce/mode are all correct.
     local unencrypted_header_size = 12 + rtp_header.csrc_count * 4
+    local extension_size = 0
     if rtp_header.extension then
+        if #data < unencrypted_header_size + 4 then
+            return
+        end
+
+        local extension_profile_hi, extension_profile_lo, extension_length_hi, extension_length_lo =
+            data:byte(unencrypted_header_size + 1, unencrypted_header_size + 4)
+        if extension_profile_hi == nil or extension_profile_lo == nil or
+            extension_length_hi == nil or extension_length_lo == nil then
+            return
+        end
+
+        local extension_profile = extension_profile_hi * 256 + extension_profile_lo
+        if extension_profile ~= 0xBEDE then
+            return
+        end
+
+        extension_size = (extension_length_hi * 256 + extension_length_lo) * 4
         unencrypted_header_size = unencrypted_header_size + 4
     end
 
-    if #data < unencrypted_header_size then
-        return  -- Too small to contain its own declared header
+    if #data < unencrypted_header_size + extension_size then
+        return
     end
 
     -- Calculate payload bounds
@@ -252,7 +270,7 @@ function UDPClient:_handle_rtp(data, n)
 
     -- Dispatch to packet decoder
     if state.ip and state.port then
-        local decoded = self:_decode_packet(rtp_header, payload, nonce, aad)
+        local decoded = self:_decode_packet(rtp_header, payload, nonce, aad, extension_size)
         if decoded then
             self:_dispatch_packet(rtp_header, decoded)
         end
@@ -264,6 +282,7 @@ function UDPClient:_handle_rtp(data, n)
             nonce = nonce,
             aad = aad,
             timestamp = os.time() * 1000,
+            extension_size = extension_size,
         }
         if not state.packets then
             state.packets = {}
@@ -277,7 +296,7 @@ end
 -- (24 bytes zero-extended from the rtpsize mode's 4 byte wire counter,
 -- or the legacy suffix mode's 24 byte random nonce); nil if no secret_key
 -- or mode is set. aad is only used by the AEAD rtpsize mode.
-function UDPClient:_decode_packet(_rtp_header, payload, nonce, aad)
+function UDPClient:_decode_packet(_rtp_header, payload, nonce, aad, extension_size)
     local state = self._state
 
     if not state.secret_key then
@@ -299,6 +318,13 @@ function UDPClient:_decode_packet(_rtp_header, payload, nonce, aad)
     end
     if not plaintext then
         return nil
+    end
+
+    if extension_size and extension_size > 0 then
+        if #plaintext < extension_size then
+            return nil
+        end
+        plaintext = plaintext:sub(extension_size + 1)
     end
 
     return plaintext
