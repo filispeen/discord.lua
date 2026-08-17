@@ -306,7 +306,7 @@ function VoiceClient:_flush_jitter_buffers(hold_ms)
 
         if user_id then
             for _, entry in ipairs(ready) do
-                self:_feed_recording(user_id, entry.payload)
+                self:_feed_recording(user_id, entry.payload, entry.timestamp, entry.received_at)
             end
         elseif #ready > 0 then
             state.recording_debug.unknown_ssrc = state.recording_debug.unknown_ssrc + #ready
@@ -326,6 +326,55 @@ function VoiceClient:_start_jitter_timer()
     self._jitter_timer = luv.new_timer()
     self._jitter_timer:start(JITTER_HOLD_MS, JITTER_HOLD_MS, function()
         self:_flush_jitter_buffers()
+    end)
+end
+
+-- UDP keep-alive interval, mirroring pycord's UDPKeepAlive.delay (5000ms).
+local UDP_KEEPALIVE_MS = 5000
+
+-- Starts a timer that sends a small raw UDP packet to the voice server
+-- every UDP_KEEPALIVE_MS, independent of whether this client is itself
+-- transmitting encoded voice. See udp.lua's send_raw for why this is
+-- needed: a client that only records/listens and never plays audio
+-- back never calls udp:send(), so without this timer nothing keeps the
+-- outbound UDP flow alive, and Discord's SFU (or an intermediate NAT)
+-- can silently stop forwarding inbound audio after a short period of
+-- one-way silence. Safe to call more than once; restarts any existing
+-- timer rather than creating a second one.
+function VoiceClient:_start_udp_keepalive()
+    if self._udp_keepalive_timer then
+        self._udp_keepalive_timer:stop()
+    end
+
+    self._udp_keepalive_counter = 0
+
+    self._udp_keepalive_timer = luv.new_timer()
+    self._udp_keepalive_timer:start(UDP_KEEPALIVE_MS, UDP_KEEPALIVE_MS, function()
+        if not self.udp then
+            return
+        end
+
+        local counter = self._udp_keepalive_counter
+        -- 8 byte big-endian counter, matching pycord's UDPKeepAlive
+        -- payload shape. Content is not interpreted by Discord, only
+        -- its arrival matters, but keeping the same shape avoids
+        -- relying on undocumented behavior around payload size/format.
+        local packet = string.char(
+            0, 0, 0, 0,
+            math.floor(counter / 16777216) % 256,
+            math.floor(counter / 65536) % 256,
+            math.floor(counter / 256) % 256,
+            counter % 256
+        )
+
+        local ok, err = pcall(function()
+            self.udp:send_raw(packet)
+        end)
+        if not ok then
+            print(string.format("UDP KEEPALIVE DEBUG send failed err=%s", tostring(err)))
+        end
+
+        self._udp_keepalive_counter = (counter + 1) % 4294967296
     end)
 end
 
@@ -373,6 +422,11 @@ function VoiceClient:disconnect(force)
             self._jitter_timer = nil
         end
         state.jitter_buffers = {}
+
+        if self._udp_keepalive_timer then
+            self._udp_keepalive_timer:stop()
+            self._udp_keepalive_timer = nil
+        end
 
         if self.udp and self.udp.close then
             self.udp:close()
@@ -653,6 +707,7 @@ function VoiceClient:start_recording(sink, finished_callback, ...)
             sink_write = 0,
             sink_bytes = 0,
         },
+        user_timestamps = {},
     }
 
     return true
@@ -689,7 +744,7 @@ end
 -- WaveSink/PCMSink expect decoded PCM (see lib/voice/sinks/sink.lua).
 -- If decoding is unavailable, opted out, or fails, the raw Opus payload
 -- is passed through unchanged.
-function VoiceClient:_feed_recording(user_id, opus_data)
+function VoiceClient:_feed_recording(user_id, opus_data, rtp_timestamp, received_at_ms)
     if not self._recording then
         return false, "Not recording"
     end
@@ -817,6 +872,57 @@ function VoiceClient:_feed_recording(user_id, opus_data)
             end
             return true
         end
+
+        -- Insert silence for real-time gaps between packets from this
+        -- user, mirroring pycord's recv_decoded_audio: compare the RTP
+        -- timestamp delta (expected 960 samples per 20ms Opus frame at
+        -- 48kHz) against the wall-clock delta (received_at_ms, luv.now()
+        -- monotonic ms). When they diverge by more than a small
+        -- threshold (packet loss, jitter, or a gap where the user
+        -- stopped talking), pad with the wall-clock-implied amount of
+        -- silence instead of the RTP-implied amount, so the recording
+        -- stays in sync with real time. Without this, missing packets
+        -- silently compress the recording's timeline (fewer packets in
+        -- = shorter file out), instead of the gap being represented as
+        -- silence like it is heard live.
+        if rtp_timestamp and received_at_ms then
+            local prev = recording.user_timestamps[user_id]
+            local silence_samples = 0
+
+            if not prev then
+                silence_samples = 0
+            else
+                local delta_wall_ms = received_at_ms - prev.received_at_ms
+                local delta_rtp = rtp_timestamp - prev.rtp_timestamp
+                if delta_rtp < 0 then
+                    delta_rtp = delta_rtp + 4294967296
+                end
+
+                local delta_wall_samples = delta_wall_ms * 48
+                local diff_pct
+                if delta_wall_samples ~= 0 then
+                    diff_pct = math.abs(100 - (delta_rtp * 100 / delta_wall_samples))
+                else
+                    diff_pct = 0
+                end
+
+                if diff_pct > 60 and delta_rtp ~= 960 then
+                    silence_samples = delta_wall_samples - 960
+                else
+                    silence_samples = delta_rtp - 960
+                end
+            end
+
+            recording.user_timestamps[user_id] = {
+                rtp_timestamp = rtp_timestamp,
+                received_at_ms = received_at_ms,
+            }
+
+            if silence_samples > 0 then
+                -- 16-bit stereo PCM: 4 bytes per sample frame (2 channels x 2 bytes)
+                data = string.rep("\0\0\0\0", math.floor(silence_samples)) .. data
+            end
+        end
     end
 
     sink:write(user_id, data)
@@ -897,6 +1003,7 @@ function VoiceClient:_on_ready(data)
         local discovered_ip, discovered_port = self.udp:discover_ip()
         if discovered_ip and discovered_port then
             self:_start_jitter_timer()
+            self:_start_udp_keepalive()
             if self.gateway then
                 self.gateway:select_protocol(discovered_ip, discovered_port)
             end

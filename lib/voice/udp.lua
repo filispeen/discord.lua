@@ -8,6 +8,10 @@
 --     Encrypted with udp._state.secret_key if set, per udp._state.mode
 --     (aead_xchacha20_poly1305_rtpsize, Discord's current required
 --     mode; xsalsa20_poly1305_suffix, legacy, kept for reference only).
+--   udp:send_raw(payload) - Send raw bytes straight to the voice
+--     server's ip/port with no RTP header and no encryption. Used for
+--     UDP keep-alive packets (see VoiceClient's _start_udp_keepalive),
+--     not for voice data.
 --   udp:receive(timeout_ms) - Receive one decoded RTP packet, coroutine-based
 --   udp._state.secret_key - set by VoiceClient after SESSION_DESCRIPTION;
 --     when present, _decode_packet decrypts incoming RTP payloads and
@@ -416,6 +420,39 @@ function UDPClient:send(payload)
     local success, err = state.udp:send(full_packet, state.ip, state.port)
     if not success then
         error("Failed to send UDP packet: " .. tostring(err))
+    end
+
+    return true
+end
+
+-- Sends raw bytes directly to the voice server's discovered ip/port,
+-- with no RTP header, no encryption, and no interpretation of the
+-- payload. Used for UDP keep-alive: unlike send(), which only fires
+-- when the bot is actively transmitting encoded voice, a bot that is
+-- purely recording/listening never calls send() at all, so nothing
+-- keeps the outbound UDP flow alive. Discord's SFU (and any NAT this
+-- traffic passes through, e.g. WSL2's virtual networking) can stop
+-- forwarding inbound audio to a client whose socket has gone quiet in
+-- the other direction; real Discord clients avoid this by always
+-- maintaining some outbound UDP traffic while connected. Mirrors
+-- pycord's UDPKeepAlive, which sends a raw incrementing 8-byte counter
+-- (no RTP framing) every 5 seconds while a receive-side reader is
+-- active. Payload should be small; content is not interpreted by
+-- Discord's voice server, only its arrival matters.
+function UDPClient:send_raw(payload)
+    local state = self._state
+
+    if not state.ip or not state.port then
+        error("Not connected: IP and port not discovered")
+    end
+
+    if not state.udp then
+        error("UDP socket not initialized")
+    end
+
+    local success, err = state.udp:send(payload, state.ip, state.port)
+    if not success then
+        error("Failed to send raw UDP packet: " .. tostring(err))
     end
 
     return true
