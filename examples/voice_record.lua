@@ -170,6 +170,9 @@ bot:slash_command("record", {
                             f:write(entry.file)
                             f:close()
                             print("Wrote " .. filename .. " (" .. entry.packets .. " packets)")
+                            if entry.wav_duration then
+                                print(string.format("RECORD TIMING file=%s packets=%d pcm_samples=%d pcm_duration=%.3f sec wav_duration=%.3f sec wav_bytes=%d", filename, entry.packets, entry.pcm_samples or 0, entry.pcm_frames and (entry.pcm_frames / 48000) or 0, entry.wav_duration, entry.wav_bytes or #entry.file))
+                            end
                         else
                             print("Failed to open " .. filename .. " for writing")
                         end

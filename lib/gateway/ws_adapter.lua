@@ -103,6 +103,10 @@ function M.wrap(_res, read, write)
         end)
 
         local function step(...)
+            if coroutine.status(co) == "dead" then
+                self._closed = true
+                return
+            end
             local ok, err_or_message = coroutine.resume(co, ...)
             if not ok then
                 self._closed = true

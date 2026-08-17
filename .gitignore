@@ -4,8 +4,7 @@ lua-virtualenv/
 __pycache__/
 
 # Dependencies and build artifacts
-deps/*
-!deps/
+deps/
 !deps/coro-channel.lua
 */build/
 

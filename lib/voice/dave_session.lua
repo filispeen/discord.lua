@@ -803,16 +803,21 @@ function DaveSession:decrypt_opus(user_id, ciphertext)
     if os.getenv("DAVE_DEBUG_DUMP") and #ciphertext > 20 then
         local stamped_epoch = self.key_ratchet_epoch[user_id]
         local is_stale = stamped_epoch ~= nil and stamped_epoch ~= self.epoch_generation
-        print("DAVE DUMP decrypt_opus_epoch_check user=" .. user_id
-            .. " ratchet_stamped_epoch_generation=" .. tostring(stamped_epoch)
-            .. " current_epoch_generation=" .. self.epoch_generation
-            .. " STALE=" .. tostring(is_stale))
-        io.stdout:flush()
+        self._last_epoch_debug = self._last_epoch_debug or {}
+        local epoch_key = user_id .. ":" .. tostring(stamped_epoch) .. ":" .. tostring(self.epoch_generation) .. ":" .. tostring(is_stale)
+        if self._last_epoch_debug[user_id] ~= epoch_key then
+            self._last_epoch_debug[user_id] = epoch_key
+            print("DAVE DEBUG epoch user=" .. user_id
+                .. " ratchet=" .. tostring(stamped_epoch)
+                .. " current=" .. self.epoch_generation
+                .. " stale=" .. tostring(is_stale))
+            io.stdout:flush()
+        end
     end
 
     if #ciphertext > 20 then
         self._decrypt_debug_count = (self._decrypt_debug_count or 0) + 1
-        if self._decrypt_debug_count <= 200 then
+        if os.getenv("DAVE_DEBUG_VERBOSE") and self._decrypt_debug_count <= 5 then
             print("DAVE DEBUG decrypt_opus ENTER user=" .. user_id .. " ciphertext_len=" .. #ciphertext)
             io.stdout:flush()
         end
@@ -821,7 +826,7 @@ function DaveSession:decrypt_opus(user_id, ciphertext)
     local max_size = self.lib.daveDecryptorGetMaxPlaintextByteSize(
         decryptor, 0, #ciphertext)  -- DAVE_MEDIA_TYPE_AUDIO = 0
 
-    if self._decrypt_debug_count and self._decrypt_debug_count <= 200 and #ciphertext > 20 then
+    if os.getenv("DAVE_DEBUG_VERBOSE") and self._decrypt_debug_count and self._decrypt_debug_count <= 5 and #ciphertext > 20 then
         local dump_ok, dump_err = pcall(function()
             local tail_len = math.min(20, #ciphertext)
             local tail = ciphertext:sub(#ciphertext - tail_len + 1)
@@ -841,7 +846,7 @@ function DaveSession:decrypt_opus(user_id, ciphertext)
             io.stdout:flush()
         end
 
-        if os.getenv("DAVE_DEBUG_DUMP") then
+        if os.getenv("DAVE_DEBUG_VERBOSE") then
             local full_ok, full_err = pcall(function()
                 local hex_parts = {}
                 for i = 1, #ciphertext do
