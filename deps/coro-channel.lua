@@ -11,10 +11,16 @@
 local unpack = unpack or table.unpack
 
 local function assertResume(thread, ...)
+  if coroutine.status(thread) ~= "suspended" then
+    return false
+  end
+
   local success, err = coroutine.resume(thread, ...)
   if not success then
     error(debug.traceback(thread, err), 0)
   end
+
+  return true
 end
 
 local function makeCloser(socket)
@@ -59,7 +65,6 @@ local function makeRead(socket, closer)
   local dindex = 0
 
   local function dispatch(data)
-
     if tindex > dindex then
       local thread = queue[dindex]
       queue[dindex] = nil
@@ -75,7 +80,7 @@ local function makeRead(socket, closer)
     end
   end
 
-  closer.onClose = function ()
+  closer.onClose = function()
     if not closer.read then
       closer.read = true
       return dispatch {nil, closer.errored}
@@ -122,10 +127,12 @@ local function makeWrite(socket, closer)
   local function wait()
     local thread = coroutine.running()
     hasYielded, hasReturned = nil, nil
-    return function (err)
+    return function(err)
       if hasYielded then
         hasYielded = false
-        assertResume(thread, err)
+        if coroutine.status(thread) == "suspended" then
+          assertResume(thread, err)
+        end
       else
         cbErr = err
         hasReturned = true
