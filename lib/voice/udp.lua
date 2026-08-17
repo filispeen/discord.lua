@@ -143,13 +143,20 @@ function UDPClient:read_loop(sock)
     end
 end
 
--- Parse a 12 byte RTP header from a raw byte string
+-- Parse the fixed 12 byte RTP header from a raw byte string. This only
+-- reads the fixed portion (version/flags through SSRC); CSRC identifiers
+-- and any RTP header extension, if present, follow immediately after and
+-- are handled separately by _handle_rtp (see unencrypted_header_size
+-- there), since their presence/length isn't knowable until these fields
+-- are parsed.
 local function parse_rtp_header(data)
     local b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12 = data:byte(1, 12)
 
     return {
         version = math.floor(b1 / 64) % 4,
         padding = math.floor(b1 / 32) % 2 == 1,
+        extension = math.floor(b1 / 16) % 2 == 1,
+        csrc_count = b1 % 16,
         marker = math.floor(b2 / 128) % 2 == 1,
         payload_type = b2 % 128,
         sequence = b3 * 256 + b4,
@@ -182,8 +189,26 @@ function UDPClient:_handle_rtp(data, n)
 
     local rtp_header = parse_rtp_header(data)
 
+    -- With RTP-size AEAD modes, the unencrypted (authenticated but not
+    -- encrypted) portion of the header is not always exactly 12 bytes:
+    -- per Discord's docs, it also includes any CSRC identifiers and, if
+    -- the extension bit is set, the 4 byte one-byte-extension preamble
+    -- (0xBEDE + length; the individual extension elements themselves are
+    -- encrypted along with the RTP payload, not part of this preamble).
+    -- Getting this wrong means both the AAD used for decryption and the
+    -- payload_start offset are wrong, which makes every AEAD packet fail
+    -- to authenticate even though secret_key/nonce/mode are all correct.
+    local unencrypted_header_size = 12 + rtp_header.csrc_count * 4
+    if rtp_header.extension then
+        unencrypted_header_size = unencrypted_header_size + 4
+    end
+
+    if #data < unencrypted_header_size then
+        return  -- Too small to contain its own declared header
+    end
+
     -- Calculate payload bounds
-    local payload_start = 13  -- 1-indexed, first byte after the 12 byte header
+    local payload_start = unencrypted_header_size + 1  -- 1-indexed, first byte after the unencrypted header
     local payload_end = n
 
     if rtp_header.padding then
@@ -216,12 +241,13 @@ function UDPClient:_handle_rtp(data, n)
 
     local payload = data:sub(payload_start, payload_end)
 
-    -- AAD for the rtpsize AEAD mode is the unencrypted RTP header bytes
-    -- (the same bytes parse_rtp_header just read); the legacy suffix
-    -- mode has no AAD concept.
+    -- AAD for the rtpsize AEAD mode is the unencrypted header bytes
+    -- (fixed header + CSRCs + extension preamble if present, see
+    -- unencrypted_header_size above); the legacy suffix mode has no AAD
+    -- concept.
     local aad = nil
     if state.mode == "aead_xchacha20_poly1305_rtpsize" then
-        aad = data:sub(1, 12)
+        aad = data:sub(1, unencrypted_header_size)
     end
 
     -- Dispatch to packet decoder

@@ -74,6 +74,8 @@ end)
 bot:slash_command("record", {
     description = "Joins your voice channel and starts recording to a .wav file",
     callback = function(ctx)
+        print("command used: /record by " .. tostring(ctx.author and ctx.author.id))
+
         if not ctx.guild then
             ctx:respond("This command only works inside a server.")
             return
@@ -119,6 +121,9 @@ bot:slash_command("record", {
         voice_client.gateway:on("session_description", function(data)
             print("voice session_description received, mode=" .. tostring(data and data.mode))
         end)
+        voice_client.gateway:on("dave_unavailable", function(data)
+            print("DAVE unavailable: reason=" .. tostring(data and data.reason))
+        end)
         voice_client.client:on("VOICE_CLIENT_RECONNECT_FAILED", function(data)
             print("voice reconnect failed: reason=" .. tostring(data and data.reason)
                 .. " code=" .. tostring(data and data.code)
@@ -148,13 +153,17 @@ bot:slash_command("record", {
                 return
             end
             bot.client:off("VOICE_CLIENT_CONNECTED", on_connected)
+            print("VOICE_CLIENT_CONNECTED fired, starting recording")
 
             local sink = WaveSink.new()
             local record_ok, record_err = voice_client:start_recording(
                 sink,
                 function(finished_sink)
+                    print("finished_callback firing")
                     local guild_id = ctx.guild.id
+                    local wrote_any = false
                     for user_id, entry in pairs(finished_sink:get_all_audio()) do
+                        wrote_any = true
                         local filename = "recording_" .. guild_id .. "_" .. user_id .. ".wav"
                         local f = io.open(filename, "wb")
                         if f then
@@ -165,6 +174,9 @@ bot:slash_command("record", {
                             print("Failed to open " .. filename .. " for writing")
                         end
                     end
+                    if not wrote_any then
+                        print("No audio data captured for any user")
+                    end
                     active_voice_clients[guild_id] = nil
                     finished_sink.vc:disconnect(true)
                 end
@@ -172,6 +184,7 @@ bot:slash_command("record", {
 
             if record_ok then
                 active_voice_clients[ctx.guild.id] = voice_client
+                print("start_recording succeeded")
             else
                 print("start_recording failed: " .. tostring(record_err))
             end
@@ -185,6 +198,8 @@ bot:slash_command("record", {
 bot:slash_command("stoprecord", {
     description = "Stops recording and writes the .wav file(s)",
     callback = function(ctx)
+        print("command used: /stoprecord by " .. tostring(ctx.author and ctx.author.id))
+
         if not ctx.guild then
             ctx:respond("This command only works inside a server.")
             return
@@ -196,7 +211,9 @@ bot:slash_command("stoprecord", {
             return
         end
 
+        print("stoprecord: calling stop_recording")
         local ok, err = voice_client:stop_recording()
+        print("stoprecord: stop_recording returned ok=" .. tostring(ok))
         if ok then
             ctx:respond("Stopped recording, writing .wav file(s)...")
         else

@@ -11,7 +11,9 @@
 --     decoder:destroy() - Cleanup decoder
 --
 --   PacketDecoder: pure Lua RTP sequence jitter buffer, no FFI/libopus
---   dependency (see the PacketDecoder class below for the full contract)
+--   dependency (see the PacketDecoder class below for the full contract).
+--   Uses luv.now() (wall-clock) for hold-time bookkeeping, not
+--   os.clock() (CPU time) -- see push_packet's received_at comment.
 --     PacketDecoder.new() - Create a jitter buffer
 --     jb:push_packet(rtp_header, payload) - Buffer one packet
 --     jb:pop_ready(hold_ms?) - Pop packets held >= hold_ms, in sequence order
@@ -23,6 +25,7 @@ if not ffi_ok then
 end
 
 local native_lib = require("./native_lib")
+local luv = require("../core/luv_compat")
 
 -- Load libopus
 local opus_lib = nil
@@ -187,6 +190,26 @@ function Opus:encode(pcm_data)
     return ffi.string(out, status), status
 end
 
+-- Cleanup encoder and/or decoder held by this instance. Both
+-- opus.Encoder.new()/opus.Decoder.new() return an Opus instance (see
+-- Opus.new()), so destroy lives here, not on the unused Encoder/Decoder
+-- wrapper tables below (their metatable is never actually assigned).
+function Opus:destroy()
+    if self.encoder then
+        if opus_lib then
+            opus_lib.opus_encoder_destroy(self.encoder)
+        end
+        self.encoder = nil
+    end
+
+    if self.decoder then
+        if opus_lib then
+            opus_lib.opus_decoder_destroy(self.decoder)
+        end
+        self.decoder = nil
+    end
+end
+
 -- Create decoder
 function Opus:create_decoder()
     if not opus_lib then
@@ -338,7 +361,28 @@ function PacketDecoder:push_packet(rtp_header, payload)
         sequence = sequence,
         timestamp = rtp_header.timestamp,
         payload = payload,
-        received_at = os.clock() * 1000,
+        -- luv.now() (libuv's monotonic clock, milliseconds) not
+        -- os.clock(): os.clock() measures CPU time consumed by this
+        -- process, not wall-clock time. In an event-driven Luvit
+        -- process that spends nearly all of its time asleep waiting on
+        -- I/O between packets, CPU time barely advances between two
+        -- packets received 20ms apart in the real world -- so
+        -- `now - entry.received_at >= hold_ms` in pop_ready almost
+        -- never became true on schedule. Packets piled up in the
+        -- buffer far longer than the intended 60ms reorder window,
+        -- and were eventually flushed in one large, badly-stale batch
+        -- once accumulated CPU time happened to cross the threshold
+        -- (which could correspond to seconds or minutes of real time
+        -- under light load). Each payload string itself was still
+        -- byte-correct, but by the time it reached decrypt_opus_for_user
+        -- the MLS epoch/key ratchet for that sender had typically moved
+        -- on, since real wall-clock time -- during which WELCOME/COMMIT/
+        -- EXECUTE_TRANSITION could easily have rotated keys -- had
+        -- elapsed far beyond what the stale received_at implied. This
+        -- surfaced downstream as garbled-looking ciphertext being fed
+        -- to a decryptor keyed for a different epoch than what
+        -- encrypted it.
+        received_at = luv.now(),
     }
 
     self.by_sequence[sequence] = entry
@@ -368,7 +412,10 @@ function PacketDecoder:pop_ready(hold_ms)
         return seq_diff(a.sequence, b.sequence) < 0
     end)
 
-    local now = os.clock() * 1000
+    -- luv.now(), matching push_packet's received_at (see comment
+    -- there for why os.clock() -- CPU time, not wall-clock -- was
+    -- wrong here).
+    local now = luv.now()
     local ready = {}
     local remaining = {}
 

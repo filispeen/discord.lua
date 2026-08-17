@@ -59,7 +59,7 @@ local VoiceGateway = class("VoiceGateway")
 
 -- Set to true to log verbose DAVE/MLS handshake and heartbeat traffic
 -- (JSON payloads, key package bytes, binary frame opcodes) via dprint.
-local DEBUG = false
+local DEBUG = true
 
 local function dprint(...)
     if DEBUG then
@@ -211,6 +211,7 @@ function VoiceGateway:connect(endpoint, token, session_id)
 
     ws:on("message", function(_, msg, is_binary)
         if is_binary then
+            dprint("DAVE DEBUG RECV BYTES: op=" .. tostring(#msg >= 3 and msg:byte(3)) .. " len=" .. #msg)
             self:_dispatch_binary(msg)
             return
         end
@@ -337,6 +338,7 @@ function VoiceGateway:_handle_dave_prepare_epoch(data)
 
     local state = self.state
     state.dave_protocol_version = data.protocol_version
+    dprint("DAVE DEBUG PREPARE_EPOCH epoch=" .. tostring(data.epoch) .. " protocol_version=" .. tostring(data.protocol_version))
     self:_reinit_dave_session()
 end
 
@@ -377,6 +379,14 @@ function VoiceGateway:_execute_dave_transition(transition_id)
     local state = self.state
     local pending = state.dave_pending_transition
 
+    if os.getenv("DAVE_DEBUG_FINGERPRINT") then
+        print("DAVE DEBUG _execute_dave_transition ENTER transition_id=" .. tostring(transition_id)
+            .. " pending=" .. tostring(pending)
+            .. " pending.transition_id=" .. tostring(pending and pending.transition_id)
+            .. " dave_session=" .. tostring(state.dave_session))
+        io.stdout:flush()
+    end
+
     if not pending then
         return
     end
@@ -395,7 +405,44 @@ function VoiceGateway:_execute_dave_transition(transition_id)
         end
 
         if state.dave_session then
+            -- refresh_key_ratchet(nil) refreshes our own encryptor
+            -- ratchet; refresh_all_known_ratchets fetches and wires up
+            -- each peer's OWN decryptor handle onto their new ratchet
+            -- (see dave_session.lua's per-user decryptor design) --
+            -- there is no shared decryptor state left to invalidate
+            -- here, each peer's decryptor is updated in place as part
+            -- of that call.
             state.dave_session:refresh_key_ratchet()
+            state.dave_session:refresh_all_known_ratchets(self:_recognized_user_ids())
+
+            -- One-shot diagnostic: print the pairwise Voice Privacy
+            -- Code for every known peer right after this transition
+            -- lands, so it can be read off and compared by hand
+            -- against what each peer's official Discord client shows.
+            -- Gated on an env var so this never fires unless explicitly
+            -- requested. Only latches self._dave_fingerprint_dumped
+            -- once an actual peer was found and dumped -- the first
+            -- transition after joining an otherwise-empty channel has
+            -- no peers yet (recognized_user_ids is just ourselves), so
+            -- latching unconditionally here would burn the one-shot on
+            -- a transition with nothing to print and silently skip the
+            -- later transition where a real peer actually joins.
+            if os.getenv("DAVE_DEBUG_FINGERPRINT") and not self._dave_fingerprint_dumped then
+                local recognized = self:_recognized_user_ids()
+                local dumped_any = false
+                for _, user_id in ipairs(recognized) do
+                    if tostring(user_id) ~= state.dave_session.user_id then
+                        state.dave_session:debug_pairwise_fingerprint_code(user_id)
+                        dumped_any = true
+                    end
+                end
+                if dumped_any then
+                    self._dave_fingerprint_dumped = true
+                else
+                    dprint("DAVE DEBUG fingerprint SKIPPED: no peers yet, recognized_user_ids="
+                        .. table.concat(recognized, ","))
+                end
+            end
         end
     end
 
@@ -432,16 +479,63 @@ function VoiceGateway:_dispatch_binary(msg)
     end
 
     if op == enums.MLS_EXTERNAL_SENDER_PACKAGE then
+        if os.getenv("DAVE_DEBUG_DUMP") then
+            local hex_parts = {}
+            for i = 1, #payload do
+                hex_parts[i] = string.format("%02x", payload:byte(i))
+            end
+            print("DAVE DUMP external_sender_package len=" .. #payload
+                .. " hex=" .. table.concat(hex_parts))
+            io.stdout:flush()
+        end
         state.dave_session:set_external_sender(payload)
     elseif op == enums.MLS_PROPOSALS then
         if #payload < 1 then
             return
         end
+        -- op_byte here is only used to pick "append" vs "revoke" for our
+        -- own bookkeeping/logging; it is NOT stripped from the buffer
+        -- passed to libdave. Discord's own protocol reference (Voice
+        -- Gateway API Reference / opcode summary) documents opcode 27's
+        -- payload as the raw add/remove proposals bytes with no leading
+        -- Discord-level type byte -- the byte-0 optype reads shown in
+        -- some third-party wrappers (e.g. davey's readUInt8(3)+subarray(4))
+        -- are that wrapper's own JS-side bookkeeping before calling into
+        -- the shared C++ core, not a real wire-format field. Stripping a
+        -- byte here previously broke MLS proposal parsing (libdave logged
+        -- "Failed to parse MLS proposals: Malformed boolean"), so the
+        -- full payload is passed straight through unmodified.
         local op_byte = payload:byte(1)
         local op_type = op_byte == 0 and "append" or "revoke"
-        local commit_welcome = state.dave_session:process_proposals(op_type, payload, self:_recognized_user_ids())
+        local recognized = self:_recognized_user_ids()
+        dprint("DAVE DEBUG PROPOSALS op_byte=" .. tostring(op_byte) .. " op_type=" .. op_type .. " proposals_len=" .. #payload .. " recognized_user_ids=" .. table.concat(recognized, ","))
+        if os.getenv("DAVE_DEBUG_DUMP") then
+            local hex_parts = {}
+            for i = 1, #payload do
+                hex_parts[i] = string.format("%02x", payload:byte(i))
+            end
+            print("DAVE DUMP mls_proposals len=" .. #payload
+                .. " hex=" .. table.concat(hex_parts))
+            io.stdout:flush()
+        end
+        local commit_welcome = state.dave_session:process_proposals(op_type, payload, recognized)
+        dprint("DAVE DEBUG PROPOSALS commit_welcome=" .. tostring(commit_welcome and #commit_welcome or nil))
         if commit_welcome then
+            if os.getenv("DAVE_DEBUG_DUMP") then
+                local hex_parts = {}
+                for i = 1, #commit_welcome do
+                    hex_parts[i] = string.format("%02x", commit_welcome:byte(i))
+                end
+                print("DAVE DUMP mls_commit_welcome_sent len=" .. #commit_welcome
+                    .. " hex=" .. table.concat(hex_parts))
+                io.stdout:flush()
+            end
             self:send_as_bytes(enums.MLS_COMMIT_WELCOME, commit_welcome)
+            local rok, rerr = state.dave_session:refresh_key_ratchet()
+            state.dave_session:refresh_all_known_ratchets(recognized)
+            dprint("DAVE DEBUG PROPOSALS refresh_key_ratchet ok=" .. tostring(rok) .. " err=" .. tostring(rerr))
+            local lok, lerr = state.dave_session:debug_self_loopback_test()
+            dprint("DAVE DEBUG PROPOSALS self_loopback_test ok=" .. tostring(lok) .. " err=" .. tostring(lerr))
         end
     elseif op == enums.MLS_COMMIT_TRANSITION then
         if #payload < 2 then
@@ -450,15 +544,34 @@ function VoiceGateway:_dispatch_binary(msg)
         local transition_id = payload:byte(1) * 256 + payload:byte(2)
         local ok = state.dave_session:process_commit(payload:sub(3))
         if ok then
-            if transition_id ~= 0 then
-                state.dave_pending_transition = {
-                    transition_id = transition_id,
-                    protocol_version = state.dave_protocol_version,
-                }
-                self:send_dave_transition_ready(transition_id)
-            else
-                state.dave_session:refresh_key_ratchet()
-            end
+            local rok, rerr = state.dave_session:refresh_key_ratchet()
+            state.dave_session:refresh_all_known_ratchets(self:_recognized_user_ids())
+            dprint("DAVE DEBUG COMMIT refresh_key_ratchet ok=" .. tostring(rok) .. " err=" .. tostring(rerr))
+            local lok, lerr = state.dave_session:debug_self_loopback_test()
+            dprint("DAVE DEBUG COMMIT self_loopback_test ok=" .. tostring(lok) .. " err=" .. tostring(lerr))
+            -- Per the DAVE whitepaper (Commit Handling): "Upon successful
+            -- processing of the received commit the client... notifies
+            -- the voice gateway that they are ready for the associated
+            -- transition by sending the dave_protocol_ready_for_transition
+            -- opcode (23)." This applies unconditionally, including when
+            -- transition_id == 0.
+            --
+            -- dave_pending_transition must ALSO be set unconditionally
+            -- here, including transition_id == 0. _execute_dave_transition
+            -- (which handles the server's execute_transition op=22 reply)
+            -- no-ops entirely when state.dave_pending_transition is nil.
+            -- Previously this was only set for transition_id ~= 0, so for
+            -- the very common transition_id == 0 case, an incoming op=22
+            -- for transition_id 0 was silently ignored: the decryptor's
+            -- pending ratchet was never actually promoted to active, even
+            -- though we had already told the gateway we were ready. This
+            -- was a root cause of "no valid cryptor found" on every
+            -- decrypt following a fresh WELCOME/commit.
+            state.dave_pending_transition = {
+                transition_id = transition_id,
+                protocol_version = state.dave_protocol_version,
+            }
+            self:send_dave_transition_ready(transition_id)
         else
             self:_recover_dave_from_invalid_commit(transition_id)
         end
@@ -467,17 +580,47 @@ function VoiceGateway:_dispatch_binary(msg)
             return
         end
         local transition_id = payload:byte(1) * 256 + payload:byte(2)
-        local ok = state.dave_session:process_welcome(payload:sub(3), self:_recognized_user_ids())
-        if ok then
-            if transition_id ~= 0 then
-                state.dave_pending_transition = {
-                    transition_id = transition_id,
-                    protocol_version = state.dave_protocol_version,
-                }
-                self:send_dave_transition_ready(transition_id)
-            else
-                state.dave_session:refresh_key_ratchet()
+        local recognized = self:_recognized_user_ids()
+        dprint("DAVE DEBUG WELCOME parsed transition_id=" .. tostring(transition_id)
+            .. " payload_len=" .. #payload
+            .. " byte1=" .. tostring(payload:byte(1)) .. " byte2=" .. tostring(payload:byte(2)))
+        dprint("DAVE DEBUG WELCOME recognized_user_ids=" .. table.concat(recognized, ","))
+        if os.getenv("DAVE_DEBUG_DUMP") then
+            local welcome_body = payload:sub(3)
+            local hex_parts = {}
+            for i = 1, #welcome_body do
+                hex_parts[i] = string.format("%02x", welcome_body:byte(i))
             end
+            print("DAVE DUMP mls_welcome len=" .. #welcome_body
+                .. " hex=" .. table.concat(hex_parts))
+            io.stdout:flush()
+        end
+        local ok = state.dave_session:process_welcome(payload:sub(3), recognized)
+        if ok then
+            local rok, rerr = state.dave_session:refresh_key_ratchet()
+            state.dave_session:refresh_all_known_ratchets(recognized)
+            dprint("DAVE DEBUG WELCOME refresh_key_ratchet ok=" .. tostring(rok) .. " err=" .. tostring(rerr))
+            local lok, lerr = state.dave_session:debug_self_loopback_test()
+            dprint("DAVE DEBUG WELCOME self_loopback_test ok=" .. tostring(lok) .. " err=" .. tostring(lerr))
+            for _, peer_id in ipairs(recognized) do
+                if peer_id ~= state.dave_session.user_id then
+                    state.dave_session:debug_pairwise_fingerprint_code(peer_id)
+                end
+            end
+            -- See matching comment above in the MLS_COMMIT_TRANSITION
+            -- branch: "Upon successful processing of a dave_mls_welcome
+            -- opcode (30) message, welcomed members report that they are
+            -- ready for the associated transition by sending the
+            -- dave_protocol_ready_for_transition opcode (23)" -- also
+            -- unconditional on transition_id, and dave_pending_transition
+            -- must be set unconditionally too so a later execute_transition
+            -- (op=22) for transition_id 0 is not silently dropped by
+            -- _execute_dave_transition's "if not pending then return" guard.
+            state.dave_pending_transition = {
+                transition_id = transition_id,
+                protocol_version = state.dave_protocol_version,
+            }
+            self:send_dave_transition_ready(transition_id)
         else
             self:_recover_dave_from_invalid_commit(transition_id)
         end
@@ -522,6 +665,7 @@ function VoiceGateway:identify()
             max_dave_version = supported
         end
     end
+    dprint("DAVE DEBUG IDENTIFY max_dave_protocol_version=" .. tostring(max_dave_version))
 
     local payload = {
         op = enums.IDENTIFY,
@@ -611,6 +755,7 @@ function VoiceGateway:receive_session_description(data)
 
     local state = self.state
     state.dave_protocol_version = data.dave_protocol_version or 0
+    dprint("DAVE DEBUG SESSION_DESCRIPTION dave_protocol_version=" .. tostring(state.dave_protocol_version))
 
     -- Lazily create the DaveSession on the first session_description
     -- that negotiates DAVE, mirroring pycord's reinit_dave_session

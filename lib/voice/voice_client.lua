@@ -254,6 +254,10 @@ function VoiceClient:setup()
             self.udp._state.secret_key = data.secret_key
             self.udp._state.mode = data.mode
         end
+        local dave_session = self.gateway.state.dave_session
+        if dave_session and state.ssrc then
+            dave_session:assign_ssrc_to_opus(state.ssrc)
+        end
         self.client:dispatch('VOICE_CLIENT_CONNECTED', self)
     end)
 
@@ -517,6 +521,15 @@ function VoiceClient:send_audio_packet(data, encode)
             return false, "Encoding failed"
         end
 
+        local dave_session = self.gateway and self.gateway.state and self.gateway.state.dave_session
+        if dave_session and dave_session:ready() then
+            local ciphertext, dave_err = dave_session:encrypt_opus(state.ssrc, opus_packet)
+            if not ciphertext then
+                return false, dave_err
+            end
+            opus_packet = ciphertext
+        end
+
         -- Send via UDP
         if not self.udp then
             return false, "UDP not connected"
@@ -659,10 +672,47 @@ function VoiceClient:_feed_recording(user_id, opus_data)
     local sink = self._recording.sink
     local data = opus_data
 
+    local dave_session = self.gateway and self.gateway.state and self.gateway.state.dave_session
+    if dave_session and dave_session:ready() then
+        if self._dave_debug_session ~= dave_session then
+            self._dave_debug_session = dave_session
+            self._dave_debug_count = nil
+        end
+        local plaintext, err = dave_session:decrypt_opus_for_user(user_id, data)
+        self._dave_debug_count = (self._dave_debug_count or 0) + 1
+        if self._dave_debug_count <= 200 and #data > 20 then
+            print("FEED DEBUG packet #" .. self._dave_debug_count .. " len=" .. tostring(#data) .. " decrypt_ok=" .. tostring(plaintext ~= nil) .. " err=" .. tostring(err))
+            if not plaintext then
+                local stats = dave_session:get_decryptor_stats(user_id)
+                local parts = {}
+                for k, v in pairs(stats or {}) do
+                    parts[#parts + 1] = k .. "=" .. tostring(v)
+                end
+                print("FEED DEBUG decryptor stats: " .. table.concat(parts, " "))
+            end
+            io.stdout:flush()
+        end
+        if plaintext then
+            data = plaintext
+        end
+        -- Per Discord's DAVE protocol whitepaper, decryption failure
+        -- (missing/malformed 0xFAFA magic marker) is expected for
+        -- non-protocol frames such as short DTX/silence packets and
+        -- must fall back to passthrough (the raw transport-decrypted
+        -- bytes), not be dropped: dropping here would silently discard
+        -- legitimate silence frames from the recording. Only a missing
+        -- key ratchet (session not fully established yet) is treated as
+        -- a hard failure, since passing that data through would emit
+        -- garbage rather than real silence.
+        if not plaintext and err == "dave decrypt failed, result code 2" then
+            return false, err
+        end
+    end
+
     if not sink.wants_raw_opus then
         local decoder = self:_get_recording_decoder(user_id)
         if decoder then
-            local pcm = decoder:decode(opus_data)
+            local pcm = decoder:decode(data)
             if pcm then
                 data = pcm
             end
@@ -680,6 +730,7 @@ function VoiceClient:stop_recording()
         return false, "Not recording"
     end
 
+    print("STOP DEBUG entering stop_recording")
     local recording = self._recording
     self._recording = nil
 
@@ -687,13 +738,16 @@ function VoiceClient:stop_recording()
         decoder:destroy()
         self.state.recording_decoders[user_id] = nil
     end
+    print("STOP DEBUG decoders destroyed")
 
     recording.sink:cleanup()
+    print("STOP DEBUG sink cleaned up")
 
     if recording.finished_callback then
         local unpack = table.unpack or unpack -- luacheck: ignore
         recording.finished_callback(recording.sink, unpack(recording.args))
     end
+    print("STOP DEBUG finished_callback returned")
 
     return true
 end
@@ -786,8 +840,18 @@ function VoiceClient:_on_client_disconnect(data)
     return true
 end
 
--- Internal: on speaking update
+-- Internal: on speaking update. This is the only event that carries
+-- both user_id and ssrc together when the peer joined via the plural
+-- CLIENTS_CONNECT (DAVE opcode 11, see _on_clients_connect), which has
+-- no ssrc at all. Without this, state.ssrc_map never gets populated for
+-- DAVE-joined peers and _flush_jitter_buffers silently drops every
+-- packet from them (user_id lookup returns nil).
 function VoiceClient:_on_speaking(data)
+    local state = self.state
+    if data.ssrc and data.user_id then
+        state.ssrc_map[data.ssrc] = data.user_id
+    end
+
     -- Dispatch event
     self.client:dispatch('VOICE_SPEAKING', {
         user_id = data.user_id,

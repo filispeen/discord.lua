@@ -29,3 +29,6 @@ test*.lua
 !.github/
 !.luacheckrc
 !.luacheckrc-local
+
+# Other files to ignore
+*.wav
