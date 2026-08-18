@@ -60,7 +60,7 @@ jobs:
         run: |
           eval "$(luarocks path --lua-version=5.1)"
           LUA_PATH="./spec/?.lua;./deps/?.lua;./deps/?/init.lua;${LUA_PATH}" \
-          exec luvit "$(command -v busted)" -p _spec.lua -r spec
+          exec luvit spec/busted_runner.lua -p _spec.lua -r spec
 
       - name: Update test badge
         uses: schneegans/dynamic-badges-action@v1.9.0
