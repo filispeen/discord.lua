@@ -58,10 +58,10 @@ jobs:
 
       - name: Run busted tests
         run: |
-          LUA_PATH="./spec/?.lua;./deps/?.lua;./deps/?/init.lua;;" \
-          LUAROCKS_SYSCONFDIR='/etc/luarocks' \
-          exec luvit -e 'package.path="/usr/share/lua/5.1/?.lua;/usr/share/lua/5.1/?/init.lua;"..package.path;package.cpath="/usr/lib/lua/5.1/?.so;"..package.cpath;local k,l,_=pcall(require,"luarocks.loader") _=k and l.add_context("busted","2.3.0-1");arg={"-p","_spec.lua","-r","spec"};dofile("/usr/lib/luarocks/rocks-5.1/busted/2.3.0-1/bin/busted")' "$@"
-
+          eval "$(luarocks path --lua-version=5.1)"
+          LUA_PATH="./spec/?.lua;./deps/?.lua;./deps/?/init.lua;${LUA_PATH}" \\
+          exec luvit "$(command -v busted)" -p _spec.lua -r spec
+          
       - name: Update test badge
         uses: schneegans/dynamic-badges-action@v1.9.0
         if: always()

@@ -24,7 +24,8 @@ examples/*debug*.lua
 *.log
 *.zip
 *manual*.lua
-test*.lua
+*test*.lua
+*debug*.lua
 
 # Documentation (keep the main README)
 *.md
