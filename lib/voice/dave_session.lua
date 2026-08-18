@@ -240,14 +240,6 @@ end
 
 function DaveSession:init(protocol_version)
     self.protocol_version = protocol_version
-    if os.getenv("DAVE_DEBUG_DUMP") then
-        local gid = group_id_from_channel_id(self.channel_id)
-        print("DAVE DUMP session_init protocol_version=" .. tostring(protocol_version)
-            .. " channel_id=" .. self.channel_id
-            .. " group_id_u64=" .. tostring(gid)
-            .. " self_user_id=" .. self.user_id)
-        io.stdout:flush()
-    end
     self.lib.daveSessionInit(self.handle, protocol_version,
         group_id_from_channel_id(self.channel_id), self.user_id)
 end
@@ -258,15 +250,6 @@ end
 -- dave_prepare_epoch with epoch == 1 (brand new group).
 function DaveSession:reinit(protocol_version)
     self.protocol_version = protocol_version
-    if os.getenv("DAVE_DEBUG_DUMP") then
-        local gid = group_id_from_channel_id(self.channel_id)
-        print("DAVE DUMP session_reinit protocol_version=" .. tostring(protocol_version)
-            .. " channel_id=" .. self.channel_id
-            .. " group_id_u64=" .. tostring(gid)
-            .. " self_user_id=" .. self.user_id
-            .. " prev_epoch_generation=" .. self.epoch_generation)
-        io.stdout:flush()
-    end
     self.lib.daveSessionInit(self.handle, protocol_version,
         group_id_from_channel_id(self.channel_id), self.user_id)
     -- A fresh daveSessionInit call replaces the underlying MLS group
@@ -374,11 +357,6 @@ function DaveSession:_record_mls_roster(id_strings)
     end
     self.last_mls_roster = roster
     self.epoch_generation = self.epoch_generation + 1
-    if os.getenv("DAVE_DEBUG_DUMP") then
-        print("DAVE DUMP epoch_generation advanced to " .. self.epoch_generation
-            .. " roster=" .. table.concat(id_strings, ","))
-        io.stdout:flush()
-    end
 end
 
 -- Returns ok, err instead of raising, since libdave's C API reports
@@ -404,7 +382,7 @@ function DaveSession:process_commit(bytes)
     -- peer(s) we expect media from after this commit, rather than
     -- assuming recognized_user_ids matches what libdave settled on.
     if not failed and not ignored then
-        local roster_ok, roster_err = pcall(function()
+        pcall(function()
             local ids_ptr = ffi.new("uint64_t*[1]")
             local ids_len = ffi.new("size_t[1]")
             self.lib.daveCommitResultGetRosterMemberIds(result, ids_ptr, ids_len)
@@ -413,15 +391,11 @@ function DaveSession:process_commit(bytes)
             for i = 0, n - 1 do
                 parts[#parts + 1] = string.format("%u", ids_ptr[0][i])
             end
-            print("DAVE DEBUG COMMIT roster_member_ids=" .. table.concat(parts, ","))
             self:_record_mls_roster(parts)
             if ids_ptr[0] ~= nil then
                 self.lib.daveFree(ids_ptr[0])
             end
         end)
-        if not roster_ok then
-            print("DAVE DEBUG COMMIT roster dump failed: " .. tostring(roster_err))
-        end
     end
 
     self.lib.daveCommitResultDestroy(result)
@@ -465,7 +439,7 @@ function DaveSession:process_welcome(bytes, recognized_user_ids)
     -- derive a ratchet from OUR (wrong) epoch/state, which cannot
     -- match what that peer's real sender is encrypting with, no
     -- matter how correctly the Lua-side handle plumbing behaves.
-    local roster_ok, roster_err = pcall(function()
+    pcall(function()
         local ids_ptr = ffi.new("uint64_t*[1]")
         local ids_len = ffi.new("size_t[1]")
         self.lib.daveWelcomeResultGetRosterMemberIds(result, ids_ptr, ids_len)
@@ -474,15 +448,11 @@ function DaveSession:process_welcome(bytes, recognized_user_ids)
         for i = 0, n - 1 do
             parts[#parts + 1] = string.format("%u", ids_ptr[0][i])
         end
-        print("DAVE DEBUG WELCOME roster_member_ids=" .. table.concat(parts, ","))
         self:_record_mls_roster(parts)
         if ids_ptr[0] ~= nil then
             self.lib.daveFree(ids_ptr[0])
         end
     end)
-    if not roster_ok then
-        print("DAVE DEBUG WELCOME roster dump failed: " .. tostring(roster_err))
-    end
 
     self.lib.daveWelcomeResultDestroy(result)
     return true
@@ -529,21 +499,6 @@ function DaveSession:refresh_key_ratchet(user_id)
     local old = self.key_ratchets[user_id]
 
     local user_id_str = tostring(user_id)
-    if self._dave_debug_count == nil then
-        self._dave_debug_count = 0
-    end
-    if self._dave_debug_count <= 200 then
-        self._dave_debug_count = self._dave_debug_count + 1
-        local hex_parts = {}
-        for i = 1, #user_id_str do
-            hex_parts[i] = string.format("%02x", user_id_str:byte(i))
-        end
-        print("DAVE DEBUG refresh_key_ratchet user_id_str=" .. user_id_str
-            .. " len=" .. #user_id_str
-            .. " hex=" .. table.concat(hex_parts, " ")
-            .. " is_self=" .. tostring(user_id_str == self.user_id))
-        io.stdout:flush()
-    end
 
     local ratchet_ok, ratchet = pcall(function()
         return self.lib.daveSessionGetKeyRatchet(self.handle, user_id_str)
@@ -574,11 +529,6 @@ function DaveSession:refresh_key_ratchet(user_id)
 
     self.key_ratchets[user_id] = ratchet
     self.key_ratchet_epoch[user_id] = self.epoch_generation
-    if os.getenv("DAVE_DEBUG_DUMP") then
-        print("DAVE DUMP refresh_key_ratchet user=" .. tostring(user_id)
-            .. " stamped_epoch_generation=" .. self.epoch_generation)
-        io.stdout:flush()
-    end
 
     if user_id == self.user_id then
         self.lib.daveEncryptorSetKeyRatchet(self.encryptor, ratchet)
@@ -654,32 +604,6 @@ function DaveSession:_check_roster_desync(known_user_ids)
     if not self.last_mls_roster then
         return
     end
-
-    local known_set = {}
-    for _, user_id in ipairs(known_user_ids or {}) do
-        known_set[tostring(user_id)] = true
-    end
-
-    local only_in_known = {}
-    for user_id in pairs(known_set) do
-        if not self.last_mls_roster[user_id] then
-            only_in_known[#only_in_known + 1] = user_id
-        end
-    end
-
-    local only_in_roster = {}
-    for user_id in pairs(self.last_mls_roster) do
-        if not known_set[user_id] then
-            only_in_roster[#only_in_roster + 1] = user_id
-        end
-    end
-
-    if #only_in_known > 0 or #only_in_roster > 0 then
-        print("DAVE DEBUG ROSTER DESYNC only_in_known_users="
-            .. table.concat(only_in_known, ",")
-            .. " only_in_mls_roster=" .. table.concat(only_in_roster, ","))
-        io.stdout:flush()
-    end
 end
 
 function DaveSession:refresh_all_known_ratchets(known_user_ids)
@@ -688,12 +612,8 @@ function DaveSession:refresh_all_known_ratchets(known_user_ids)
     local results = {}
     for _, user_id in ipairs(known_user_ids or {}) do
         if tostring(user_id) ~= self.user_id then
-            local ok, err = self:refresh_key_ratchet(user_id)
+            local ok = self:refresh_key_ratchet(user_id)
             results[tostring(user_id)] = ok
-            if not ok then
-                print("DAVE DEBUG refresh_all_known_ratchets FAILED user_id=" .. tostring(user_id)
-                    .. " err=" .. tostring(err))
-            end
         end
     end
     return results
@@ -782,87 +702,13 @@ end
 
 function DaveSession:decrypt_opus(user_id, ciphertext)
     user_id = tostring(user_id)
-    if self._decrypt_userid_dump_count == nil then
-        self._decrypt_userid_dump_count = 0
-    end
-    if self._decrypt_userid_dump_count <= 20 then
-        self._decrypt_userid_dump_count = self._decrypt_userid_dump_count + 1
-        local ratchet_key_present = self.key_ratchets[user_id] ~= nil
-        local decryptor_key_present = self.decryptors[user_id] ~= nil
-        print("DAVE DEBUG decrypt_opus user_id=" .. user_id
-            .. " len=" .. #user_id
-            .. " key_ratchets_has_key=" .. tostring(ratchet_key_present)
-            .. " decryptors_has_key=" .. tostring(decryptor_key_present))
-        io.stdout:flush()
-    end
     local decryptor = self.decryptors[user_id]
     if not decryptor then
         return nil, "no decryptor for user " .. user_id
     end
 
-    if os.getenv("DAVE_DEBUG_DUMP") and #ciphertext > 20 then
-        local stamped_epoch = self.key_ratchet_epoch[user_id]
-        local is_stale = stamped_epoch ~= nil and stamped_epoch ~= self.epoch_generation
-        self._last_epoch_debug = self._last_epoch_debug or {}
-        local epoch_key = user_id .. ":" .. tostring(stamped_epoch) .. ":" .. tostring(self.epoch_generation) .. ":" .. tostring(is_stale)
-        if self._last_epoch_debug[user_id] ~= epoch_key then
-            self._last_epoch_debug[user_id] = epoch_key
-            print("DAVE DEBUG epoch user=" .. user_id
-                .. " ratchet=" .. tostring(stamped_epoch)
-                .. " current=" .. self.epoch_generation
-                .. " stale=" .. tostring(is_stale))
-            io.stdout:flush()
-        end
-    end
-
-    if #ciphertext > 20 then
-        self._decrypt_debug_count = (self._decrypt_debug_count or 0) + 1
-        if os.getenv("DAVE_DEBUG_VERBOSE") and self._decrypt_debug_count <= 5 then
-            print("DAVE DEBUG decrypt_opus ENTER user=" .. user_id .. " ciphertext_len=" .. #ciphertext)
-            io.stdout:flush()
-        end
-    end
-
     local max_size = self.lib.daveDecryptorGetMaxPlaintextByteSize(
         decryptor, 0, #ciphertext)  -- DAVE_MEDIA_TYPE_AUDIO = 0
-
-    if os.getenv("DAVE_DEBUG_VERBOSE") and self._decrypt_debug_count and self._decrypt_debug_count <= 5 and #ciphertext > 20 then
-        local dump_ok, dump_err = pcall(function()
-            local tail_len = math.min(20, #ciphertext)
-            local tail = ciphertext:sub(#ciphertext - tail_len + 1)
-            local hex_parts = {}
-            for i = 1, #tail do
-                hex_parts[i] = string.format("%02x", tail:byte(i))
-            end
-            print("DAVE DEBUG decrypt_opus max_size=" .. tostring(tonumber(max_size))
-                .. " ciphertext_len=" .. #ciphertext
-                .. " ratchet_ptr=" .. tostring(self.key_ratchets[user_id])
-                .. " user=" .. user_id
-                .. " tail_hex=" .. table.concat(hex_parts, " "))
-            io.stdout:flush()
-        end)
-        if not dump_ok then
-            print("DAVE DEBUG decrypt_opus dump_error=" .. tostring(dump_err))
-            io.stdout:flush()
-        end
-
-        if os.getenv("DAVE_DEBUG_VERBOSE") then
-            local full_ok, full_err = pcall(function()
-                local hex_parts = {}
-                for i = 1, #ciphertext do
-                    hex_parts[i] = string.format("%02x", ciphertext:byte(i))
-                end
-                print("DAVE DUMP decrypt_frame_full user=" .. user_id
-                    .. " len=" .. #ciphertext
-                    .. " hex=" .. table.concat(hex_parts))
-                io.stdout:flush()
-            end)
-            if not full_ok then
-                print("DAVE DEBUG decrypt_opus full dump_error=" .. tostring(full_err))
-                io.stdout:flush()
-            end
-        end
-    end
 
     local out_buf = ffi.new("uint8_t[?]", max_size)
     local written = ffi.new("size_t[1]")
@@ -916,28 +762,6 @@ end
 function DaveSession:debug_self_loopback_test()
     if not self:ready() then
         return false, "encryptor has no key ratchet yet"
-    end
-
-    if self._dave_debug_double_fetch_done == nil then
-        self._dave_debug_double_fetch_done = true
-        local ok1, ratchet1 = pcall(function()
-            return self.lib.daveSessionGetKeyRatchet(self.handle, self.user_id)
-        end)
-        local ok2, ratchet2 = pcall(function()
-            return self.lib.daveSessionGetKeyRatchet(self.handle, self.user_id)
-        end)
-        local addr1 = (ok1 and ratchet1 and ffi) and tonumber(ffi.cast("intptr_t", ratchet1)) or nil
-        local addr2 = (ok2 and ratchet2 and ffi) and tonumber(ffi.cast("intptr_t", ratchet2)) or nil
-        print("DAVE DEBUG double_fetch self ok1=" .. tostring(ok1) .. " addr1=" .. tostring(addr1)
-            .. " ok2=" .. tostring(ok2) .. " addr2=" .. tostring(addr2)
-            .. " same_addr=" .. tostring(addr1 == addr2))
-        io.stdout:flush()
-        if ok1 and ratchet1 then
-            self.lib.daveKeyRatchetDestroy(ratchet1)
-        end
-        if ok2 and ratchet2 then
-            self.lib.daveKeyRatchetDestroy(ratchet2)
-        end
     end
 
     local test_ssrc = 1
@@ -1022,23 +846,10 @@ end
 function DaveSession:debug_pairwise_fingerprint_code(user_id, version)
     self:debug_pairwise_fingerprint(user_id, function(hex, err)
         if not hex or hex == "" then
-            print("DAVE DEBUG fingerprint FAILED user=" .. tostring(user_id)
-                .. " err=" .. tostring(err))
-            io.stdout:flush()
             return
         end
 
-        local ok, code = pcall(displayable_code, hex, 45, 5)
-        if not ok then
-            print("DAVE DEBUG fingerprint encode FAILED user=" .. tostring(user_id)
-                .. " hex_len=" .. #hex .. " err=" .. tostring(code))
-            io.stdout:flush()
-            return
-        end
-
-        print("DAVE DEBUG fingerprint user=" .. tostring(user_id) .. " code=" .. code)
-        print("DAVE DEBUG fingerprint user=" .. tostring(user_id) .. " raw_hex=" .. hex)
-        io.stdout:flush()
+        pcall(displayable_code, hex, 45, 5)
     end, version)
 end
 

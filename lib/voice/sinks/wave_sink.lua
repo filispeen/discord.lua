@@ -46,10 +46,6 @@ function WaveSink:write(user_id, pcm_data)
 end
 
 function WaveSink:get_recording_timing()
-    print(string.format("RECORD TIMING pcm_samples=%d", self.pcm_frames * CHANNELS))
-    print(string.format("RECORD TIMING pcm_frames=%d", self.pcm_frames))
-    print(string.format("RECORD TIMING sample_rate=%d channels=%d", SAMPLE_RATE, CHANNELS))
-    print(string.format("RECORD TIMING pcm_duration=%.3f sec", self.pcm_frames / SAMPLE_RATE))
 end
 
 local function le16(n)
@@ -109,20 +105,14 @@ function WaveSink:cleanup()
         local header_sample_rate = read_le32(entry.file, 25)
         local header_channels = string.byte(entry.file, 23) + string.byte(entry.file, 24) * 256
         local header_bits = string.byte(entry.file, 35) + string.byte(entry.file, 36) * 256
-        local header_block_align = string.byte(entry.file, 33) + string.byte(entry.file, 34) * 256
         entry.wav_duration = header_data_size / (header_sample_rate * header_channels * (header_bits / 8))
         entry.wav_header_data_size = header_data_size
         self.wav_bytes = self.wav_bytes + entry.wav_bytes
         self.wav_duration = math.max(self.wav_duration, entry.wav_duration)
-        print(string.format("RECORD TIMING user=%s pcm_samples=%d pcm_frames=%d pcm_duration=%.3f sec wav_duration=%.3f sec wav_bytes=%d wav_header_data=%d sample_rate=%d channels=%d bits=%d block_align=%d", tostring(user_id), entry.pcm_samples, entry.pcm_frames, entry.pcm_frames / SAMPLE_RATE, entry.wav_duration, entry.wav_bytes, header_data_size, header_sample_rate, header_channels, header_bits, header_block_align))
     end
 end
 
 function WaveSink:get_recording_timing()
-    print(string.format("RECORD TIMING pcm_samples=%d", self.pcm_frames * CHANNELS))
-    print(string.format("RECORD TIMING pcm_frames=%d", self.pcm_frames))
-    print(string.format("RECORD TIMING sample_rate=%d channels=%d", SAMPLE_RATE, CHANNELS))
-    print(string.format("RECORD TIMING pcm_duration=%.3f sec", self.pcm_frames / SAMPLE_RATE))
 end
 
 return WaveSink

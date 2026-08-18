@@ -310,7 +310,6 @@ function VoiceClient:_flush_jitter_buffers(hold_ms)
             end
         elseif #ready > 0 then
             state.recording_debug.unknown_ssrc = state.recording_debug.unknown_ssrc + #ready
-            print(string.format("RECORD DEBUG unknown_ssrc ssrc=%s ready=%d", tostring(ssrc), #ready))
         end
     end
 end
@@ -367,12 +366,9 @@ function VoiceClient:_start_udp_keepalive()
             counter % 256
         )
 
-        local ok, err = pcall(function()
+        pcall(function()
             self.udp:send_raw(packet)
         end)
-        if not ok then
-            print(string.format("UDP KEEPALIVE DEBUG send failed err=%s", tostring(err)))
-        end
 
         self._udp_keepalive_counter = (counter + 1) % 4294967296
     end)
@@ -756,21 +752,6 @@ function VoiceClient:_feed_recording(user_id, opus_data, rtp_timestamp, received
 
     stats.feed = stats.feed + 1
 
-    if stats.feed <= 20 then
-        local hex = {}
-        local n = math.min(#data, 16)
-        for i = 1, n do
-            hex[i] = string.format("%02x", data:byte(i))
-        end
-        print(string.format(
-            "PIPE DEBUG feed=%d user=%s input_len=%d input_hex=%s",
-            stats.feed,
-            tostring(user_id),
-            #data,
-            table.concat(hex, " ")
-        ))
-    end
-
     local dave_session = self.gateway and self.gateway.state and self.gateway.state.dave_session
     if dave_session and dave_session:ready() then
         stats.dave_enter = stats.dave_enter + 1
@@ -778,25 +759,8 @@ function VoiceClient:_feed_recording(user_id, opus_data, rtp_timestamp, received
         if plaintext then
             stats.dave_success = stats.dave_success + 1
             data = plaintext
-
-            if stats.feed <= 20 then
-                local hex = {}
-                local n = math.min(#data, 16)
-                for i = 1, n do
-                    hex[i] = string.format("%02x", data:byte(i))
-                end
-                print(string.format(
-                    "PIPE DEBUG feed=%d DAVE_OK plaintext_len=%d plaintext_hex=%s",
-                    stats.feed,
-                    #data,
-                    table.concat(hex, " ")
-                ))
-            end
         else
             stats.dave_failure = stats.dave_failure + 1
-            if stats.dave_failure <= 20 or stats.dave_failure % 100 == 0 then
-                print(string.format("RECORD DEBUG dave_failure feed=%d err=%s len=%d", stats.feed, tostring(err), #data))
-            end
             if err == "dave decrypt failed, result code 2" then
                 return false, err
             end
@@ -807,70 +771,15 @@ function VoiceClient:_feed_recording(user_id, opus_data, rtp_timestamp, received
         stats.opus_enter = stats.opus_enter + 1
         local decoder = self:_get_recording_decoder(user_id)
         if decoder then
-            local pcm, err = decoder:decode(data)
+            local pcm = decoder:decode(data)
             if pcm then
                 stats.opus_success = stats.opus_success + 1
                 data = pcm
-
-                if stats.feed <= 20 then
-                    local sample_count = math.floor(#pcm / 2)
-                    local min_sample = 32767
-                    local max_sample = -32768
-                    local sum_abs = 0
-                    local zero_crossings = 0
-                    local previous = nil
-
-                    for i = 1, sample_count do
-                        local lo, hi = pcm:byte(i * 2 - 1, i * 2)
-                        local sample = lo + hi * 256
-                        if sample >= 32768 then
-                            sample = sample - 65536
-                        end
-
-                        if sample < min_sample then
-                            min_sample = sample
-                        end
-                        if sample > max_sample then
-                            max_sample = sample
-                        end
-
-                        sum_abs = sum_abs + math.abs(sample)
-
-                        if previous ~= nil and (
-                            (previous < 0 and sample >= 0) or
-                            (previous >= 0 and sample < 0)
-                        ) then
-                            zero_crossings = zero_crossings + 1
-                        end
-
-                        previous = sample
-                    end
-
-                    print(string.format(
-                        "PIPE DEBUG feed=%d OPUS_OK pcm_bytes=%d samples=%d samples_per_channel=%d min=%d max=%d mean_abs=%.1f zero_crossings=%d",
-                        stats.feed,
-                        #pcm,
-                        sample_count,
-                        math.floor(sample_count / 2),
-                        min_sample,
-                        max_sample,
-                        sample_count > 0 and sum_abs / sample_count or 0,
-                        zero_crossings
-                    ))
-                end
             else
                 stats.opus_failure = stats.opus_failure + 1
-                if stats.opus_failure <= 20 or stats.opus_failure % 100 == 0 then
-                    print(string.format("RECORD DEBUG opus_failure feed=%d err=%s len=%d", stats.feed, tostring(err), #data))
-                end
-                return true
             end
         else
             stats.opus_failure = stats.opus_failure + 1
-            if stats.opus_failure == 1 then
-                print("RECORD DEBUG opus_decoder_unavailable")
-            end
-            return true
         end
 
         -- Insert silence for real-time gaps between packets from this
@@ -887,7 +796,7 @@ function VoiceClient:_feed_recording(user_id, opus_data, rtp_timestamp, received
         -- silence like it is heard live.
         if rtp_timestamp and received_at_ms then
             local prev = recording.user_timestamps[user_id]
-            local silence_samples = 0
+            local silence_samples
 
             if not prev then
                 silence_samples = 0
@@ -929,10 +838,6 @@ function VoiceClient:_feed_recording(user_id, opus_data, rtp_timestamp, received
     stats.sink_write = stats.sink_write + 1
     stats.sink_bytes = stats.sink_bytes + #data
 
-    if stats.sink_write == 1 or stats.sink_write % 100 == 0 then
-        print(string.format("RECORD DEBUG feed=%d dave=%d/%d opus=%d/%d sink=%d bytes=%d", stats.feed, stats.dave_success, stats.dave_enter, stats.opus_success, stats.opus_enter, stats.sink_write, stats.sink_bytes))
-    end
-
     return true
 end
 
@@ -943,37 +848,26 @@ function VoiceClient:stop_recording()
         return false, "Not recording"
     end
 
-    print("STOP DEBUG entering stop_recording")
     local recording = self._recording
-    local stats = recording.stats or {}
     recording.timing.stopped_at_ms = luv.now()
     recording.timing.stopped_wall = os.date("%Y-%m-%d %H:%M:%S")
     recording.timing.wall_duration_ms = recording.timing.stopped_at_ms - recording.timing.started_at_ms
-    print("RECORD TIMING started=" .. recording.timing.started_wall)
-    print("RECORD TIMING stopped=" .. recording.timing.stopped_wall)
-    print(string.format("RECORD TIMING elapsed_ms=%d wall_duration=%.3f sec", recording.timing.wall_duration_ms, recording.timing.wall_duration_ms / 1000))
-    print(string.format("RECORD TIMING packets=%d", stats.feed or 0))
     if recording.sink.get_recording_timing then
         recording.sink:get_recording_timing()
     end
-    local rdebug = self.state.recording_debug or {}
-    print(string.format("RECORD DEBUG final udp=%d jitter_push=%d jitter_flush=%d unknown_ssrc=%d feed=%d dave=%d/%d dave_fail=%d opus=%d/%d opus_fail=%d sink=%d bytes=%d", rdebug.udp or 0, rdebug.jitter_push or 0, rdebug.jitter_flush or 0, rdebug.unknown_ssrc or 0, stats.feed or 0, stats.dave_success or 0, stats.dave_enter or 0, stats.dave_failure or 0, stats.opus_success or 0, stats.opus_enter or 0, stats.opus_failure or 0, stats.sink_write or 0, stats.sink_bytes or 0))
     self._recording = nil
 
     for user_id, decoder in pairs(self.state.recording_decoders) do
         decoder:destroy()
         self.state.recording_decoders[user_id] = nil
     end
-    print("STOP DEBUG decoders destroyed")
 
     recording.sink:cleanup()
-    print("STOP DEBUG sink cleaned up")
 
     if recording.finished_callback then
         local unpack = table.unpack or unpack -- luacheck: ignore
         recording.finished_callback(recording.sink, unpack(recording.args))
     end
-    print("STOP DEBUG finished_callback returned")
 
     return true
 end

@@ -57,16 +57,6 @@ local DaveSession = require("./dave_session")
 
 local VoiceGateway = class("VoiceGateway")
 
--- Set to true to log verbose DAVE/MLS handshake and heartbeat traffic
--- (JSON payloads, key package bytes, binary frame opcodes) via dprint.
-local DEBUG = true
-
-local function dprint(...)
-    if DEBUG then
-        print(...)
-    end
-end
-
 -- Max automatic reconnect attempts before giving up and emitting
 -- "reconnect_failed" instead of trying again.
 local MAX_RECONNECT_ATTEMPTS = 5
@@ -211,7 +201,6 @@ function VoiceGateway:connect(endpoint, token, session_id)
 
     ws:on("message", function(_, msg, is_binary)
         if is_binary then
-            dprint("DAVE DEBUG RECV BYTES: op=" .. tostring(#msg >= 3 and msg:byte(3)) .. " len=" .. #msg)
             self:_dispatch_binary(msg)
             return
         end
@@ -221,7 +210,6 @@ function VoiceGateway:connect(endpoint, token, session_id)
         if not ok or type(parsed) ~= "table" then
             return
         end
-        dprint("DAVE DEBUG RECV JSON: " .. tostring(msg))
         self:_dispatch(parsed)
     end)
 
@@ -338,7 +326,6 @@ function VoiceGateway:_handle_dave_prepare_epoch(data)
 
     local state = self.state
     state.dave_protocol_version = data.protocol_version
-    dprint("DAVE DEBUG PREPARE_EPOCH epoch=" .. tostring(data.epoch) .. " protocol_version=" .. tostring(data.protocol_version))
     self:_reinit_dave_session()
 end
 
@@ -358,12 +345,6 @@ function VoiceGateway:_reinit_dave_session()
 
         local key_package = state.dave_session:get_serialized_key_package()
         if key_package then
-            dprint("DAVE DEBUG KEY PACKAGE len=" .. #key_package)
-            local hex_parts = {}
-            for i = 1, #key_package do
-                hex_parts[i] = string.format("%02x", key_package:byte(i))
-            end
-            dprint("DAVE DEBUG KEY PACKAGE HEX: " .. table.concat(hex_parts))
             self:send_as_bytes(enums.MLS_KEY_PACKAGE, key_package)
         end
     else
@@ -378,14 +359,6 @@ end
 function VoiceGateway:_execute_dave_transition(transition_id)
     local state = self.state
     local pending = state.dave_pending_transition
-
-    if os.getenv("DAVE_DEBUG_FINGERPRINT") then
-        print("DAVE DEBUG _execute_dave_transition ENTER transition_id=" .. tostring(transition_id)
-            .. " pending=" .. tostring(pending)
-            .. " pending.transition_id=" .. tostring(pending and pending.transition_id)
-            .. " dave_session=" .. tostring(state.dave_session))
-        io.stdout:flush()
-    end
 
     if not pending then
         return
@@ -438,9 +411,6 @@ function VoiceGateway:_execute_dave_transition(transition_id)
                 end
                 if dumped_any then
                     self._dave_fingerprint_dumped = true
-                else
-                    dprint("DAVE DEBUG fingerprint SKIPPED: no peers yet, recognized_user_ids="
-                        .. table.concat(recognized, ","))
                 end
             end
         end
@@ -479,15 +449,6 @@ function VoiceGateway:_dispatch_binary(msg)
     end
 
     if op == enums.MLS_EXTERNAL_SENDER_PACKAGE then
-        if os.getenv("DAVE_DEBUG_DUMP") then
-            local hex_parts = {}
-            for i = 1, #payload do
-                hex_parts[i] = string.format("%02x", payload:byte(i))
-            end
-            print("DAVE DUMP external_sender_package len=" .. #payload
-                .. " hex=" .. table.concat(hex_parts))
-            io.stdout:flush()
-        end
         state.dave_session:set_external_sender(payload)
     elseif op == enums.MLS_PROPOSALS then
         if #payload < 1 then
@@ -508,34 +469,12 @@ function VoiceGateway:_dispatch_binary(msg)
         local op_byte = payload:byte(1)
         local op_type = op_byte == 0 and "append" or "revoke"
         local recognized = self:_recognized_user_ids()
-        dprint("DAVE DEBUG PROPOSALS op_byte=" .. tostring(op_byte) .. " op_type=" .. op_type .. " proposals_len=" .. #payload .. " recognized_user_ids=" .. table.concat(recognized, ","))
-        if os.getenv("DAVE_DEBUG_DUMP") then
-            local hex_parts = {}
-            for i = 1, #payload do
-                hex_parts[i] = string.format("%02x", payload:byte(i))
-            end
-            print("DAVE DUMP mls_proposals len=" .. #payload
-                .. " hex=" .. table.concat(hex_parts))
-            io.stdout:flush()
-        end
         local commit_welcome = state.dave_session:process_proposals(op_type, payload, recognized)
-        dprint("DAVE DEBUG PROPOSALS commit_welcome=" .. tostring(commit_welcome and #commit_welcome or nil))
         if commit_welcome then
-            if os.getenv("DAVE_DEBUG_DUMP") then
-                local hex_parts = {}
-                for i = 1, #commit_welcome do
-                    hex_parts[i] = string.format("%02x", commit_welcome:byte(i))
-                end
-                print("DAVE DUMP mls_commit_welcome_sent len=" .. #commit_welcome
-                    .. " hex=" .. table.concat(hex_parts))
-                io.stdout:flush()
-            end
             self:send_as_bytes(enums.MLS_COMMIT_WELCOME, commit_welcome)
-            local rok, rerr = state.dave_session:refresh_key_ratchet()
+            state.dave_session:refresh_key_ratchet()
             state.dave_session:refresh_all_known_ratchets(recognized)
-            dprint("DAVE DEBUG PROPOSALS refresh_key_ratchet ok=" .. tostring(rok) .. " err=" .. tostring(rerr))
-            local lok, lerr = state.dave_session:debug_self_loopback_test()
-            dprint("DAVE DEBUG PROPOSALS self_loopback_test ok=" .. tostring(lok) .. " err=" .. tostring(lerr))
+            state.dave_session:debug_self_loopback_test()
         end
     elseif op == enums.MLS_COMMIT_TRANSITION then
         if #payload < 2 then
@@ -544,11 +483,9 @@ function VoiceGateway:_dispatch_binary(msg)
         local transition_id = payload:byte(1) * 256 + payload:byte(2)
         local ok = state.dave_session:process_commit(payload:sub(3))
         if ok then
-            local rok, rerr = state.dave_session:refresh_key_ratchet()
+            state.dave_session:refresh_key_ratchet()
             state.dave_session:refresh_all_known_ratchets(self:_recognized_user_ids())
-            dprint("DAVE DEBUG COMMIT refresh_key_ratchet ok=" .. tostring(rok) .. " err=" .. tostring(rerr))
-            local lok, lerr = state.dave_session:debug_self_loopback_test()
-            dprint("DAVE DEBUG COMMIT self_loopback_test ok=" .. tostring(lok) .. " err=" .. tostring(lerr))
+            state.dave_session:debug_self_loopback_test()
             -- Per the DAVE whitepaper (Commit Handling): "Upon successful
             -- processing of the received commit the client... notifies
             -- the voice gateway that they are ready for the associated
@@ -581,27 +518,11 @@ function VoiceGateway:_dispatch_binary(msg)
         end
         local transition_id = payload:byte(1) * 256 + payload:byte(2)
         local recognized = self:_recognized_user_ids()
-        dprint("DAVE DEBUG WELCOME parsed transition_id=" .. tostring(transition_id)
-            .. " payload_len=" .. #payload
-            .. " byte1=" .. tostring(payload:byte(1)) .. " byte2=" .. tostring(payload:byte(2)))
-        dprint("DAVE DEBUG WELCOME recognized_user_ids=" .. table.concat(recognized, ","))
-        if os.getenv("DAVE_DEBUG_DUMP") then
-            local welcome_body = payload:sub(3)
-            local hex_parts = {}
-            for i = 1, #welcome_body do
-                hex_parts[i] = string.format("%02x", welcome_body:byte(i))
-            end
-            print("DAVE DUMP mls_welcome len=" .. #welcome_body
-                .. " hex=" .. table.concat(hex_parts))
-            io.stdout:flush()
-        end
         local ok = state.dave_session:process_welcome(payload:sub(3), recognized)
         if ok then
-            local rok, rerr = state.dave_session:refresh_key_ratchet()
+            state.dave_session:refresh_key_ratchet()
             state.dave_session:refresh_all_known_ratchets(recognized)
-            dprint("DAVE DEBUG WELCOME refresh_key_ratchet ok=" .. tostring(rok) .. " err=" .. tostring(rerr))
-            local lok, lerr = state.dave_session:debug_self_loopback_test()
-            dprint("DAVE DEBUG WELCOME self_loopback_test ok=" .. tostring(lok) .. " err=" .. tostring(lerr))
+            state.dave_session:debug_self_loopback_test()
             for _, peer_id in ipairs(recognized) do
                 if peer_id ~= state.dave_session.user_id then
                     state.dave_session:debug_pairwise_fingerprint_code(peer_id)
@@ -637,7 +558,6 @@ function VoiceGateway:send_as_bytes(op, data)
         return false, "WebSocket not connected"
     end
 
-    dprint("DAVE DEBUG SEND BYTES: op=" .. tostring(op) .. " len=" .. #data)
     ws:send_bytes(string.char(op) .. data)
     return true
 end
@@ -665,8 +585,6 @@ function VoiceGateway:identify()
             max_dave_version = supported
         end
     end
-    dprint("DAVE DEBUG IDENTIFY max_dave_protocol_version=" .. tostring(max_dave_version))
-
     local payload = {
         op = enums.IDENTIFY,
         d = {
@@ -755,7 +673,6 @@ function VoiceGateway:receive_session_description(data)
 
     local state = self.state
     state.dave_protocol_version = data.dave_protocol_version or 0
-    dprint("DAVE DEBUG SESSION_DESCRIPTION dave_protocol_version=" .. tostring(state.dave_protocol_version))
 
     -- Lazily create the DaveSession on the first session_description
     -- that negotiates DAVE, mirroring pycord's reinit_dave_session
@@ -822,7 +739,6 @@ function VoiceGateway:_send(payload)
     }
 
     local encoded = json.encode(data)
-    dprint("DAVE DEBUG SEND JSON: op=" .. tostring(payload.op) .. " body=" .. encoded)
     ws:send(encoded)
     return true
 end
@@ -839,7 +755,6 @@ function VoiceGateway:receive_hello(data)
     local state = self.state
 
     state.heartbeat_interval = math.min(data.heartbeat_interval, 5000)
-    dprint("DAVE DEBUG HELLO: heartbeat_interval=" .. tostring(data.heartbeat_interval) .. " (capped to " .. state.heartbeat_interval .. ") os.time=" .. tostring(os.time()))
 
     -- Start heartbeat timer
     self:_start_heartbeat()
@@ -863,7 +778,6 @@ function VoiceGateway:receive_ready(data)
         local capped = math.min(data.heartbeat_interval, 5000)
         if capped ~= state.heartbeat_interval then
             state.heartbeat_interval = capped
-            dprint("DAVE DEBUG READY: heartbeat_interval=" .. tostring(data.heartbeat_interval) .. " (capped to " .. capped .. ") os.time=" .. tostring(os.time()))
             self:_start_heartbeat()
         end
     end

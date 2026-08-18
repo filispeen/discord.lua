@@ -231,24 +231,16 @@ local function load_dave()
 
     if not success or not dave_lib then
         dave_lib = nil
-        print("DAVE DEBUG load_dave FAILED: ffi.load did not produce a library handle "
-            .. "(bundled_path=" .. tostring(bundled_path) .. ")")
-        io.stdout:flush()
         return
     end
 
-    local decl_ok, decl_err = pcall(ffi.cdef, CDEF)
+    local decl_ok = pcall(ffi.cdef, CDEF)
     if not decl_ok then
         dave_lib = nil
-        print("DAVE DEBUG load_dave FAILED: ffi.cdef rejected the declarations: "
-            .. tostring(decl_err))
-        io.stdout:flush()
         return
     end
 
     dave_ready = true
-    print("DAVE DEBUG load_dave OK: bundled_path=" .. tostring(bundled_path))
-    io.stdout:flush()
 
     -- libdave logs internally (session.cpp etc) regardless of our own
     -- DEBUG flag in voice_gateway.lua. Passing a NULL function pointer
@@ -264,31 +256,8 @@ local function load_dave()
     -- an MLS/crypto operation doesn't do what's expected. The cdata
     -- callback is kept alive on dave_log_sink so the GC never collects
     -- it out from under libdave's held pointer.
-    local severity_names = {
-        [0] = "VERBOSE", [1] = "INFO", [2] = "WARNING", [3] = "ERROR", [4] = "NONE",
-    }
     local log_sink_ok, log_sink = pcall(function()
         return ffi.cast("DAVELogSinkCallback", function(severity, file, line, message)
-            -- Temporarily lowered from >= 2 (WARNING+) to >= 0 (all
-            -- levels, including VERBOSE/INFO) while diagnosing a
-            -- systematic peer decrypt failure. libdave's INFO-level
-            -- logs include exactly the lines needed to tell a group
-            -- state desync from a ratchet/generation bug from here,
-            -- e.g. "Successfully welcomed to MLS Group, our leaf index
-            -- is X; current epoch is Y" (ProcessWelcome), "Retrieving
-            -- key for generation N from HashRatchet" (MlsKeyRatchet::
-            -- GetKey), and "Reporting cryptor success, generation: N"
-            -- (CryptorManager::ReportCryptorSuccess) -- none of which
-            -- are visible at the WARNING threshold, where only the
-            -- final "no valid cryptor found" summary shows up with no
-            -- trace of what led to it. Raise this back to >= 2 once
-            -- the current issue is resolved; at >= 0 this is very
-            -- chatty (a line per frame per generation lookup).
-            if severity >= 0 then
-                print("LIBDAVE LOG [" .. tostring(severity_names[tonumber(severity)] or severity) .. "] "
-                    .. tostring(ffi.string(file)) .. ":" .. tostring(tonumber(line)) .. " "
-                    .. tostring(ffi.string(message)))
-            end
         end)
     end)
 
@@ -353,7 +322,7 @@ function M.get_pairwise_fingerprint(session_handle, version, user_id, on_result)
 
     local callback
     callback = ffi.cast("DAVEPairwiseFingerprintCallback", function(fingerprint, length, user_data)
-        local result_hex = nil
+        local result_hex
         if fingerprint ~= nil and tonumber(length) > 0 then
             local hex_parts = {}
             for i = 1, tonumber(length) do
