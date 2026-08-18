@@ -205,15 +205,40 @@ describe("UDP", function()
         end)
 
         it("should error when called outside a coroutine", function()
+            -- table.sort's comparator callback is a genuine C-call
+            -- boundary in every Lua runtime this codebase targets
+            -- (lua5.1/luajit for busted's default CI runner, luvit for
+            -- the actual production runtime, see run_luvit_busted.sh),
+            -- so this reliably recreates "outside a coroutine" instead
+            -- of a plain top-level pcall: under lua5.1/luajit,
+            -- coroutine.running() is still nil inside the comparator
+            -- (it's the main thread, not a real coroutine), so
+            -- receive()'s own guard fires with its "must be called
+            -- from within a coroutine" message before ever reaching
+            -- coroutine.yield(). Under luvit, coroutine.running() is
+            -- always a real thread (see the "not constructible under
+            -- luvit" comment this replaced), so that guard never
+            -- fires there and execution instead reaches
+            -- coroutine.yield() itself, which the C-call boundary
+            -- rejects with its own "C-call boundary" wording. Both are
+            -- genuine, correct rejections of the same "can't yield
+            -- here" scenario, just surfaced by two different guards
+            -- depending on what the runtime's coroutine.running()
+            -- reports; the assertion below accepts either.
             local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
             client:connect()
 
             local success, err = pcall(function()
-                return client:receive(1000)
+                table.sort({ 1, 2 }, function()
+                    return client:receive(1000)
+                end)
             end)
 
             assert.is_false(success)
-            assert.matches("coroutine", err)
+            assert.is_true(
+                err:find("coroutine", 1, true) ~= nil or err:find("boundary", 1, true) ~= nil,
+                "expected error to mention 'coroutine' or 'boundary', got: " .. tostring(err)
+            )
         end)
 
         it("should resolve receive with a decoded packet dispatched while waiting", function()

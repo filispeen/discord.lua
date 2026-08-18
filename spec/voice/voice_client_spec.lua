@@ -44,6 +44,14 @@ local mock_luv = {
         return nil
     end,
     close = function() end,
+    -- now is libuv's monotonic clock in milliseconds (see lib/voice/
+    -- opus.lua, voice_client.lua's start_recording/stop_recording/
+    -- _feed_recording timestamp bookkeeping). Returns a plain
+    -- incrementing counter here since tests only need a real number,
+    -- not wall-clock accuracy.
+    now = function()
+        return 0
+    end,
 }
 
 package.loaded["luv"] = mock_luv

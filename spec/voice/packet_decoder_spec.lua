@@ -7,6 +7,19 @@
 require("spec_helper")
 package.path = "spec/voice/?.lua;" .. package.path
 
+-- opus.lua (required below) pulls in lib/core/luv_compat.lua at load
+-- time for PacketDecoder's hold-time bookkeeping (luv.now(), see that
+-- module's header comment). luv_compat checks package.loaded["mock_luv"]
+-- before falling back to a real luv/uv binding, so inject a minimal
+-- mock here the same way spec/voice/voice_client_spec.lua and
+-- spec/voice/voice_gateway_spec.lua do, rather than requiring a real
+-- libuv binding in this test environment.
+package.loaded["mock_luv"] = {
+    now = function()
+        return 0
+    end,
+}
+
 local opus = require("./voice/opus")
 
 local function header(sequence, timestamp)

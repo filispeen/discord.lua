@@ -269,11 +269,11 @@ describe("VoiceGateway", function()
             gateway:receive_hello({ heartbeat_interval = 5000 })
             local first_timer = created_timers[1]
 
-            gateway:receive_hello({ heartbeat_interval = 6000 })
+            gateway:receive_hello({ heartbeat_interval = 4000 })
 
             assert.is_true(first_timer.stopped)
             assert.equals(2, #created_timers)
-            assert.equals(6000, created_timers[2].interval)
+            assert.equals(4000, created_timers[2].interval)
         end)
 
         it("stops the timer on close", function()
@@ -447,18 +447,18 @@ describe("VoiceGateway", function()
             end
             -- VoiceGateway:connect now goes through parseUrl -> connect ->
             -- gateway.ws_adapter.wrap (mirrors gateway.Shard:connect), so
-            -- the fake here plugs into that same seam: parseUrl just
-            -- passes the url through, connect returns a dummy (res, read,
-            -- write) triple, and ws_adapter.wrap is stubbed to hand back
-            -- opened_ws directly instead of building a real coroutine
-            -- EventEmitter, keeping every existing handlers[event](...)
-            -- assertion in this describe block unchanged.
+            -- the fake here plugs into that same seam: connect() receives
+            -- the real utils.parseUrl() result (host/port/pathname/tls,
+            -- no .url field), so it reconstructs the wss:// url from
+            -- those fields to assert against, and ws_adapter.wrap is
+            -- stubbed to hand back opened_ws directly instead of building
+            -- a real coroutine EventEmitter, keeping every existing
+            -- handlers[event](...) assertion in this describe block
+            -- unchanged.
             package.loaded["coro-websocket"] = {
-                parseUrl = function(url)
-                    return { url = url }
-                end,
                 connect = function(options)
-                    opened_ws.url = options.url
+                    local scheme = options.tls and "wss" or "ws"
+                    opened_ws.url = scheme .. "://" .. options.host .. options.pathname
                     return {}, function() end, function() end
                 end,
             }
@@ -598,17 +598,18 @@ describe("VoiceGateway", function()
         before_each(function()
             sockets = {}
             handler_list = {}
-            -- Same seam as the "Connect" describe block above: fake
-            -- parseUrl/connect just pass the url through, and
-            -- gateway.ws_adapter.wrap is stubbed to return a fresh
-            -- MockWebSocket per connect() call so reconnects create a new
-            -- "socket" entry the same way the old direct-connect mock did.
+            -- Same seam as the "Connect" describe block above: connect()
+            -- receives the real utils.parseUrl() result (host/port/
+            -- pathname/tls, no .url field), so it reconstructs the wss://
+            -- url from those fields, and gateway.ws_adapter.wrap is
+            -- stubbed to return a fresh MockWebSocket per connect() call
+            -- so reconnects create a new "socket" entry the same way the
+            -- old direct-connect mock did.
             package.loaded["coro-websocket"] = {
-                parseUrl = function(url)
-                    return { url = url }
-                end,
                 connect = function(options)
-                    return { url = options.url }, function() end, function() end
+                    local scheme = options.tls and "wss" or "ws"
+                    local url = scheme .. "://" .. options.host .. options.pathname
+                    return { url = url }, function() end, function() end
                 end,
             }
             package.loaded["../gateway/ws_adapter"] = {
