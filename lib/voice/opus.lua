@@ -127,14 +127,26 @@ function Opus:create_encoder(options)
         return false, "libopus not available"
     end
 
-    local application = options.application or APPLICATION_AUDIO
+    local application_map = {
+        voip = APPLICATION_VOIP,
+        audio = APPLICATION_AUDIO,
+        lowdelay = APPLICATION_LOWDELAY,
+    }
+    local application = application_map[options.application] or APPLICATION_AUDIO
     local bitrate = options.bitrate or 64000
     local fec = options.fec
     if fec == nil then
         fec = true
     end
     local expected_packet_loss = options.expected_packet_loss or 15
-    local bandwidth = options.bandwidth or BANDWIDTH_FULL
+    local bandwidth_map = {
+        narrow = BANDWIDTH_NARROW,
+        medium = BANDWIDTH_MEDIUM,
+        wide = BANDWIDTH_WIDE,
+        superwide = BANDWIDTH_SUPERWIDE,
+        full = BANDWIDTH_FULL,
+    }
+    local bandwidth = bandwidth_map[options.bandwidth] or BANDWIDTH_FULL
     local signal_type_map = {
         auto = OPUS_AUTO,
         voice = OPUS_SIGNAL_VOICE,
@@ -262,7 +274,21 @@ end
 
 
 local Encoder = {
-    new = function(options)
+    -- Takes an explicit (ignored) self so opus.Encoder:new(options)
+    -- colon-call syntax (the only call site, voice_client.lua) works
+    -- correctly: colon-call auto-passes Encoder itself as the first
+    -- argument, so without this explicit self param, that first slot
+    -- silently ate the Encoder table and the real options table -- the
+    -- second argument -- was dropped entirely. create_encoder then saw
+    -- options=nil for every field, so bitrate/fec/expected_packet_loss/
+    -- bandwidth/application/signal_type all silently fell back to
+    -- create_encoder's own hardcoded defaults regardless of what was
+    -- actually passed in, for as long as this file has existed. This
+    -- masked all three settings fixed earlier this session (bitrate,
+    -- expected_packet_loss units, application mode): the corrected
+    -- values were being written into a table that never reached
+    -- create_encoder at all.
+    new = function(_, options)
         local opus = Opus.new()
         opus:create_encoder(options)
         return opus
@@ -281,7 +307,11 @@ local Encoder = {
 }
 
 local Decoder = {
-    new = function()
+    -- Explicit (ignored) self for the same colon-call reason as
+    -- Encoder.new above; harmless today since create_decoder takes no
+    -- options, but kept consistent so a future option added here does
+    -- not silently repeat the exact same bug.
+    new = function(_)
         local opus = Opus.new()
         opus:create_decoder()
         return opus

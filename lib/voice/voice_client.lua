@@ -93,11 +93,60 @@ function VoiceClient:setup()
     local state = self.state
 
     -- Create Opus encoder
+    --
+    -- bitrate is raw bits/sec here (see opus.lua:create_encoder, which
+    -- passes it straight to OPUS_SET_BITRATE_REQUEST with no unit
+    -- conversion; opus.lua's own default of 64000 confirms this
+    -- contract). 128000 = 128kbps, matching pycord's Encoder default
+    -- of bitrate=128 -- but pycord's "128" is KILOBITS, converted to
+    -- raw bps internally via `kbps * 1024` in Encoder.set_bitrate
+    -- (discord/opus.py). This was previously copied over as a bare
+    -- `128`, i.e. 128 bits/sec, about 1000x too low and below any
+    -- usable Opus bitrate. libopus silently accepted or clamped the
+    -- invalid request rather than erroring (opus_encoder_ctl's return
+    -- value was never checked), so encoding did not fail outright, but
+    -- ran at some unintended/effectively-undefined bitrate instead of
+    -- a stable, valid, explicit 128kbps -- the first concrete
+    -- code-level difference found between the pure test tone (encodes
+    -- fine at basically any bitrate, trivial signal) and real music
+    -- (much more sensitive to bitrate/quality, previously the only
+    -- source that showed audible glitches).
+    -- expected_packet_loss is a raw 0-100 percentage here (see
+    -- opus.lua:create_encoder, passed straight to
+    -- OPUS_SET_PACKET_LOSS_PERC_REQUEST with no conversion, and its own
+    -- default of 15 confirms the contract). This was previously copied
+    -- from pycord's Encoder(expected_packet_loss=0.15) as a bare 0.15 --
+    -- but pycord's value is a 0-1 FRACTION, converted to percent via
+    -- `int(percentage * 100)` in Encoder.set_expected_packet_loss_percent
+    -- (discord/opus.py). ffi.new("int", 0.15) truncates to 0, so the
+    -- encoder was actually configured for 0% expected packet loss.
+    -- With fec=true but 0% expected loss, libopus embeds essentially no
+    -- usable FEC redundancy (the redundancy libopus embeds scales with
+    -- this setting), so inband FEC was silently non-functional: any
+    -- packet genuinely lost in transit had no redundant data in a later
+    -- packet for the decoder to reconstruct it from, and packet loss
+    -- concealment alone had to carry the full burden -- concealment
+    -- quality is highly content-dependent (near-perfect for a steady
+    -- tone, far more audible as a glitch in complex music), which lines
+    -- up with the pure tone test showing no glitches while every real
+    -- song did.
+    --
+    -- application = "lowdelay" (OPUS_APPLICATION_RESTRICTED_LOWDELAY)
+    -- was another mismatch against pycord's default of "audio"
+    -- (OPUS_APPLICATION_AUDIO). Lowdelay trims libopus's algorithmic
+    -- delay by disabling some of the longer-range prediction and
+    -- loss-robustness machinery that mode normally uses -- a reasonable
+    -- trade for live mic input where latency matters most, but the
+    -- wrong trade for pre-recorded file/song playback, where there is
+    -- no live-latency constraint and robustness against real network
+    -- loss matters far more. Switched to "audio" to match pycord and
+    -- every other Discord music bot library's default for this exact
+    -- use case.
     state.encoder = opus.Encoder:new({
-        application = "lowdelay",
-        bitrate = 128,
+        application = "audio",
+        bitrate = 128000,
         fec = true,
-        expected_packet_loss = 0.15,
+        expected_packet_loss = 15,
         bandwidth = "full",
         signal_type = "auto",
     })
@@ -353,6 +402,22 @@ function VoiceClient:_start_udp_keepalive()
             return
         end
 
+        -- Skip while actively playing: the 20ms RTP audio stream is
+        -- itself a continuous flow of UDP packets to the same remote
+        -- ip/port and already keeps the connection alive, exactly like
+        -- pycord never runs a separate raw keepalive during playback
+        -- (see player.py's AudioPlayer, which only ever sends real RTP
+        -- frames via send_audio_packet, encoded silence included).
+        -- Sending this raw, non-RTP 8 byte packet into the same UDP
+        -- flow as real audio on a fixed 5 second cadence was
+        -- previously causing an audible glitch every ~5s, matching
+        -- UDP_KEEPALIVE_MS exactly: the SFU (or something in the path)
+        -- does not expect a non-RTP packet interleaved with the RTP
+        -- stream it is otherwise cleanly forwarding.
+        if self._timer then
+            return
+        end
+
         local counter = self._udp_keepalive_counter
         -- 8 byte big-endian counter, matching pycord's UDPKeepAlive
         -- payload shape. Content is not interpreted by Discord, only
@@ -500,12 +565,28 @@ function VoiceClient:play(source, options)
     state.source = source
     state.playing = true
     state.paused = false
+    state.play_options = options
 
-    -- Start playback timer
+    -- Announce our own speaking state (SpeakingState.voice = 1) before
+    -- the first RTP audio packet goes out. Without this, the SFU/other
+    -- clients may silently not forward or play our audio even though
+    -- the RTP packets themselves are well-formed and correctly
+    -- encrypted -- there is no error anywhere in that case, playback
+    -- just appears to do nothing on the receiving end. Discord's
+    -- Speaking payload requires our own ssrc alongside the flag (see
+    -- VoiceGateway:send_speaking).
+    if self.gateway then
+        pcall(function()
+            self.gateway:send_speaking(1, state.ssrc)
+        end)
+    end
+
+    -- Start playback timer. The timer fires immediately (0ms initial
+    -- delay, see _start_playback) and reads/sends the first frame
+    -- itself, so no separate initial read here: doing both would send
+    -- the source's first chunk twice and skip its second chunk once
+    -- the timer's own reads resume.
     self:_start_playback()
-
-    -- Start processing source
-    self:_process_source(source, options)
 
     return true
 end
@@ -519,8 +600,21 @@ function VoiceClient:stop()
         self._timer = nil
     end
 
+    if state.source and state.source.cleanup then
+        state.source:cleanup()
+    end
+
     state.playing = false
     state.source = nil
+
+    -- Tells the SFU/other clients we are done sending for this talk
+    -- spurt (SpeakingState.none). Same ssrc requirement as play()'s
+    -- send_speaking(1, ...) call.
+    if self.gateway then
+        pcall(function()
+            self.gateway:send_speaking(0, state.ssrc)
+        end)
+    end
 
     return true
 end
@@ -567,6 +661,8 @@ function VoiceClient:send_audio_packet(data, encode)
             return false, "Encoder not initialized"
         end
 
+        local t_encode_start = luv.now()
+
         local success, opus_packet = pcall(function()
             return state.encoder:encode(data)
         end)
@@ -579,13 +675,80 @@ function VoiceClient:send_audio_packet(data, encode)
             return false, "Encoding failed"
         end
 
+        local t_encode_end = luv.now()
+
         local dave_session = self.gateway and self.gateway.state and self.gateway.state.dave_session
-        if dave_session and dave_session:ready() then
+        local dave_ready = dave_session and dave_session:ready()
+
+        if self.__debug_pkt_count == nil then
+            self.__debug_pkt_count = 0
+        end
+        self.__debug_pkt_count = self.__debug_pkt_count + 1
+        if self.__debug_pkt_count <= 3 then
+            print(
+                "send_audio_packet", self.__debug_pkt_count,
+                "ssrc:", state.ssrc,
+                "opus_bytes:", #opus_packet,
+                "dave_ready:", dave_ready
+            )
+        end
+
+        -- After the first 3 packets confirmed DAVE was ready, if it
+        -- ever flips to false during an otherwise-active playback
+        -- stream, this specific packet goes out UNENCRYPTED (see the
+        -- dave_ready check below). A receiving client that expects an
+        -- established E2EE session may reject or fail to decode such a
+        -- packet (protocol frame check / passthrough mismatch, see
+        -- dave_protocol.md's Protocol Frame Check section), which would
+        -- surface as exactly the kind of brief audible glitch reported,
+        -- with nothing wrong on the timing side (see the AUDIO TICK
+        -- ANOMALY instrumentation in _start_playback, which does not
+        -- catch this since it is not a timing issue).
+        if self.__debug_pkt_count > 3 and not dave_ready then
+            print(string.format(
+                "DAVE READY FLIPPED FALSE mid-playback, packet #%d at %s: sending UNENCRYPTED",
+                self.__debug_pkt_count, os.date("%H:%M:%S")
+            ))
+        end
+
+        local t_dave_start = luv.now()
+
+        if dave_session and dave_ready then
             local ciphertext, dave_err = dave_session:encrypt_opus(state.ssrc, opus_packet)
             if not ciphertext then
                 return false, dave_err
             end
             opus_packet = ciphertext
+        end
+
+        local t_dave_end = luv.now()
+
+        -- Content-dependent size tracking: a pure test tone encodes to
+        -- small, essentially constant-size Opus frames (observed 84-170
+        -- bytes), but real music with loud/complex passages can push
+        -- VBR Opus frame sizes much higher, which after RTP header (12
+        -- bytes) + DAVE overhead (see dave_protocol.md Payload Format:
+        -- 8 byte truncated auth tag + ULEB128 nonce + range data + 1
+        -- size byte + 2 byte magic marker) could approach or exceed a
+        -- path MTU. Any UDP datagram that ends up IP-fragmented is far
+        -- more loss-prone in practice (many middleboxes/SFUs drop
+        -- fragments outright), and this would show up as exactly a
+        -- content-dependent glitch: fine on a pure tone, occasional
+        -- drops on a real song, with nothing wrong in our own
+        -- timing/encryption/session logic (all already confirmed clean
+        -- in prior rounds). This logs the wire size (RTP header + final
+        -- opus_packet, whether DAVE-encrypted or not) whenever it is
+        -- unusually large, to check whether such spikes exist at all
+        -- and whether they line up with when glitches are heard.
+        local wire_bytes = 12 + #opus_packet
+        if self.__max_wire_bytes == nil or wire_bytes > self.__max_wire_bytes then
+            self.__max_wire_bytes = wire_bytes
+            if wire_bytes > 300 then
+                print(string.format(
+                    "AUDIO PACKET SIZE new max: wire_bytes=%d (opus=%d) packet#=%d at %s",
+                    wire_bytes, #opus_packet, self.__debug_pkt_count, os.date("%H:%M:%S")
+                ))
+            end
         end
 
         -- Send via UDP
@@ -597,6 +760,21 @@ function VoiceClient:send_audio_packet(data, encode)
         if not udp_ok then
             return false, udp_err
         end
+
+        local t_udp_end = luv.now()
+
+        -- Per-stage timing for this packet, read by
+        -- VoiceClient:_start_playback right after this call to detect
+        -- and log tick overruns. See AUDIO_DEBUG in _start_playback for
+        -- how this is consumed; kept as a plain table on self rather
+        -- than a return value so the send_audio_packet(data, encode)
+        -- contract used elsewhere (e.g. pycord-mirroring silence sends)
+        -- does not need to change.
+        self.__audio_timing = {
+            encode_ms = t_encode_end - t_encode_start,
+            dave_ms = t_dave_end - t_dave_start,
+            udp_ms = t_udp_end - t_dave_end,
+        }
     else
         -- Send raw packet
         if not self.udp then
@@ -628,43 +806,87 @@ function VoiceClient:_start_playback()
     -- Frame timing: 20ms Opus frames
     local frame_interval = 20  -- milliseconds
 
+    -- Tick-overrun logging: any gap between two consecutive ticks more
+    -- than ANOMALY_SLACK_MS away from the expected 20ms is logged with
+    -- a full stage breakdown (source:read() time, then encode/dave/udp
+    -- from send_audio_packet's self.__audio_timing, see there). This
+    -- runs unconditionally (not opt-in) since it only prints on an
+    -- actual anomaly, never on a normal tick, so it stays silent during
+    -- clean playback. Anomalies are what an audible glitch looks like
+    -- from this timer's point of view: if this never fires but the
+    -- glitches are still heard, the cause is downstream of this process
+    -- (network, SFU, receiving client) rather than in our tick
+    -- scheduling or per-packet processing.
+    local ANOMALY_SLACK_MS = 8
+    self._playback_tick_count = 0
+    self._last_tick_at = nil
+
     self._timer = luv.new_timer()
     self._timer:start(0, frame_interval, function()
-        if not source:is_playing() then
-            return
+        local tick_started_at = luv.now()
+        self._playback_tick_count = self._playback_tick_count + 1
+        local tick_index = self._playback_tick_count
+
+        local gap = nil
+        if self._last_tick_at then
+            gap = tick_started_at - self._last_tick_at
         end
+        self._last_tick_at = tick_started_at
 
-        -- Read next frame from source
-        local chunk = source:read()
-        if not chunk then
-            -- Source finished, stop playback
-            self:stop()
-            return
-        end
+        local tick_ok, tick_err = pcall(function()
+            if not source:is_playing() then
+                return
+            end
 
-        -- Encode and send
-        self:send_audio_packet(chunk, true)
+            -- Read next frame from source
+            local t_read_start = luv.now()
+            local chunk = source:read()
+            local read_ms = luv.now() - t_read_start
+            if not chunk then
+                -- Source finished, stop playback
+                self:stop()
+                return
+            end
 
-        -- Continue loop
-        if not source:is_playing() then
-            self:stop()
+            -- Encode and send. send_audio_packet reports failure via a
+            -- false/err return (encoder not ready, DAVE encrypt
+            -- failure, UDP not connected), not error(), so its result
+            -- must be checked here or a failing send just goes quiet.
+            self.__audio_timing = nil
+            local send_ok, send_err = self:send_audio_packet(chunk, true)
+            if not send_ok then
+                error("send_audio_packet failed: " .. tostring(send_err), 0)
+            end
+
+            if gap and math.abs(gap - frame_interval) > ANOMALY_SLACK_MS then
+                local timing = self.__audio_timing or {}
+                print(string.format(
+                    "AUDIO TICK ANOMALY #%d at %s: gap=%dms (expected %dms) read=%dms encode=%dms dave=%dms udp=%dms",
+                    tick_index,
+                    os.date("%H:%M:%S"),
+                    gap, frame_interval, read_ms,
+                    timing.encode_ms or -1, timing.dave_ms or -1, timing.udp_ms or -1
+                ))
+            end
+
+            -- Continue loop
+            if not source:is_playing() then
+                self:stop()
+            end
+        end)
+
+        if not tick_ok then
+            -- luv timer callbacks that error are otherwise silently
+            -- dropped by some luv/luvit error-handling configurations,
+            -- with playback just going quiet and no traceback printed
+            -- anywhere. Surface it loudly instead of guessing.
+            print("VoiceClient playback tick error:", tostring(tick_err))
+            if self._timer then
+                self._timer:stop()
+                self._timer = nil
+            end
         end
     end)
-end
-
--- Process audio source
-function VoiceClient:_process_source(source, _options)
-    -- Read initial data
-    local chunk = source:read()
-    if not chunk then
-        return
-    end
-
-    -- Encode and send
-    self:send_audio_packet(chunk, true)
-
-    -- Continue reading
-    -- This would be handled by the playback timer
 end
 
 -- Starts recording with the given sink, mirrors pycord's
@@ -882,9 +1104,20 @@ function VoiceClient:_on_ready(data)
     state.heartbeat_interval = data.heartbeat_interval
     state.connected = true
 
-    -- Connect UDP now that we know the voice server's ip/port
+    -- Connect UDP now that we know the voice server's ip/port. ssrc must
+    -- also be copied here: UDPClient._state.ssrc defaults to 0 and is
+    -- read by both discover_ip() (own ssrc in the discovery packet) and
+    -- _construct_rtp_header() (own ssrc in every outgoing RTP packet).
+    -- Without this assignment every packet we send carries ssrc=0 on
+    -- the wire, which does not match the ssrc Discord assigned to this
+    -- connection in READY -- the SFU cannot correlate such packets to
+    -- any known participant and silently drops them, with no error on
+    -- either end. DAVE encryption and send_speaking both separately use
+    -- the correct ssrc (via VoiceClient.state.ssrc), which is why this
+    -- stayed hidden through those layers of debugging.
     if self.udp then
         self.udp._state.endpoint = data.ip .. ":" .. tostring(data.port)
+        self.udp._state.ssrc = data.ssrc
         self.udp:connect()
 
         -- IP discovery must complete (and yield while it waits, see

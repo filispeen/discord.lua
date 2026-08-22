@@ -40,3 +40,4 @@ examples/*debug*.lua
 
 # Other files to ignore
 *.wav
+*.mp3

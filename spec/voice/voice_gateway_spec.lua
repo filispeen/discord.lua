@@ -399,13 +399,15 @@ describe("VoiceGateway", function()
 
         it("should send speaking update", function()
             local success, err = pcall(function()
-                gateway:send_speaking("user123", 54321, true)
+                gateway:send_speaking(1, 54321)
             end)
 
             assert.is_true(success)
             assert.equals(1, #gateway.ws.messages)
             assert.equals(enums.SPEAKING, gateway.ws.messages[1].op)
-            assert.equals(true, gateway.ws.messages[1].d.speaking)
+            assert.equals(1, gateway.ws.messages[1].d.speaking)
+            assert.equals(0, gateway.ws.messages[1].d.delay)
+            assert.equals(54321, gateway.ws.messages[1].d.ssrc)
         end)
     end)
 

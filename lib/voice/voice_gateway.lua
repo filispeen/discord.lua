@@ -24,7 +24,20 @@
 --   gateway:receive_session_description(data) - Handle SESSION_DESCRIPTION, sets secret_key
 --   gateway:send_client_connect(user_id, ssrc) - Client connected
 --   gateway:send_client_disconnect(user_id, ssrc) - Client disconnected
---   gateway:send_speaking(user_id, ssrc, speaking) - Speaking update
+--   gateway:send_speaking(speaking) - Announces our own speaking state
+--     to the voice gateway (SPEAKING opcode 5). speaking is the
+--     SpeakingState bitmask Discord expects: 0 = none, 1 = microphone/
+--     voice (what playback should send), 2 = soundshare, 4 = priority.
+--     Must be called with speaking=1 before the first RTP audio packet
+--     of a talk spurt and speaking=0 once done, or the SFU/receiving
+--     clients may not forward/play the audio even though the RTP
+--     packets themselves are well-formed and correctly encrypted.
+--     Discord's official Speaking payload (docs.discord.food/topics/
+--     voice-connections#speaking) requires ssrc alongside speaking and
+--     delay: {"op": 5, "d": {"speaking": 5, "delay": 0, "ssrc": 1}} --
+--     ssrc is this connection's own SSRC from Ready (state.ssrc), not
+--     omitted the way an early reading of pycord's speak() helper
+--     might suggest.
 --   "client_connect" event - legacy singular opcode (12), data has
 --     user_id/audio_ssrc for one client.
 --   "clients_connect" event - DAVE opcode (11), data has
@@ -287,10 +300,13 @@ function VoiceGateway:_dispatch(payload)
         self:emit("speaking", data)
     elseif self.state.dave_session then
         if op == enums.DAVE_PREPARE_TRANSITION then
+            print("DAVE event: DAVE_PREPARE_TRANSITION", "transition_id:", data.transition_id, "protocol_version:", data.protocol_version, "at:", os.date("%H:%M:%S"))
             self:_handle_dave_prepare_transition(data)
         elseif op == enums.DAVE_EXECUTE_TRANSITION then
+            print("DAVE event: DAVE_EXECUTE_TRANSITION", "transition_id:", data.transition_id, "at:", os.date("%H:%M:%S"))
             self:_execute_dave_transition(data.transition_id)
         elseif op == enums.DAVE_PREPARE_EPOCH then
+            print("DAVE event: DAVE_PREPARE_EPOCH", "epoch:", data.epoch, "protocol_version:", data.protocol_version, "at:", os.date("%H:%M:%S"))
             self:_handle_dave_prepare_epoch(data)
         end
     end
@@ -449,6 +465,7 @@ function VoiceGateway:_dispatch_binary(msg)
     end
 
     if op == enums.MLS_EXTERNAL_SENDER_PACKAGE then
+        print("DAVE event: MLS_EXTERNAL_SENDER_PACKAGE", "at:", os.date("%H:%M:%S"))
         state.dave_session:set_external_sender(payload)
     elseif op == enums.MLS_PROPOSALS then
         if #payload < 1 then
@@ -468,6 +485,7 @@ function VoiceGateway:_dispatch_binary(msg)
         -- full payload is passed straight through unmodified.
         local op_byte = payload:byte(1)
         local op_type = op_byte == 0 and "append" or "revoke"
+        print("DAVE event: MLS_PROPOSALS", "op_type:", op_type, "at:", os.date("%H:%M:%S"))
         local recognized = self:_recognized_user_ids()
         local commit_welcome = state.dave_session:process_proposals(op_type, payload, recognized)
         if commit_welcome then
@@ -481,6 +499,7 @@ function VoiceGateway:_dispatch_binary(msg)
             return
         end
         local transition_id = payload:byte(1) * 256 + payload:byte(2)
+        print("DAVE event: MLS_COMMIT_TRANSITION", "transition_id:", transition_id, "at:", os.date("%H:%M:%S"))
         local ok = state.dave_session:process_commit(payload:sub(3))
         if ok then
             state.dave_session:refresh_key_ratchet()
@@ -517,6 +536,7 @@ function VoiceGateway:_dispatch_binary(msg)
             return
         end
         local transition_id = payload:byte(1) * 256 + payload:byte(2)
+        print("DAVE event: MLS_WELCOME", "transition_id:", transition_id, "at:", os.date("%H:%M:%S"))
         local recognized = self:_recognized_user_ids()
         local ok = state.dave_session:process_welcome(payload:sub(3), recognized)
         if ok then
@@ -640,7 +660,7 @@ function VoiceGateway:select_protocol(address, port)
             data = {
                 address = address,
                 port = port,
-                mode = enums.SUPPORTED_MODES[1],  -- xsalsa20_poly1305_suffix
+                mode = enums.SUPPORTED_MODES[1],  -- aead_xchacha20_poly1305_rtpsize
             },
         },
     }
@@ -853,14 +873,25 @@ function VoiceGateway:send_client_disconnect(user_id, ssrc)
     return self:_send(payload)
 end
 
--- Send speaking update
-function VoiceGateway:send_speaking(user_id, ssrc, speaking)
+-- Send speaking update. speaking is a SpeakingState bitmask (0 = none,
+-- 1 = microphone/voice, 2 = soundshare, 4 = priority), not a boolean.
+-- ssrc must be this connection's own SSRC (state.ssrc, from Ready) --
+-- Discord's official Speaking payload requires it even for a client
+-- announcing its own state:
+-- {"op": 5, "d": {"speaking": 5, "delay": 0, "ssrc": 1}}
+-- (docs.discord.food/topics/voice-connections#speaking). Earlier code
+-- here omitted ssrc based on a misreading of pycord's speak() helper
+-- and Discord silently never forwarded/played any audio as a result --
+-- no error in either direction, since sending Speaking without ssrc is
+-- not itself malformed enough to reject, it just does not identify
+-- which connection is speaking.
+function VoiceGateway:send_speaking(speaking, ssrc)
     local payload = {
         op = enums.SPEAKING,
         d = {
-            user_id = user_id,
-            ssrc = ssrc,
             speaking = speaking,
+            delay = 0,
+            ssrc = ssrc,
         },
     }
 

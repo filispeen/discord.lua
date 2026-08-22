@@ -75,6 +75,7 @@ function UDPClient.new(endpoint, token)
             buffer = nil,
             receive_waiter = nil,
             sequence = 0,
+            timestamp = 0,
             ssrc = 0,
             nonce_counter = 0,
         },
@@ -376,11 +377,22 @@ end
 --   xsalsa20_poly1305_suffix (legacy, discontinued by Discord Nov 2024,
 --     kept only for reference/tests): a fresh random 24 byte nonce is
 --     appended after the ciphertext instead.
+-- Samples per 20ms Opus frame at 48kHz, the fixed frame size this
+-- client always encodes with (see opus.lua Opus:create_encoder). The
+-- RTP timestamp advances by exactly this many samples per sent frame,
+-- not by wall-clock time, matching pycord's checked_add(timestamp,
+-- opus.Encoder.SAMPLES_PER_FRAME, ...) in send_audio_packet. Declared
+-- here, above send()/_advance_timestamp/_construct_rtp_header, since
+-- Lua locals are only visible after their declaration point in the
+-- chunk -- placing this below those functions silently made them
+-- reference a nonexistent global instead.
+local RTP_SAMPLES_PER_FRAME = 960
+
 function UDPClient:send(payload)
     local state = self._state
 
-    if not state.ip or not state.port then
-        error("Not connected: IP and port not discovered")
+    if not state.remote_ip or not state.remote_port then
+        error("Not connected: remote ip and port not set")
     end
 
     if not state.udp then
@@ -417,12 +429,23 @@ function UDPClient:send(payload)
 
     local full_packet = rtp_header .. body
 
-    local success, err = state.udp:send(full_packet, state.ip, state.port)
+    local success, err = state.udp:send(full_packet, state.remote_ip, state.remote_port)
     if not success then
         error("Failed to send UDP packet: " .. tostring(err))
     end
 
+    self:_advance_timestamp()
+
     return true
+end
+
+-- Advances the RTP timestamp by one 20ms Opus frame's worth of samples,
+-- wrapping at 2^32. Called after a frame is actually sent (see send()),
+-- not before, matching pycord's ordering (sequence increments before
+-- the packet is built, timestamp increments after it is sent).
+function UDPClient:_advance_timestamp()
+    local state = self._state
+    state.timestamp = ((state.timestamp or 0) + RTP_SAMPLES_PER_FRAME) % 4294967296
 end
 
 -- Sends raw bytes directly to the voice server's discovered ip/port,
@@ -442,15 +465,15 @@ end
 function UDPClient:send_raw(payload)
     local state = self._state
 
-    if not state.ip or not state.port then
-        error("Not connected: IP and port not discovered")
+    if not state.remote_ip or not state.remote_port then
+        error("Not connected: remote ip and port not set")
     end
 
     if not state.udp then
         error("UDP socket not initialized")
     end
 
-    local success, err = state.udp:send(payload, state.ip, state.port)
+    local success, err = state.udp:send(payload, state.remote_ip, state.remote_port)
     if not success then
         error("Failed to send raw UDP packet: " .. tostring(err))
     end
@@ -482,7 +505,11 @@ function UDPClient:_next_aead_nonce()
     return wire_nonce, aead_nonce
 end
 
--- Construct RTP header (12 bytes), returned as a raw byte string
+-- Construct RTP header (12 bytes), returned as a raw byte string.
+-- sequence and timestamp are state fields (not wall-clock derived):
+-- sequence increments by 1 and wraps at 65536, timestamp is advanced
+-- by RTP_SAMPLES_PER_FRAME (see _advance_timestamp) after each frame
+-- is actually sent, wrapping at 2^32.
 function UDPClient:_construct_rtp_header(_payload)
     local state = self._state
 
@@ -492,7 +519,7 @@ function UDPClient:_construct_rtp_header(_payload)
     local seq = state.sequence or 0
     state.sequence = (seq + 1) % 65536
 
-    local timestamp = math.floor(os.clock() * 48000) % 4294967296
+    local timestamp = state.timestamp or 0
     local ssrc = state.ssrc or 0
 
     return string.char(

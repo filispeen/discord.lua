@@ -243,19 +243,16 @@ local function load_dave()
     dave_ready = true
 
     -- libdave logs internally (session.cpp etc) regardless of our own
-    -- DEBUG flag in voice_gateway.lua. Passing a NULL function pointer
-    -- here was tried first and had no effect on those session.cpp
-    -- lines (they may be hardcoded stdout writes not routed through
-    -- this sink at all), so a real callback is installed instead,
-    -- printing severity WARNING and above: this is a live diagnostic
-    -- aid for the decrypt-always-fails investigation (result code 1,
-    -- DECRYPTION_FAILURE, with all of libdave's own missing-key/
-    -- invalid-nonce counters at zero) -- everything on the Lua side has
-    -- been checked byte-for-byte against davey's reference flow, so the
-    -- remaining unknown is whatever libdave itself logs internally when
-    -- an MLS/crypto operation doesn't do what's expected. The cdata
-    -- callback is kept alive on dave_log_sink so the GC never collects
-    -- it out from under libdave's held pointer.
+    -- DEBUG flag in voice_gateway.lua. A NULL function pointer here
+    -- does NOT suppress this: per bindings_capi.cpp, passing NULL to
+    -- daveSetLogSinkCallback calls discord::dave::SetLogSink(nullptr),
+    -- which restores libdave's own default stdout fallback rather than
+    -- silencing it. A real (non-null) callback must be installed so
+    -- libdave's internal `if (sink)` check routes log lines here
+    -- instead of to its default std::cout writer. This callback is
+    -- intentionally a no-op: it exists purely to be a non-null sink.
+    -- The cdata callback is kept alive on dave_log_sink so the GC
+    -- never collects it out from under libdave's held pointer.
     local log_sink_ok, log_sink = pcall(function()
         return ffi.cast("DAVELogSinkCallback", function(severity, file, line, message)
         end)
