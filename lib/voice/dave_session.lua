@@ -604,6 +604,25 @@ function DaveSession:_check_roster_desync(known_user_ids)
     if not self.last_mls_roster then
         return
     end
+
+    local known_set = {}
+    for _, user_id in ipairs(known_user_ids or {}) do
+        known_set[tostring(user_id)] = true
+    end
+
+    for user_id in pairs(known_set) do
+        if user_id ~= self.user_id and not self.last_mls_roster[user_id] then
+            print("DAVE ROSTER DESYNC: known_user_ids has user not in last_mls_roster",
+                "user_id:", user_id, "at:", os.date("%H:%M:%S"))
+        end
+    end
+
+    for user_id in pairs(self.last_mls_roster) do
+        if user_id ~= self.user_id and not known_set[user_id] then
+            print("DAVE ROSTER DESYNC: last_mls_roster has user not in known_user_ids",
+                "user_id:", user_id, "at:", os.date("%H:%M:%S"))
+        end
+    end
 end
 
 function DaveSession:refresh_all_known_ratchets(known_user_ids)

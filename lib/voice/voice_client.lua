@@ -661,8 +661,6 @@ function VoiceClient:send_audio_packet(data, encode)
             return false, "Encoder not initialized"
         end
 
-        local t_encode_start = luv.now()
-
         local success, opus_packet = pcall(function()
             return state.encoder:encode(data)
         end)
@@ -674,8 +672,6 @@ function VoiceClient:send_audio_packet(data, encode)
         if not opus_packet then
             return false, "Encoding failed"
         end
-
-        local t_encode_end = luv.now()
 
         local dave_session = self.gateway and self.gateway.state and self.gateway.state.dave_session
         local dave_ready = dave_session and dave_session:ready()
@@ -700,18 +696,13 @@ function VoiceClient:send_audio_packet(data, encode)
         -- established E2EE session may reject or fail to decode such a
         -- packet (protocol frame check / passthrough mismatch, see
         -- dave_protocol.md's Protocol Frame Check section), which would
-        -- surface as exactly the kind of brief audible glitch reported,
-        -- with nothing wrong on the timing side (see the AUDIO TICK
-        -- ANOMALY instrumentation in _start_playback, which does not
-        -- catch this since it is not a timing issue).
+        -- surface as exactly the kind of brief audible glitch reported.
         if self.__debug_pkt_count > 3 and not dave_ready then
             print(string.format(
                 "DAVE READY FLIPPED FALSE mid-playback, packet #%d at %s: sending UNENCRYPTED",
                 self.__debug_pkt_count, os.date("%H:%M:%S")
             ))
         end
-
-        local t_dave_start = luv.now()
 
         if dave_session and dave_ready then
             local ciphertext, dave_err = dave_session:encrypt_opus(state.ssrc, opus_packet)
@@ -720,8 +711,6 @@ function VoiceClient:send_audio_packet(data, encode)
             end
             opus_packet = ciphertext
         end
-
-        local t_dave_end = luv.now()
 
         -- Content-dependent size tracking: a pure test tone encodes to
         -- small, essentially constant-size Opus frames (observed 84-170
@@ -760,21 +749,6 @@ function VoiceClient:send_audio_packet(data, encode)
         if not udp_ok then
             return false, udp_err
         end
-
-        local t_udp_end = luv.now()
-
-        -- Per-stage timing for this packet, read by
-        -- VoiceClient:_start_playback right after this call to detect
-        -- and log tick overruns. See AUDIO_DEBUG in _start_playback for
-        -- how this is consumed; kept as a plain table on self rather
-        -- than a return value so the send_audio_packet(data, encode)
-        -- contract used elsewhere (e.g. pycord-mirroring silence sends)
-        -- does not need to change.
-        self.__audio_timing = {
-            encode_ms = t_encode_end - t_encode_start,
-            dave_ms = t_dave_end - t_dave_start,
-            udp_ms = t_udp_end - t_dave_end,
-        }
     else
         -- Send raw packet
         if not self.udp then
@@ -806,44 +780,55 @@ function VoiceClient:_start_playback()
     -- Frame timing: 20ms Opus frames
     local frame_interval = 20  -- milliseconds
 
-    -- Tick-overrun logging: any gap between two consecutive ticks more
-    -- than ANOMALY_SLACK_MS away from the expected 20ms is logged with
-    -- a full stage breakdown (source:read() time, then encode/dave/udp
-    -- from send_audio_packet's self.__audio_timing, see there). This
-    -- runs unconditionally (not opt-in) since it only prints on an
-    -- actual anomaly, never on a normal tick, so it stays silent during
-    -- clean playback. Anomalies are what an audible glitch looks like
-    -- from this timer's point of view: if this never fires but the
-    -- glitches are still heard, the cause is downstream of this process
-    -- (network, SFU, receiving client) rather than in our tick
-    -- scheduling or per-packet processing.
-    local ANOMALY_SLACK_MS = 8
+    -- Scheduling: explicit absolute schedule, not a luv repeat-timer.
+    --
+    -- A luv repeat-timer (timer:start(0, interval, cb)) delegates the
+    -- "when does the next tick fire" decision entirely to libuv's
+    -- internal timer heap. In principle libuv reschedules repeat
+    -- timers relative to the loop iteration's cached start time, which
+    -- should itself resist drift -- but that is an internal
+    -- implementation detail of a C library we are trusting rather than
+    -- controlling, and it was flagged as a suspect for exactly this
+    -- session's remaining, unexplained audio interruptions.
+    --
+    -- This replaces that with the same explicit, provably drift-free
+    -- pattern used by both pycord's AudioPlayer._do_run (next_time =
+    -- self._start + DELAY * self.loops) and a minimal reference
+    -- implementation the user found independently (next_frame_time =
+    -- next_frame_time + frame_duration, never next_frame_time =
+    -- current_time + frame_duration): every tick's target fire time is
+    -- an exact multiple of frame_interval measured from the single
+    -- fixed playback_started_at anchor, never from "now" at any
+    -- intermediate point. A one-shot luv timer is rescheduled after
+    -- every tick to fire at max(0, next_tick_at - now), so processing
+    -- time within a tick (read/encode/dave/udp, GC, anything) cannot
+    -- accumulate into a creeping offset from real wall-clock time --
+    -- if a tick runs long, the next one is scheduled sooner to
+    -- compensate, exactly like the reference snippet's tight
+    -- current_time >= next_frame_time poll loop, just event-driven
+    -- instead of busy-polled.
+    local playback_started_at = luv.now()
     self._playback_tick_count = 0
-    self._last_tick_at = nil
 
-    self._timer = luv.new_timer()
-    self._timer:start(0, frame_interval, function()
-        local tick_started_at = luv.now()
+    local schedule_next_tick
+
+    local function run_tick()
         self._playback_tick_count = self._playback_tick_count + 1
         local tick_index = self._playback_tick_count
 
-        local gap = nil
-        if self._last_tick_at then
-            gap = tick_started_at - self._last_tick_at
-        end
-        self._last_tick_at = tick_started_at
+        local stopped = false
 
         local tick_ok, tick_err = pcall(function()
             if not source:is_playing() then
+                stopped = true
                 return
             end
 
             -- Read next frame from source
-            local t_read_start = luv.now()
             local chunk = source:read()
-            local read_ms = luv.now() - t_read_start
             if not chunk then
                 -- Source finished, stop playback
+                stopped = true
                 self:stop()
                 return
             end
@@ -852,25 +837,14 @@ function VoiceClient:_start_playback()
             -- false/err return (encoder not ready, DAVE encrypt
             -- failure, UDP not connected), not error(), so its result
             -- must be checked here or a failing send just goes quiet.
-            self.__audio_timing = nil
             local send_ok, send_err = self:send_audio_packet(chunk, true)
             if not send_ok then
                 error("send_audio_packet failed: " .. tostring(send_err), 0)
             end
 
-            if gap and math.abs(gap - frame_interval) > ANOMALY_SLACK_MS then
-                local timing = self.__audio_timing or {}
-                print(string.format(
-                    "AUDIO TICK ANOMALY #%d at %s: gap=%dms (expected %dms) read=%dms encode=%dms dave=%dms udp=%dms",
-                    tick_index,
-                    os.date("%H:%M:%S"),
-                    gap, frame_interval, read_ms,
-                    timing.encode_ms or -1, timing.dave_ms or -1, timing.udp_ms or -1
-                ))
-            end
-
             -- Continue loop
             if not source:is_playing() then
+                stopped = true
                 self:stop()
             end
         end)
@@ -885,8 +859,32 @@ function VoiceClient:_start_playback()
                 self._timer:stop()
                 self._timer = nil
             end
+            return
         end
-    end)
+
+        if not stopped then
+            schedule_next_tick(tick_index)
+        end
+    end
+
+    schedule_next_tick = function(completed_tick_index)
+        local next_tick_at = playback_started_at + (completed_tick_index) * frame_interval
+        local delay = next_tick_at - luv.now()
+        if delay < 0 then
+            delay = 0
+        end
+
+        self._timer = luv.new_timer()
+        self._timer:start(delay, 0, run_tick)
+    end
+
+    self._timer = luv.new_timer()
+    -- First tick fires immediately (delay 0), matching the previous
+    -- timer:start(0, frame_interval, ...) behavior; tick_index inside
+    -- run_tick will be 1 for this first call, and schedule_next_tick(1)
+    -- correctly targets playback_started_at + 1*frame_interval for the
+    -- second tick.
+    self._timer:start(0, 0, run_tick)
 end
 
 -- Starts recording with the given sink, mirrors pycord's
