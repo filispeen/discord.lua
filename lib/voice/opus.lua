@@ -40,9 +40,12 @@ local function load_opus()
     -- Prefer the dll bundled in lib/dlls/ (see native_lib.lua) on
     -- Windows, since a bare ffi.load("opus") only checks the OS's
     -- normal library search path and won't find it there on its own.
+    -- resolve_opus() (not the generic resolve()) matches the actual
+    -- bundled libopus-0.<arch>.dll naming -- see native_lib.lua's
+    -- comment on resolve_opus for why resolve("opus") never found it.
     -- Falls back to the bare name so a system-installed libopus (the
     -- expected setup on Linux/macOS) still works.
-    local bundled_path = native_lib.resolve("opus")
+    local bundled_path = native_lib.resolve_opus()
 
     local success = pcall(function()
         if bundled_path then

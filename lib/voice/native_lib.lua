@@ -151,7 +151,56 @@ local function resolve_any_platform(base_name)
     return resolve_linux_so(base_name)
 end
 
+-- Windows opus dll arch suffixes as actually produced upstream
+-- (libopus-0.x64.dll, libopus-0.x86.dll -- lowercase arch name, no
+-- ARM64 build bundled), distinct from ARCH_SUFFIX's MSVC-style names
+-- (Win32/x64/ARM64) used by resolve() for libsodium/libdave. resolve()
+-- itself could never find these: it builds "opus-x64.dll"/
+-- "opus-Win32.dll", which do not exist under lib/dlls/ at all, so
+-- the bundled-path lookup silently returned nil and opus.lua fell
+-- through to a bare ffi.load("opus"), which only works if the OS
+-- already has libopus on its normal search path -- not true for a
+-- plain Windows install relying on the bundled dll.
+local OPUS_ARCH_SUFFIX = {
+    x86 = "x86",
+    x64 = "x64",
+}
+
+local function resolve_opus()
+    if not ffi_ok then
+        return nil
+    end
+
+    local os_ok, os_name = pcall(function() return ffi.os end)
+    if not os_ok or os_name ~= "Windows" then
+        return nil
+    end
+
+    local arch_ok, arch_name = pcall(function() return ffi.arch end)
+    if not arch_ok or not arch_name then
+        return nil
+    end
+
+    local suffix = OPUS_ARCH_SUFFIX[arch_name]
+    if not suffix then
+        return nil
+    end
+
+    local dir = this_dir()
+    if not dir then
+        return nil
+    end
+
+    local path = dir .. "/dlls/libopus-0." .. suffix .. ".dll"
+    if file_exists(path) then
+        return path
+    end
+
+    return nil
+end
+
 return {
     resolve = resolve,
     resolve_any_platform = resolve_any_platform,
+    resolve_opus = resolve_opus,
 }

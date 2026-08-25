@@ -185,12 +185,16 @@ function DaveSession.new(user_id, channel_id)
     self.epoch_generation = 0
     self.key_ratchet_epoch = {}
     -- Set of user_id strings (keys, values all true) libdave itself
-    -- reported as MLS group members as of the last COMMIT or WELCOME
-    -- roster dump (see _record_mls_roster below). nil until the first
+    -- reported as MLS group members, accumulated across every COMMIT
+    -- or WELCOME roster delta (see _record_mls_roster below) since
+    -- libdave's C API only ever exposes a per-commit delta, never the
+    -- full roster directly. last_mls_roster points at this same table
+    -- after each _record_mls_roster call. nil until the first
     -- COMMIT/WELCOME. Compared against voice_gateway's known_users
     -- (built from ops 11/12/13) in refresh_all_known_ratchets, to catch
     -- a local-MLS-group-vs-voice-gateway-membership desync directly
     -- instead of only inferring it from downstream decrypt failures.
+    self.full_mls_roster = nil
     self.last_mls_roster = nil
 
     local create_ok, handle = pcall(function()
@@ -263,6 +267,13 @@ function DaveSession:reinit(protocol_version)
     -- epoch-tracking bookkeeping added for staleness diagnosis.
     self.epoch_generation = 0
     self.key_ratchet_epoch = {}
+    -- daveSessionInit replaces the underlying MLS group entirely, so
+    -- libdave's own private roster_ resets to empty for the new group
+    -- too. Our accumulated mirror of it must reset in lockstep or
+    -- _check_roster_desync would compare the new group's known_users
+    -- against a roster carried over from the previous group's members.
+    self.full_mls_roster = nil
+    self.last_mls_roster = nil
 end
 
 function DaveSession:reset()
@@ -288,6 +299,7 @@ function DaveSession:reset()
     -- check never compares stamps from two unrelated groups.
     self.epoch_generation = 0
     self.key_ratchet_epoch = {}
+    self.full_mls_roster = nil
     self.last_mls_roster = nil
 end
 
@@ -337,25 +349,51 @@ function DaveSession:process_proposals(op_type, bytes, recognized_user_ids)
     return ffi_string_free(out_ptr, out_len)
 end
 
--- Stores the given list of roster member id strings (already converted
--- from uint64_t by the caller) as self.last_mls_roster, a set keyed by
--- user_id string so refresh_all_known_ratchets can do an O(1) lookup
--- against it. Called from both process_commit and process_welcome
--- right after their respective roster dumps, so self.last_mls_roster
--- always reflects whichever of COMMIT/WELCOME landed most recently,
--- matching how libdave itself only keeps one current epoch's roster.
+-- Merges the given roster member id strings (already converted from
+-- uint64_t by the caller) into self.full_mls_roster, an accumulated
+-- set keyed by user_id string, then republishes it as
+-- self.last_mls_roster for refresh_all_known_ratchets/
+-- _check_roster_desync to read.
+--
+-- IMPORTANT: libdave's daveCommitResultGetRosterMemberIds and
+-- daveWelcomeResultGetRosterMemberIds do NOT return the full current
+-- MLS group roster. Per libdave's Session::ReplaceState
+-- (cpp/src/mls/session.cpp), the RosterMap returned from
+-- ProcessCommit/ProcessWelcome is a std::set_difference-based
+-- changeMap between the old and new roster: added members appear
+-- with their real signature key bytes, removed members appear as
+-- keys with an EMPTY signature (see the MissingItemWrapper in
+-- ReplaceState). The full unified roster (roster_) is kept private
+-- inside libdave's Session object and never exposed as a whole; only
+-- this per-commit/welcome delta crosses the C API. An earlier version
+-- of this function stored that delta directly as self.last_mls_roster
+-- (overwriting on every call), which made _check_roster_desync flag
+-- every existing, untouched member as "missing" on every subsequent
+-- commit -- pure noise, confirmed live: 2026-08-25 test session where
+-- an already-established peer was flagged as absent on every commit
+-- that only concerned a different peer joining/leaving.
+--
+-- removed_set (built by the caller from each id's signature length,
+-- 0 = removed) tells us which of id_strings to drop from the
+-- accumulator instead of add, so full_mls_roster stays an accurate
+-- running reconstruction of libdave's private roster_.
 --
 -- Also advances self.epoch_generation, since this is called exactly
 -- once per successful group-establishing/advancing event (a real MLS
 -- epoch change), giving refresh_key_ratchet a cheap local counter to
 -- stamp each cached ratchet with (see epoch_generation's declaration
 -- in DaveSession.new for why this matters for staleness detection).
-function DaveSession:_record_mls_roster(id_strings)
-    local roster = {}
+function DaveSession:_record_mls_roster(id_strings, removed_set)
+    removed_set = removed_set or {}
+    self.full_mls_roster = self.full_mls_roster or {}
     for _, id_str in ipairs(id_strings) do
-        roster[id_str] = true
+        if removed_set[id_str] then
+            self.full_mls_roster[id_str] = nil
+        else
+            self.full_mls_roster[id_str] = true
+        end
     end
-    self.last_mls_roster = roster
+    self.last_mls_roster = self.full_mls_roster
     self.epoch_generation = self.epoch_generation + 1
 end
 
@@ -388,10 +426,22 @@ function DaveSession:process_commit(bytes)
             self.lib.daveCommitResultGetRosterMemberIds(result, ids_ptr, ids_len)
             local n = tonumber(ids_len[0])
             local parts = {}
+            local removed = {}
             for i = 0, n - 1 do
-                parts[#parts + 1] = string.format("%u", ids_ptr[0][i])
+                local raw_id = ids_ptr[0][i]
+                local id_str = string.format("%u", raw_id)
+                parts[#parts + 1] = id_str
+                local sig_ptr = ffi.new("uint8_t*[1]")
+                local sig_len = ffi.new("size_t[1]")
+                self.lib.daveCommitResultGetRosterMemberSignature(result, raw_id, sig_ptr, sig_len)
+                if tonumber(sig_len[0]) == 0 then
+                    removed[id_str] = true
+                end
+                if sig_ptr[0] ~= nil then
+                    self.lib.daveFree(sig_ptr[0])
+                end
             end
-            self:_record_mls_roster(parts)
+            self:_record_mls_roster(parts, removed)
             if ids_ptr[0] ~= nil then
                 self.lib.daveFree(ids_ptr[0])
             end
@@ -445,10 +495,22 @@ function DaveSession:process_welcome(bytes, recognized_user_ids)
         self.lib.daveWelcomeResultGetRosterMemberIds(result, ids_ptr, ids_len)
         local n = tonumber(ids_len[0])
         local parts = {}
+        local removed = {}
         for i = 0, n - 1 do
-            parts[#parts + 1] = string.format("%u", ids_ptr[0][i])
+            local raw_id = ids_ptr[0][i]
+            local id_str = string.format("%u", raw_id)
+            parts[#parts + 1] = id_str
+            local sig_ptr = ffi.new("uint8_t*[1]")
+            local sig_len = ffi.new("size_t[1]")
+            self.lib.daveWelcomeResultGetRosterMemberSignature(result, raw_id, sig_ptr, sig_len)
+            if tonumber(sig_len[0]) == 0 then
+                removed[id_str] = true
+            end
+            if sig_ptr[0] ~= nil then
+                self.lib.daveFree(sig_ptr[0])
+            end
         end
-        self:_record_mls_roster(parts)
+        self:_record_mls_roster(parts, removed)
         if ids_ptr[0] ~= nil then
             self.lib.daveFree(ids_ptr[0])
         end
@@ -577,9 +639,11 @@ end
 -- Returns a table of { [user_id] = ok_boolean } so callers can log
 -- which peers failed, instead of only finding out on first decrypt.
 -- Diagnostic: cross-checks known_user_ids (from voice_gateway's
--- known_users, ops 11/12/13) against self.last_mls_roster (libdave's
--- own COMMIT/WELCOME roster, see _record_mls_roster). These two lists
--- are expected to always agree; if they don't, daveSessionGetKeyRatchet
+-- known_users, ops 11/12/13) against self.last_mls_roster, our
+-- accumulated reconstruction of libdave's own private MLS roster_
+-- (see _record_mls_roster's comment for why this must be accumulated
+-- rather than read as a single commit's delta). These two lists are
+-- expected to always agree; if they don't, daveSessionGetKeyRatchet
 -- below is being asked for a user who either:
 --   - is in known_user_ids but NOT in last_mls_roster: the voice
 --     gateway thinks this user is in the channel, but our local MLS
