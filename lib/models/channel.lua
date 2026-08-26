@@ -58,6 +58,15 @@
 --     create_invite(target_users_file=...), see models.invite for the
 --     JSON-vs-multipart caveat.
 --     POST /channels/{id}/invites.
+--
+--   channel:create_thread(opts) -> Thread
+--     opts.name (required), opts.message_id (optional - starts the
+--     thread from that message via POST .../messages/{id}/threads,
+--     always a public thread), opts.type (only used without a message,
+--     defaults to 15 = private_thread per this project's type mapping),
+--     opts.auto_archive_duration, opts.slowmode_delay, opts.invitable,
+--     opts.reason. Mirrors pycord's TextChannel.create_thread(), picks
+--     between start_thread_with_message/start_thread_without_message.
 
 local class = require("../core/class")
 
@@ -198,6 +207,37 @@ function Channel:create_invite(opts)
 
     local created = route:create_channel_invite(self.id, payload, opts.reason)
     return Invite.new(created, self.http)
+end
+
+function Channel:create_thread(opts)
+    opts = opts or {}
+    if not self.http then
+        error("Channel has no http client attached, cannot create_thread", 0)
+    end
+    if not opts.name then
+        error("Channel:create_thread() requires opts.name", 0)
+    end
+
+    local Thread = require("./thread")
+    local endpoint
+    local payload = {
+        name = opts.name,
+        auto_archive_duration = opts.auto_archive_duration or 1440,
+        rate_limit_per_user = opts.slowmode_delay or 0,
+    }
+
+    if opts.message_id then
+        endpoint = "/channels/" .. self.id .. "/messages/" .. opts.message_id .. "/threads"
+    else
+        endpoint = "/channels/" .. self.id .. "/threads"
+        payload.type = opts.type or 15
+        if opts.invitable ~= nil then
+            payload.invitable = opts.invitable
+        end
+    end
+
+    local created = self.http:post(endpoint, payload)
+    return Thread.new(created, self.guild, self.http)
 end
 
 return Channel

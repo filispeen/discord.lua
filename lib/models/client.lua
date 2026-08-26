@@ -53,6 +53,8 @@ function Client.new(token, ratelimiter, intents)
     local enums = require("../core/enums")
     local VoiceStateStore = require("../cache/voice_state_store")
     local ChannelStore = require("../cache/channel_store")
+    local MemberStore = require("../cache/member_store")
+    local RoleStore = require("../cache/role_store")
     local self = {
         token = token,
         ratelimiter = ratelimiter or {},
@@ -66,6 +68,8 @@ function Client.new(token, ratelimiter, intents)
         user = nil,
         voice_states = VoiceStateStore.new(),
         channels = ChannelStore.new(),
+        members = MemberStore.new(),
+        roles = RoleStore.new(),
     }
     setmetatable(self, {
         __index = Client
@@ -121,6 +125,30 @@ function Client:get_voice_channel_id(guild_id, user_id)
     return self.voice_states:get_channel_id(guild_id, user_id)
 end
 
+-- Returns the last known raw member payload for a user in a guild,
+-- built from GUILD_CREATE/GUILD_MEMBERS_CHUNK/GUILD_MEMBER_ADD/UPDATE
+-- dispatch events. nil if the member has never been seen or has left.
+function Client:get_cached_member(guild_id, user_id)
+    return self.members:get(guild_id, user_id)
+end
+
+-- Returns all currently cached member payloads for a guild.
+function Client:get_guild_members(guild_id)
+    return self.members:get_all(guild_id)
+end
+
+-- Returns the last known raw role payload for a role in a guild,
+-- built from GUILD_CREATE/GUILD_ROLE_CREATE/UPDATE dispatch events.
+-- nil if the role has never been seen or has been deleted.
+function Client:get_cached_role(guild_id, role_id)
+    return self.roles:get(guild_id, role_id)
+end
+
+-- Returns all currently cached role payloads for a guild.
+function Client:get_guild_roles(guild_id)
+    return self.roles:get_all(guild_id)
+end
+
 -- Create HTTP client
 function Client:_create_http()
     local ratelimiter = require("../http/ratelimiter")
@@ -168,6 +196,110 @@ function Client:start_gateway()
         self:emit("message_create", Message.new(data, self.http))
     end)
 
+    self.gateway:on_dispatch("MESSAGE_UPDATE", function(data)
+        local Message = require("./message")
+        self:emit("message_update", Message.new(data, self.http))
+    end)
+
+    self.gateway:on_dispatch("MESSAGE_DELETE", function(data)
+        self:emit("message_delete", data)
+    end)
+
+    self.gateway:on_dispatch("MESSAGE_DELETE_BULK", function(data)
+        self:emit("message_delete_bulk", data)
+    end)
+
+    self.gateway:on_dispatch("MESSAGE_REACTION_ADD", function(data)
+        self:emit("message_reaction_add", data)
+    end)
+
+    self.gateway:on_dispatch("MESSAGE_REACTION_REMOVE", function(data)
+        self:emit("message_reaction_remove", data)
+    end)
+
+    self.gateway:on_dispatch("MESSAGE_REACTION_REMOVE_ALL", function(data)
+        self:emit("message_reaction_remove_all", data)
+    end)
+
+    self.gateway:on_dispatch("MESSAGE_REACTION_REMOVE_EMOJI", function(data)
+        self:emit("message_reaction_remove_emoji", data)
+    end)
+
+    self.gateway:on_dispatch("PRESENCE_UPDATE", function(data)
+        if data and data.guild_id and data.user and data.user.id then
+            local member = self.members:get(data.guild_id, data.user.id)
+            local old_member = nil
+            if member then
+                old_member = {}
+                for k, v in pairs(member) do
+                    old_member[k] = v
+                end
+                member.activities = data.activities
+                member.status = data.status
+                member.client_status = data.client_status
+                self.members:put(data.guild_id, member)
+            end
+            self:emit("presence_update", old_member, data)
+            return
+        end
+        self:emit("presence_update", nil, data)
+    end)
+
+    self.gateway:on_dispatch("TYPING_START", function(data)
+        if data and data.guild_id and data.member then
+            self.members:put(data.guild_id, data.member)
+        end
+        self:emit("typing_start", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_SCHEDULED_EVENT_CREATE", function(data)
+        self:emit("guild_scheduled_event_create", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_SCHEDULED_EVENT_UPDATE", function(data)
+        self:emit("guild_scheduled_event_update", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_SCHEDULED_EVENT_DELETE", function(data)
+        self:emit("guild_scheduled_event_delete", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_SCHEDULED_EVENT_USER_ADD", function(data)
+        self:emit("guild_scheduled_event_user_add", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_SCHEDULED_EVENT_USER_REMOVE", function(data)
+        self:emit("guild_scheduled_event_user_remove", data)
+    end)
+
+    self.gateway:on_dispatch("INTEGRATION_CREATE", function(data)
+        self:emit("integration_create", data)
+    end)
+
+    self.gateway:on_dispatch("INTEGRATION_UPDATE", function(data)
+        self:emit("integration_update", data)
+    end)
+
+    self.gateway:on_dispatch("INTEGRATION_DELETE", function(data)
+        self:emit("integration_delete", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_INTEGRATIONS_UPDATE", function(data)
+        self:emit("guild_integrations_update", data)
+    end)
+
+    self.gateway:on_dispatch("WEBHOOKS_UPDATE", function(data)
+        self:emit("webhooks_update", data)
+    end)
+
+    self.gateway:on_dispatch("INVITE_CREATE", function(data)
+        self:emit("invite_create", data)
+    end)
+
+    self.gateway:on_dispatch("INVITE_DELETE", function(data)
+        self:emit("invite_delete", data)
+    end)
+
     self.gateway:on_dispatch("INTERACTION_CREATE", function(data)
         self:emit("interaction_create", data)
     end)
@@ -190,8 +322,77 @@ function Client:start_gateway()
                     self.voice_states:update(vs)
                 end
             end
+            if data.members then
+                self.members:put_many(data.id, data.members)
+            end
+            if data.roles then
+                self.roles:put_many(data.id, data.roles)
+            end
         end
         self:emit("guild_create", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_MEMBER_ADD", function(data)
+        if data and data.guild_id then
+            self.members:put(data.guild_id, data)
+        end
+        self:emit("guild_member_add", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_MEMBER_UPDATE", function(data)
+        if data and data.guild_id then
+            local old_member = self.members:get(data.guild_id, data.user and data.user.id)
+            self.members:put(data.guild_id, data)
+            self:emit("guild_member_update", old_member, data)
+            return
+        end
+        self:emit("guild_member_update", nil, data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_MEMBER_REMOVE", function(data)
+        if data and data.guild_id and data.user and data.user.id then
+            self.members:remove(data.guild_id, data.user.id)
+        end
+        self:emit("guild_member_remove", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_MEMBERS_CHUNK", function(data)
+        if data and data.guild_id and data.members then
+            self.members:put_many(data.guild_id, data.members)
+        end
+        self:emit("guild_members_chunk", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_ROLE_CREATE", function(data)
+        if data and data.guild_id and data.role then
+            self.roles:put(data.guild_id, data.role)
+        end
+        self:emit("guild_role_create", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_ROLE_UPDATE", function(data)
+        if data and data.guild_id and data.role then
+            local old_role = self.roles:get(data.guild_id, data.role.id)
+            self.roles:put(data.guild_id, data.role)
+            self:emit("guild_role_update", old_role, data.role)
+            return
+        end
+        self:emit("guild_role_update", nil, data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_ROLE_DELETE", function(data)
+        if data and data.guild_id and data.role_id then
+            self.roles:remove(data.guild_id, data.role_id)
+        end
+        self:emit("guild_role_delete", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_BAN_ADD", function(data)
+        self:emit("guild_ban_add", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_BAN_REMOVE", function(data)
+        self:emit("guild_ban_remove", data)
     end)
 
     self.gateway:on_dispatch("CHANNEL_CREATE", function(data)
@@ -209,6 +410,43 @@ function Client:start_gateway()
             self.channels:remove(data.id)
         end
         self:emit("channel_delete", data)
+    end)
+
+    self.gateway:on_dispatch("THREAD_CREATE", function(data)
+        self.channels:put(data)
+        self:emit("thread_create", data)
+    end)
+
+    self.gateway:on_dispatch("THREAD_UPDATE", function(data)
+        if data and data.id then
+            local old_thread = self.channels:get(data.id)
+            self.channels:put(data)
+            self:emit("thread_update", old_thread, data)
+            return
+        end
+        self:emit("thread_update", nil, data)
+    end)
+
+    self.gateway:on_dispatch("THREAD_DELETE", function(data)
+        if data and data.id then
+            self.channels:remove(data.id)
+        end
+        self:emit("thread_delete", data)
+    end)
+
+    self.gateway:on_dispatch("THREAD_LIST_SYNC", function(data)
+        if data and data.threads then
+            self.channels:put_many(data.threads, data.guild_id)
+        end
+        self:emit("thread_list_sync", data)
+    end)
+
+    self.gateway:on_dispatch("THREAD_MEMBER_UPDATE", function(data)
+        self:emit("thread_member_update", data)
+    end)
+
+    self.gateway:on_dispatch("THREAD_MEMBERS_UPDATE", function(data)
+        self:emit("thread_members_update", data)
     end)
 
     self.gateway:start()

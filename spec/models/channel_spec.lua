@@ -260,4 +260,54 @@ describe("Channel", function()
             assert.is_nil(calls[1].target_users_file)
         end)
     end)
+
+    describe("Channel:create_thread", function()
+        it("errors when no http client is attached", function()
+            local channel = Channel.new({ id = "1", type = 1 })
+            assert.has_error(function()
+                channel:create_thread({ name = "help" })
+            end)
+        end)
+
+        it("errors when no name is given", function()
+            local channel = Channel.new({ id = "1", type = 1 }, nil, {})
+            assert.has_error(function()
+                channel:create_thread()
+            end)
+        end)
+
+        it("POSTs to the plain threads endpoint without a message id", function()
+            local calls = {}
+            local http = {
+                post = function(_self, endpoint, payload)
+                    table.insert(calls, { endpoint = endpoint, payload = payload })
+                    return { id = "t1", type = 15, name = payload.name, parent_id = "channel1" }
+                end,
+            }
+            local channel = Channel.new({ id = "channel1", type = 1 }, nil, http)
+
+            local thread = channel:create_thread({ name = "help" })
+
+            assert.equals("/channels/channel1/threads", calls[1].endpoint)
+            assert.equals("help", calls[1].payload.name)
+            assert.equals(15, calls[1].payload.type)
+            assert.equals("t1", thread.id)
+        end)
+
+        it("POSTs to the message threads endpoint when a message id is given", function()
+            local calls = {}
+            local http = {
+                post = function(_self, endpoint, payload)
+                    table.insert(calls, { endpoint = endpoint, payload = payload })
+                    return { id = "t1", type = 14, name = payload.name, parent_id = "channel1" }
+                end,
+            }
+            local channel = Channel.new({ id = "channel1", type = 1 }, nil, http)
+
+            channel:create_thread({ name = "help", message_id = "m1" })
+
+            assert.equals("/channels/channel1/messages/m1/threads", calls[1].endpoint)
+            assert.is_nil(calls[1].payload.type)
+        end)
+    end)
 end)

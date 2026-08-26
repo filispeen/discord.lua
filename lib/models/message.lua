@@ -33,9 +33,63 @@
 --     Message attachments.
 --
 --   Message:reactions -> table
---     Message reactions.
+--     Message reactions, array of Reaction instances (see reaction.lua).
+--
+--   Message:add_reaction(emoji) -> table
+--     PUT .../reactions/{emoji}/@me. emoji is a unicode emoji string, a
+--     "name:id" custom emoji string, or a table with .name/.id (as
+--     found on Reaction.emoji/gateway emoji payloads).
+--
+--   Message:remove_reaction(emoji, user_id?) -> table
+--     DELETE .../reactions/{emoji}/{user_id}, or .../reactions/{emoji}/@me
+--     when user_id is nil (mirrors pycord's remove_reaction/
+--     remove_own_reaction split).
+--
+--   Message:clear_reaction(emoji) -> table
+--     DELETE .../reactions/{emoji}. Removes every reaction for one emoji.
+--
+--   Message:clear_reactions() -> table
+--     DELETE .../reactions. Removes every reaction from the message.
+--
+--   Message:_add_reaction(data, own_user_id) -> Reaction
+--     Applies a MESSAGE_REACTION_ADD gateway payload to this message's
+--     local .reactions list in place (mirrors pycord's internal
+--     Message._add_reaction). Not wired automatically since discord.lua
+--     has no message cache; call this yourself on a Message instance
+--     you already hold if you want it to track its own reaction counts.
+--
+--   Message:_remove_reaction(data, own_user_id) -> Reaction or nil
+--     Applies a MESSAGE_REACTION_REMOVE gateway payload, dropping the
+--     Reaction once its count reaches 0.
+--
+--   Message:_clear_emoji(emoji) -> Reaction or nil
+--     Applies a MESSAGE_REACTION_REMOVE_EMOJI gateway payload, removing
+--     every reaction for that one emoji.
+--
+--   Message:_clear_reactions() -> table
+--     Applies a MESSAGE_REACTION_REMOVE_ALL gateway payload, clearing
+--     every reaction. Returns the previous reactions array.
+--
+--   Message:create_thread(opts) -> Thread
+--     opts.name (required), opts.auto_archive_duration,
+--     opts.slowmode_delay. POST /channels/{channel_id}/messages/{id}/threads,
+--     always creates a public thread (mirrors pycord's Message.create_thread()).
+--
+--   Message:poll -> Poll or nil
+--     Parsed Poll instance (see poll.lua) if this message has one,
+--     with self.message already wired for Poll:end_poll().
+--
+--   Message:end_poll() -> table
+--     POST /channels/{channel_id}/polls/{id}/expire. Errors if this
+--     message has no poll.
+--
+--   Message:get_poll_answer_voters(answer_id, opts?) -> table
+--     GET /channels/{channel_id}/polls/{id}/answers/{answer_id}.
+--     opts.limit / opts.after: standard pagination, both optional.
 
 local class = require("../core/class")
+local Reaction = require("./reaction")
+local Poll = require("./poll").Poll
 
 -- Message class
 local Message = class("Message")
@@ -58,7 +112,14 @@ function Message.new(data, http)
     self.mentions = data.mentions or {}
     self.attachments = data.attachments or {}
     self.embeds = data.embeds or {}
-    self.reactions = data.reactions or {}
+    self.reactions = {}
+    for _, reaction_data in ipairs(data.reactions or {}) do
+        table.insert(self.reactions, Reaction.new(reaction_data))
+    end
+
+    if data.poll then
+        self.poll = Poll.from_dict(data.poll, self)
+    end
     self.webhook_id = data.webhook_id or nil
     self.type = data.type or "DEFAULT"
 
@@ -121,6 +182,172 @@ function Message:delete()
         error("Message has no http client attached, cannot delete")
     end
     return self.http:delete("/channels/" .. self.channel_id .. "/messages/" .. self.id)
+end
+
+local function url_encode(str)
+    return (str:gsub("[^%w%-%._~:]", function(c)
+        return string.format("%%%02X", string.byte(c))
+    end))
+end
+
+-- Normalizes an emoji argument to Discord's reaction path segment
+-- format: "name" for unicode, "name:id" for custom. Accepts a raw
+-- string (stripping surrounding <> like pycord's convert_emoji_reaction),
+-- or a table with .name/.id (as found on Reaction.emoji/gateway payloads).
+local function normalize_emoji(emoji)
+    if type(emoji) == "table" then
+        if emoji.id then
+            return (emoji.name or "") .. ":" .. emoji.id
+        end
+        return tostring(emoji.name or emoji.emoji or emoji)
+    end
+    local s = tostring(emoji)
+    return (s:gsub("^<", ""):gsub(">$", ""))
+end
+
+-- Adds a reaction to this message.
+function Message:add_reaction(emoji)
+    if not self.http then
+        error("Message has no http client attached, cannot add_reaction")
+    end
+    local encoded = url_encode(normalize_emoji(emoji))
+    return self.http:put("/channels/" .. self.channel_id .. "/messages/" .. self.id ..
+        "/reactions/" .. encoded .. "/@me")
+end
+
+-- Removes a reaction from this message for the given user, or the bot
+-- itself when user_id is nil.
+function Message:remove_reaction(emoji, user_id)
+    if not self.http then
+        error("Message has no http client attached, cannot remove_reaction")
+    end
+    local encoded = url_encode(normalize_emoji(emoji))
+    local target = user_id or "@me"
+    return self.http:delete("/channels/" .. self.channel_id .. "/messages/" .. self.id ..
+        "/reactions/" .. encoded .. "/" .. target)
+end
+
+-- Removes every reaction for one emoji from this message.
+function Message:clear_reaction(emoji)
+    if not self.http then
+        error("Message has no http client attached, cannot clear_reaction")
+    end
+    local encoded = url_encode(normalize_emoji(emoji))
+    return self.http:delete("/channels/" .. self.channel_id .. "/messages/" .. self.id ..
+        "/reactions/" .. encoded)
+end
+
+-- Removes every reaction from this message.
+function Message:clear_reactions()
+    if not self.http then
+        error("Message has no http client attached, cannot clear_reactions")
+    end
+    return self.http:delete("/channels/" .. self.channel_id .. "/messages/" .. self.id ..
+        "/reactions")
+end
+
+function Message:_add_reaction(data, own_user_id)
+    local key = Reaction.key(data.emoji)
+    for _, r in ipairs(self.reactions) do
+        if r.emoji_key == key then
+            r.count = r.count + 1
+            if data.user_id == own_user_id then
+                r.me = true
+            end
+            return r
+        end
+    end
+    local reaction = Reaction.new({
+        emoji = data.emoji,
+        count = 1,
+        me = data.user_id == own_user_id,
+    })
+    table.insert(self.reactions, reaction)
+    return reaction
+end
+
+function Message:_remove_reaction(data, own_user_id)
+    local key = Reaction.key(data.emoji)
+    for i, r in ipairs(self.reactions) do
+        if r.emoji_key == key then
+            r.count = r.count - 1
+            if data.user_id == own_user_id then
+                r.me = false
+            end
+            if r.count <= 0 then
+                table.remove(self.reactions, i)
+            end
+            return r
+        end
+    end
+    return nil
+end
+
+function Message:_clear_emoji(emoji)
+    local key = Reaction.key(emoji)
+    for i, r in ipairs(self.reactions) do
+        if r.emoji_key == key then
+            table.remove(self.reactions, i)
+            return r
+        end
+    end
+    return nil
+end
+
+function Message:_clear_reactions()
+    local old = self.reactions
+    self.reactions = {}
+    return old
+end
+
+function Message:create_thread(opts)
+    opts = opts or {}
+    if not self.http then
+        error("Message has no http client attached, cannot create_thread", 0)
+    end
+    if not opts.name then
+        error("Message:create_thread() requires opts.name", 0)
+    end
+
+    local Thread = require("./thread")
+    local payload = {
+        name = opts.name,
+        auto_archive_duration = opts.auto_archive_duration or 1440,
+        rate_limit_per_user = opts.slowmode_delay or 0,
+    }
+
+    local endpoint = "/channels/" .. self.channel_id .. "/messages/" .. self.id .. "/threads"
+    local created = self.http:post(endpoint, payload)
+    return Thread.new(created, nil, self.http)
+end
+
+function Message:end_poll()
+    if not self.http then
+        error("Message has no http client attached, cannot end_poll", 0)
+    end
+    if not self.poll then
+        error("This message has no poll to end", 0)
+    end
+    return self.http:post("/channels/" .. self.channel_id .. "/polls/" .. self.id .. "/expire")
+end
+
+function Message:get_poll_answer_voters(answer_id, opts)
+    opts = opts or {}
+    if not self.http then
+        error("Message has no http client attached, cannot get_poll_answer_voters", 0)
+    end
+
+    local parts = {}
+    if opts.limit then
+        table.insert(parts, "limit=" .. tostring(opts.limit))
+    end
+    if opts.after then
+        table.insert(parts, "after=" .. tostring(opts.after))
+    end
+    local query = #parts > 0 and ("?" .. table.concat(parts, "&")) or ""
+
+    return self.http:get("/channels/" .. self.channel_id .. "/polls/" .. self.id ..
+        "/answers/" .. answer_id .. query)
 end
 
 return Message
