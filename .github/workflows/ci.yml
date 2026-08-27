@@ -101,6 +101,12 @@ jobs:
     name: Discord nitification
     runs-on: ubuntu-latest
     steps:
-      - uses: filispeen/discord-notifier@v1
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Send notification
+        uses: filispeen/discord-notifier@v1
         with:
           webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
