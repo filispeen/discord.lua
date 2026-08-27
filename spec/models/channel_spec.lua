@@ -310,4 +310,89 @@ describe("Channel", function()
             assert.is_nil(calls[1].payload.type)
         end)
     end)
+
+    describe("Channel:create_instance", function()
+        it("errors when no http client is attached", function()
+            local channel = Channel.new({ id = "1", type = 13 })
+            assert.has_error(function()
+                channel:create_instance({ topic = "General" })
+            end)
+        end)
+
+        it("errors when no topic is given", function()
+            local channel = Channel.new({ id = "1", type = 13 }, nil, {})
+            assert.has_error(function()
+                channel:create_instance()
+            end)
+        end)
+
+        it("POSTs to the stage-instances endpoint", function()
+            local calls = {}
+            local http = {
+                post = function(_self, endpoint, payload, opts)
+                    table.insert(calls, { endpoint = endpoint, payload = payload, opts = opts })
+                    return {
+                        id = "s1",
+                        channel_id = payload.channel_id,
+                        guild_id = "g1",
+                        topic = payload.topic,
+                        privacy_level = payload.privacy_level or 2,
+                    }
+                end,
+            }
+            local channel = Channel.new({ id = "channel1", type = 13 }, nil, http)
+
+            local instance = channel:create_instance({ topic = "General", reason = "starting" })
+
+            assert.equals("/stage-instances", calls[1].endpoint)
+            assert.equals("channel1", calls[1].payload.channel_id)
+            assert.equals("General", calls[1].payload.topic)
+            assert.is_false(calls[1].payload.send_start_notification)
+            assert.equals("starting", calls[1].opts.reason)
+            assert.equals("s1", instance.id)
+            assert.equals("General", instance.topic)
+        end)
+
+        it("passes through privacy_level and send_notification when given", function()
+            local calls = {}
+            local http = {
+                post = function(_self, endpoint, payload)
+                    table.insert(calls, { payload = payload })
+                    return { id = "s1", channel_id = payload.channel_id, topic = payload.topic }
+                end,
+            }
+            local channel = Channel.new({ id = "channel1", type = 13 }, nil, http)
+
+            channel:create_instance({ topic = "General", privacy_level = 1, send_notification = true })
+
+            assert.equals(1, calls[1].payload.privacy_level)
+            assert.is_true(calls[1].payload.send_start_notification)
+        end)
+    end)
+
+    describe("Channel:fetch_instance", function()
+        it("errors when no http client is attached", function()
+            local channel = Channel.new({ id = "1", type = 13 })
+            assert.has_error(function()
+                channel:fetch_instance()
+            end)
+        end)
+
+        it("GETs the stage-instances endpoint for this channel", function()
+            local calls = {}
+            local http = {
+                get = function(_self, endpoint)
+                    table.insert(calls, { endpoint = endpoint })
+                    return { id = "s1", channel_id = "channel1", guild_id = "g1", topic = "General", privacy_level = 2 }
+                end,
+            }
+            local channel = Channel.new({ id = "channel1", type = 13 }, nil, http)
+
+            local instance = channel:fetch_instance()
+
+            assert.equals("/stage-instances/channel1", calls[1].endpoint)
+            assert.equals("s1", instance.id)
+            assert.equals("General", instance.topic)
+        end)
+    end)
 end)

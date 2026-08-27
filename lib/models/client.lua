@@ -101,6 +101,33 @@ function Client:get(endpoint)
     return self.http:get(endpoint)
 end
 
+-- Fetches a guild Template from a discord.new URL or a bare code,
+-- mirrors pycord's Client.fetch_template(). code is accepted either
+-- as a plain code or a full "https://discord.new/{code}" (or
+-- "discord.gg/{code}", matching pycord's resolve_template regex,
+-- which is shared with resolve_invite) URL -- the discord.new/ prefix
+-- is stripped via the same pattern pycord's utils.resolve_template
+-- uses, otherwise the string is used as-is.
+function Client:fetch_template(code)
+    if not self.http then
+        error("Client:fetch_template called with no http client attached", 0)
+    end
+    if not code then
+        error("Client:fetch_template requires a code", 0)
+    end
+
+    local resolved = code:match("^https?://discord%.new/(.+)$")
+        or code:match("^discord%.new/(.+)$")
+        or code
+
+    local Route = require("../http/route")
+    local Template = require("./template")
+    local route = Route.new(self.http)
+
+    local data = route:get_template(resolved)
+    return Template.new(data, self.http)
+end
+
 -- Sends a voice state update (opcode 4) to join, move between, or leave
 -- a voice channel. channel_id = nil disconnects. Requires the gateway to
 -- be started (Client:start_gateway / Bot:run). This is the hook voice

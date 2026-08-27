@@ -316,4 +316,120 @@ function Route:edit_invite_target_users(invite_code, payload)
     return self.http:patch("/invites/" .. invite_code .. "/target-users", payload)
 end
 
+-- Scheduled events
+
+local function query_string(params)
+    local query = ""
+    if params then
+        local parts = {}
+        for key, value in pairs(params) do
+            table.insert(parts, key .. "=" .. tostring(value))
+        end
+        if #parts > 0 then
+            query = "?" .. table.concat(parts, "&")
+        end
+    end
+    return query
+end
+
+function Route:get_guild_scheduled_events(guild_id, with_user_count)
+    local query = query_string({ with_user_count = with_user_count and 1 or 0 })
+    return self.http:get("/guilds/" .. guild_id .. "/scheduled-events" .. query)
+end
+
+function Route:get_guild_scheduled_event(guild_id, event_id, with_user_count)
+    local query = query_string({ with_user_count = with_user_count and 1 or 0 })
+    return self.http:get("/guilds/" .. guild_id .. "/scheduled-events/" .. event_id .. query)
+end
+
+function Route:create_guild_scheduled_event(guild_id, payload, reason)
+    return self.http:post("/guilds/" .. guild_id .. "/scheduled-events", payload, opts_with_reason(reason))
+end
+
+-- AutoMod
+
+function Route:get_auto_moderation_rules(guild_id)
+    return self.http:get("/guilds/" .. guild_id .. "/auto-moderation/rules")
+end
+
+function Route:get_auto_moderation_rule(guild_id, rule_id)
+    return self.http:get("/guilds/" .. guild_id .. "/auto-moderation/rules/" .. rule_id)
+end
+
+function Route:create_auto_moderation_rule(guild_id, payload, reason)
+    return self.http:post("/guilds/" .. guild_id .. "/auto-moderation/rules", payload, opts_with_reason(reason))
+end
+
+-- Audit Log
+
+function Route:get_audit_logs(guild_id, params)
+    local query = query_string(params)
+    return self.http:get("/guilds/" .. guild_id .. "/audit-logs" .. query)
+end
+
+-- Stage Instances
+
+function Route:get_stage_instance(channel_id)
+    return self.http:get("/stage-instances/" .. channel_id)
+end
+
+function Route:create_stage_instance(payload, reason)
+    return self.http:post("/stage-instances", payload, opts_with_reason(reason))
+end
+
+function Route:edit_stage_instance(channel_id, payload, reason)
+    return self.http:patch("/stage-instances/" .. channel_id, payload, opts_with_reason(reason))
+end
+
+function Route:delete_stage_instance(channel_id, reason)
+    return self.http:delete("/stage-instances/" .. channel_id, opts_with_reason(reason))
+end
+
+-- Integrations
+
+function Route:get_all_integrations(guild_id)
+    return self.http:get("/guilds/" .. guild_id .. "/integrations")
+end
+
+function Route:edit_integration(guild_id, integration_id, payload)
+    return self.http:patch("/guilds/" .. guild_id .. "/integrations/" .. integration_id, payload)
+end
+
+function Route:sync_integration(guild_id, integration_id)
+    return self.http:post("/guilds/" .. guild_id .. "/integrations/" .. integration_id .. "/sync", {})
+end
+
+function Route:delete_integration(guild_id, integration_id, reason)
+    return self.http:delete(
+        "/guilds/" .. guild_id .. "/integrations/" .. integration_id,
+        opts_with_reason(reason)
+    )
+end
+
+-- Templates
+
+function Route:get_template(code)
+    return self.http:get("/guilds/templates/" .. code)
+end
+
+function Route:get_guild_templates(guild_id)
+    return self.http:get("/guilds/" .. guild_id .. "/templates")
+end
+
+function Route:create_template(guild_id, payload)
+    return self.http:post("/guilds/" .. guild_id .. "/templates", payload)
+end
+
+function Route:sync_template(guild_id, code)
+    return self.http:put("/guilds/" .. guild_id .. "/templates/" .. code, {})
+end
+
+function Route:edit_template(guild_id, code, payload)
+    return self.http:patch("/guilds/" .. guild_id .. "/templates/" .. code, payload)
+end
+
+function Route:delete_template(guild_id, code)
+    return self.http:delete("/guilds/" .. guild_id .. "/templates/" .. code)
+end
+
 return Route

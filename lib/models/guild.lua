@@ -56,6 +56,67 @@
 --     opts.emoji_id / opts.emoji_name: optional, mutually exclusive
 --     POST /guilds/{guild_id}/soundboard-sounds, mirrors pycord's
 --     Guild.create_sound().
+--
+--   guild:fetch_scheduled_events(with_user_count?) -> table of ScheduledEvent
+--     GET /guilds/{guild_id}/scheduled-events, mirrors pycord's
+--     Guild.fetch_scheduled_events(). with_user_count defaults to true.
+--
+--   guild:fetch_scheduled_event(event_id, with_user_count?) -> ScheduledEvent
+--     GET /guilds/{guild_id}/scheduled-events/{event_id}, mirrors
+--     pycord's Guild.fetch_scheduled_event(). with_user_count defaults
+--     to true.
+--
+--   guild:create_scheduled_event(opts) -> ScheduledEvent
+--     opts.name (required), opts.start_time (required, ISO 8601),
+--     opts.end_time, opts.description, opts.privacy_level (default 2 =
+--     guild_only), opts.reason, plus exactly one of:
+--       opts.channel_id (+ opts.entity_type, default 2 = voice)
+--       opts.location (sets entity_type=external + entity_metadata)
+--     POST /guilds/{guild_id}/scheduled-events, mirrors pycord's
+--     Guild.create_scheduled_event().
+--
+--   guild:fetch_automod_rules() -> table of AutoModRule
+--     GET /guilds/{guild_id}/auto-moderation/rules, mirrors pycord's
+--     Guild.fetch_auto_moderation_rules().
+--
+--   guild:fetch_automod_rule(rule_id) -> AutoModRule
+--     GET /guilds/{guild_id}/auto-moderation/rules/{rule_id}, mirrors
+--     pycord's Guild.fetch_auto_moderation_rule().
+--
+--   guild:create_automod_rule(opts) -> AutoModRule
+--     opts.name (required), opts.event_type (required, default 1 =
+--     message_send), opts.trigger_type (required),
+--     opts.trigger_metadata (AutoModTriggerMetadata, optional),
+--     opts.actions (required, array of AutoModAction), opts.enabled
+--     (default false), opts.exempt_role_ids, opts.exempt_channel_ids,
+--     opts.reason. POST /guilds/{guild_id}/auto-moderation/rules,
+--     mirrors pycord's Guild.create_auto_moderation_rule().
+--
+--   guild:fetch_audit_logs(opts?) -> table of AuditLogEntry
+--     GET /guilds/{guild_id}/audit-logs, mirrors pycord's
+--     Guild.audit_logs() (a paginated async iterator there; here just a
+--     single page). opts.limit (default 100), opts.before, opts.after,
+--     opts.user_id, opts.action_type all optional and map directly to
+--     the endpoint's query parameters. Returns only the
+--     audit_log_entries array wrapped as AuditLogEntry instances --
+--     the response envelope's users/threads/webhooks/integrations/
+--     guild_scheduled_events/application_commands side-load arrays are
+--     not exposed, since AuditLogEntry itself does not resolve ids into
+--     model instances (see lib/models/audit_log.lua for why).
+--
+--   guild:fetch_integrations() -> table of Integration/StreamIntegration/BotIntegration
+--     GET /guilds/{guild_id}/integrations, mirrors pycord's
+--     Guild.integrations(). Picks the concrete class per entry's "type"
+--     field the same way pycord's _integration_factory does (see
+--     lib/models/integration.lua's from_data).
+--
+--   guild:fetch_templates() -> table of Template
+--     GET /guilds/{guild_id}/templates, mirrors pycord's
+--     Guild.templates().
+--   guild:create_template(opts) -> Template
+--     POST /guilds/{guild_id}/templates. opts.name (required),
+--     opts.description (optional), mirrors pycord's
+--     Guild.create_template().
 
 local class = require("../core/class")
 
@@ -148,6 +209,240 @@ function Guild:create_sound(opts)
 
     local created = route:create_guild_sound(self.id, payload, opts.reason)
     return Sound.new(created, self.id, self.http)
+end
+
+function Guild:fetch_scheduled_events(with_user_count)
+    if not self.http then
+        error("Guild has no http client attached, cannot fetch scheduled events", 0)
+    end
+    if with_user_count == nil then
+        with_user_count = true
+    end
+
+    local Route = require("../http/route")
+    local ScheduledEvent = require("./scheduled_event")
+    local route = Route.new(self.http)
+
+    local raw_events = route:get_guild_scheduled_events(self.id, with_user_count)
+    local events = {}
+    for i, event_data in ipairs(raw_events or {}) do
+        events[i] = ScheduledEvent.new(event_data, self, self.http)
+    end
+    return events
+end
+
+function Guild:fetch_scheduled_event(event_id, with_user_count)
+    if not self.http then
+        error("Guild has no http client attached, cannot fetch a scheduled event", 0)
+    end
+    if with_user_count == nil then
+        with_user_count = true
+    end
+
+    local Route = require("../http/route")
+    local ScheduledEvent = require("./scheduled_event")
+    local route = Route.new(self.http)
+
+    local event_data = route:get_guild_scheduled_event(self.id, event_id, with_user_count)
+    return ScheduledEvent.new(event_data, self, self.http)
+end
+
+function Guild:create_scheduled_event(opts)
+    opts = opts or {}
+    if not self.http then
+        error("Guild has no http client attached, cannot create a scheduled event", 0)
+    end
+    if not opts.name then
+        error("Guild:create_scheduled_event requires opts.name", 0)
+    end
+    if not opts.start_time then
+        error("Guild:create_scheduled_event requires opts.start_time", 0)
+    end
+    if not opts.channel_id and not opts.location then
+        error("Guild:create_scheduled_event requires opts.channel_id or opts.location", 0)
+    end
+
+    local Route = require("../http/route")
+    local ScheduledEvent = require("./scheduled_event")
+    local route = Route.new(self.http)
+
+    local payload = {
+        name = opts.name,
+        scheduled_start_time = opts.start_time,
+        scheduled_end_time = opts.end_time,
+        description = opts.description,
+        privacy_level = opts.privacy_level or 2,
+    }
+
+    if opts.location then
+        payload.entity_type = 3
+        payload.entity_metadata = { location = opts.location }
+    else
+        payload.channel_id = opts.channel_id
+        payload.entity_type = opts.entity_type or 2
+    end
+
+    local created = route:create_guild_scheduled_event(self.id, payload, opts.reason)
+    return ScheduledEvent.new(created, self, self.http)
+end
+
+function Guild:fetch_automod_rules()
+    if not self.http then
+        error("Guild has no http client attached, cannot fetch automod rules", 0)
+    end
+
+    local Route = require("../http/route")
+    local AutoMod = require("./automod")
+    local route = Route.new(self.http)
+
+    local raw_rules = route:get_auto_moderation_rules(self.id)
+    local rules = {}
+    for i, rule_data in ipairs(raw_rules or {}) do
+        rules[i] = AutoMod.AutoModRule.new(rule_data, self, self.http)
+    end
+    return rules
+end
+
+function Guild:fetch_automod_rule(rule_id)
+    if not self.http then
+        error("Guild has no http client attached, cannot fetch an automod rule", 0)
+    end
+
+    local Route = require("../http/route")
+    local AutoMod = require("./automod")
+    local route = Route.new(self.http)
+
+    local rule_data = route:get_auto_moderation_rule(self.id, rule_id)
+    return AutoMod.AutoModRule.new(rule_data, self, self.http)
+end
+
+function Guild:create_automod_rule(opts)
+    opts = opts or {}
+    if not self.http then
+        error("Guild has no http client attached, cannot create an automod rule", 0)
+    end
+    if not opts.name then
+        error("Guild:create_automod_rule requires opts.name", 0)
+    end
+    if not opts.trigger_type then
+        error("Guild:create_automod_rule requires opts.trigger_type", 0)
+    end
+    if not opts.actions then
+        error("Guild:create_automod_rule requires opts.actions", 0)
+    end
+
+    local Route = require("../http/route")
+    local AutoMod = require("./automod")
+    local route = Route.new(self.http)
+
+    local actions = {}
+    for i, action in ipairs(opts.actions) do
+        actions[i] = action:to_dict()
+    end
+
+    local payload = {
+        name = opts.name,
+        event_type = opts.event_type or 1,
+        trigger_type = opts.trigger_type,
+        actions = actions,
+        enabled = opts.enabled or false,
+        exempt_roles = opts.exempt_role_ids,
+        exempt_channels = opts.exempt_channel_ids,
+    }
+    if opts.trigger_metadata then
+        payload.trigger_metadata = opts.trigger_metadata:to_dict()
+    end
+
+    local created = route:create_auto_moderation_rule(self.id, payload, opts.reason)
+    return AutoMod.AutoModRule.new(created, self, self.http)
+end
+
+function Guild:fetch_audit_logs(opts)
+    opts = opts or {}
+    if not self.http then
+        error("Guild has no http client attached, cannot fetch audit logs", 0)
+    end
+
+    local Route = require("../http/route")
+    local AuditLog = require("./audit_log")
+    local route = Route.new(self.http)
+
+    local params = { limit = opts.limit or 100 }
+    if opts.before ~= nil then
+        params.before = opts.before
+    end
+    if opts.after ~= nil then
+        params.after = opts.after
+    end
+    if opts.user_id ~= nil then
+        params.user_id = opts.user_id
+    end
+    if opts.action_type ~= nil then
+        params.action_type = opts.action_type
+    end
+
+    local response = route:get_audit_logs(self.id, params)
+    local entries = {}
+    for i, entry_data in ipairs((response and response.audit_log_entries) or {}) do
+        entries[i] = AuditLog.AuditLogEntry.new(entry_data, self, self.http)
+    end
+    return entries
+end
+
+function Guild:fetch_integrations()
+    if not self.http then
+        error("Guild has no http client attached, cannot fetch integrations", 0)
+    end
+
+    local Route = require("../http/route")
+    local Integration = require("./integration")
+    local route = Route.new(self.http)
+
+    local raw_integrations = route:get_all_integrations(self.id)
+    local integrations = {}
+    for i, integration_data in ipairs(raw_integrations or {}) do
+        integrations[i] = Integration.from_data(integration_data, self, self.http)
+    end
+    return integrations
+end
+
+function Guild:fetch_templates()
+    if not self.http then
+        error("Guild has no http client attached, cannot fetch templates", 0)
+    end
+
+    local Route = require("../http/route")
+    local Template = require("./template")
+    local route = Route.new(self.http)
+
+    local raw_templates = route:get_guild_templates(self.id)
+    local templates = {}
+    for i, template_data in ipairs(raw_templates or {}) do
+        templates[i] = Template.new(template_data, self.http)
+    end
+    return templates
+end
+
+function Guild:create_template(opts)
+    opts = opts or {}
+    if not self.http then
+        error("Guild has no http client attached, cannot create_template", 0)
+    end
+    if not opts.name then
+        error("Guild:create_template() requires opts.name", 0)
+    end
+
+    local Route = require("../http/route")
+    local Template = require("./template")
+    local route = Route.new(self.http)
+
+    local payload = { name = opts.name }
+    if opts.description then
+        payload.description = opts.description
+    end
+
+    local data = route:create_template(self.id, payload)
+    return Template.new(data, self.http)
 end
 
 return Guild

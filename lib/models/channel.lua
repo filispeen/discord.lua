@@ -67,6 +67,18 @@
 --     opts.auto_archive_duration, opts.slowmode_delay, opts.invitable,
 --     opts.reason. Mirrors pycord's TextChannel.create_thread(), picks
 --     between start_thread_with_message/start_thread_without_message.
+--
+--   channel:create_instance(opts) -> StageInstance
+--     opts.topic (required), opts.privacy_level (optional),
+--     opts.send_notification (optional boolean, maps to
+--     send_start_notification, default false), opts.reason. POST
+--     /stage-instances, mirrors pycord's StageChannel.create_instance().
+--     No channel-type check is enforced (same as create_thread above),
+--     intended for stage channels.
+--
+--   channel:fetch_instance() -> StageInstance
+--     GET /stage-instances/{id}, mirrors pycord's
+--     StageChannel.fetch_instance().
 
 local class = require("../core/class")
 
@@ -238,6 +250,45 @@ function Channel:create_thread(opts)
 
     local created = self.http:post(endpoint, payload)
     return Thread.new(created, self.guild, self.http)
+end
+
+function Channel:create_instance(opts)
+    opts = opts or {}
+    if not self.http then
+        error("Channel has no http client attached, cannot create_instance", 0)
+    end
+    if not opts.topic then
+        error("Channel:create_instance() requires opts.topic", 0)
+    end
+
+    local Route = require("../http/route")
+    local StageInstance = require("./stage_instance")
+    local route = Route.new(self.http)
+
+    local payload = {
+        channel_id = self.id,
+        topic = opts.topic,
+        send_start_notification = opts.send_notification or false,
+    }
+    if opts.privacy_level ~= nil then
+        payload.privacy_level = opts.privacy_level
+    end
+
+    local created = route:create_stage_instance(payload, opts.reason)
+    return StageInstance.new(created, self.guild, self.http)
+end
+
+function Channel:fetch_instance()
+    if not self.http then
+        error("Channel has no http client attached, cannot fetch_instance", 0)
+    end
+
+    local Route = require("../http/route")
+    local StageInstance = require("./stage_instance")
+    local route = Route.new(self.http)
+
+    local data = route:get_stage_instance(self.id)
+    return StageInstance.new(data, self.guild, self.http)
 end
 
 return Channel

@@ -121,3 +121,68 @@ describe("Client channel cache dispatch wiring", function()
         assert.is_nil(client.channels:get("channel3"))
     end)
 end)
+
+describe("Client:fetch_template", function()
+    local function fake_http()
+        local calls = {}
+        return {
+            calls = calls,
+            get = function(_self, endpoint)
+                table.insert(calls, { method = "GET", endpoint = endpoint })
+                return {
+                    code = "abc123",
+                    usage_count = 1,
+                    name = "Fetched",
+                    source_guild_id = "g1",
+                }
+            end,
+        }, calls
+    end
+
+    it("errors when no http client is attached", function()
+        local client = Client.new("token")
+        assert.has_error(function()
+            client:fetch_template("abc123")
+        end)
+    end)
+
+    it("errors when no code is given", function()
+        local client = Client.new("token")
+        client.http = (fake_http())
+        assert.has_error(function()
+            client:fetch_template(nil)
+        end)
+    end)
+
+    it("GETs the template endpoint with a bare code", function()
+        local client = Client.new("token")
+        local http, calls = fake_http()
+        client.http = http
+
+        local template = client:fetch_template("abc123")
+
+        assert.equals(1, #calls)
+        assert.equals("/guilds/templates/abc123", calls[1].endpoint)
+        assert.equals("Fetched", template.name)
+    end)
+
+    it("strips a discord.new URL down to the bare code", function()
+        local client = Client.new("token")
+        local http, calls = fake_http()
+        client.http = http
+
+        client:fetch_template("https://discord.new/abc123")
+
+        assert.equals("/guilds/templates/abc123", calls[1].endpoint)
+    end)
+
+    it("strips a bare discord.new/ prefix without a scheme", function()
+        local client = Client.new("token")
+        local http, calls = fake_http()
+        client.http = http
+
+        client:fetch_template("discord.new/abc123")
+
+        assert.equals("/guilds/templates/abc123", calls[1].endpoint)
+    end)
+end)
