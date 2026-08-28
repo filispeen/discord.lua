@@ -825,8 +825,11 @@ function VoiceClient:_start_playback()
             end
 
             -- Read next frame from source
-            local chunk = source:read()
+            local chunk, pending = source:read()
             if not chunk then
+                if pending == "pending" then
+                    return
+                end
                 -- Source finished, stop playback
                 stopped = true
                 self:stop()
