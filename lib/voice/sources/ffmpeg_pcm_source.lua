@@ -20,7 +20,9 @@ end
 
 function FFmpegPCMSource.new(source, opts)
     opts = opts or {}
-    if type(source) ~= "string" or source == "" then
+    if opts.pipe then
+        source = "pipe:0"
+    elseif type(source) ~= "string" or source == "" then
         error("FFmpegPCMSource requires a non-empty source string", 0)
     end
 
@@ -48,14 +50,16 @@ function FFmpegPCMSource.new(source, opts)
     append_args(args, opts.options)
     table.insert(args, "pipe:1")
 
+    local stdin = opts.pipe and luv.new_pipe(false) or nil
     local stdout = luv.new_pipe(false)
     local stderr = luv.new_pipe(false)
+    self._stdin = stdin
     self._stdout = stdout
     self._stderr_pipe = stderr
 
     local process, pid_or_err = luv.spawn(opts.executable or "ffmpeg", {
         args = args,
-        stdio = { nil, stdout, stderr },
+        stdio = { stdin, stdout, stderr },
     }, function(code, signal)
         self._running = false
         self._exit_code = code
@@ -67,6 +71,7 @@ function FFmpegPCMSource.new(source, opts)
     end)
 
     if not process then
+        if stdin and stdin.close then stdin:close() end
         if stdout.close then stdout:close() end
         if stderr.close then stderr:close() end
         error("FFmpegPCMSource failed to spawn " .. tostring(opts.executable or "ffmpeg") .. ": " .. tostring(pid_or_err), 0)
@@ -95,6 +100,24 @@ function FFmpegPCMSource.new(source, opts)
     end)
 
     return self
+end
+
+function FFmpegPCMSource:write(data, callback)
+    if not self._stdin then
+        return false, "FFmpegPCMSource was not created with pipe=true"
+    end
+    self._stdin:write(data, callback)
+    return true
+end
+
+function FFmpegPCMSource:close_input(callback)
+    if self._stdin and self._stdin.shutdown then
+        self._stdin:shutdown(callback)
+    end
+end
+
+function FFmpegPCMSource:is_opus()
+    return false
 end
 
 function FFmpegPCMSource:read()
@@ -128,6 +151,13 @@ function FFmpegPCMSource:cleanup()
             self._process:kill("sigterm")
         end)
         self._process = nil
+    end
+
+    if self._stdin then
+        pcall(function()
+            self._stdin:close()
+        end)
+        self._stdin = nil
     end
 
     if self._stdout then

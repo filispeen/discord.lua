@@ -16,6 +16,41 @@ local function interval_ms(opts)
     return total * 1000
 end
 
+local function parse_time(value)
+    local hour, minute, second
+    if type(value) == "string" then
+        hour, minute, second = value:match("^(%d%d?):(%d%d?):?(%d*)$")
+        hour, minute = tonumber(hour), tonumber(minute)
+        second = second == "" and 0 or tonumber(second)
+    elseif type(value) == "table" then
+        hour = value.hour
+        minute = value.minute or value.min
+        second = value.second or value.sec or 0
+    end
+    if type(hour) ~= "number" or type(minute) ~= "number" or type(second) ~= "number"
+        or hour % 1 ~= 0 or minute % 1 ~= 0 or second % 1 ~= 0
+        or hour < 0 or hour > 23 or minute < 0 or minute > 59 or second < 0 or second > 59
+    then
+        error("tasks.loop time must be HH:MM[:SS] or { hour, minute, second }", 0)
+    end
+    return hour * 3600 + minute * 60 + second
+end
+
+local function parse_times(value)
+    if type(value) == "string" or (type(value) == "table" and value.hour ~= nil) then
+        return { parse_time(value) }
+    end
+    if type(value) ~= "table" or #value == 0 then
+        error("tasks.loop time must be a time or non-empty list of times", 0)
+    end
+    local times = {}
+    for _, item in ipairs(value) do
+        times[#times + 1] = parse_time(item)
+    end
+    table.sort(times)
+    return times
+end
+
 function Loop.new(callback, opts)
     if type(callback) ~= "function" then
         error("tasks.loop requires a callback function", 0)
@@ -30,7 +65,21 @@ function Loop.new(callback, opts)
     self.callback = callback
     self.count = opts.count
     self.reconnect = opts.reconnect == true
-    self._interval = interval_ms(opts)
+    self._times = opts.time and parse_times(opts.time) or nil
+    if self._times then
+        self._interval = nil
+    else
+        self._interval = interval_ms(opts)
+    end
+    self._retry_exceptions = {}
+    if opts.retry_exceptions ~= nil then
+        if type(opts.retry_exceptions) ~= "table" then
+            error("tasks.loop retry_exceptions must be a table", 0)
+        end
+        for _, matcher in ipairs(opts.retry_exceptions) do
+            self._retry_exceptions[#self._retry_exceptions + 1] = matcher
+        end
+    end
     self._backoff = tonumber(opts.backoff) or 1
     self._max_backoff = tonumber(opts.max_backoff) or 300
     self._current_loop = 0
@@ -49,8 +98,76 @@ end
 
 function Loop:change_interval(opts)
     opts = opts or {}
-    self._interval = interval_ms(opts)
+    self._times = opts.time and parse_times(opts.time) or nil
+    if self._times then
+        self._interval = nil
+    else
+        self._interval = interval_ms(opts)
+    end
     return self
+end
+
+function Loop:add_exception_type(...)
+    local matchers = { ... }
+    if #matchers == 0 then
+        error("add_exception_type requires at least one matcher", 0)
+    end
+    for _, matcher in ipairs(matchers) do
+        if type(matcher) ~= "string" and type(matcher) ~= "function" and type(matcher) ~= "table" then
+            error("exception matcher must be a string, function, or table", 0)
+        end
+        self._retry_exceptions[#self._retry_exceptions + 1] = matcher
+    end
+    return self
+end
+
+function Loop:clear_exception_types()
+    self._retry_exceptions = {}
+    return self
+end
+
+function Loop:_matches_exception(err)
+    if #self._retry_exceptions == 0 then
+        return true
+    end
+    for _, matcher in ipairs(self._retry_exceptions) do
+        if type(matcher) == "string" and tostring(err):find(matcher, 1, true) then
+            return true
+        end
+        if type(matcher) == "table" and (err == matcher or getmetatable(err) == matcher) then
+            return true
+        end
+        if type(matcher) == "function" then
+            local ok, matched = pcall(matcher, err)
+            if ok and matched then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function Loop:_absolute_delay()
+    local now = os.time()
+    local date = os.date("*t", now)
+    local best
+    for _, seconds in ipairs(self._times) do
+        local target = os.time({
+            year = date.year,
+            month = date.month,
+            day = date.day,
+            hour = math.floor(seconds / 3600),
+            min = math.floor(seconds / 60) % 60,
+            sec = seconds % 60,
+        })
+        if target <= now then
+            target = target + 86400
+        end
+        if not best or target < best then
+            best = target
+        end
+    end
+    return (best - now) * 1000
 end
 
 function Loop:before_loop(callback)
@@ -143,7 +260,7 @@ function Loop:_run()
         if self._error then
             pcall(self._error, err)
         end
-        if not self.reconnect then
+        if not self.reconnect or not self:_matches_exception(err) then
             self:_finish()
             return
         end
@@ -162,7 +279,7 @@ function Loop:_run()
         return
     end
 
-    self:_schedule(self._interval)
+    self:_schedule(self._times and self:_absolute_delay() or self._interval)
 end
 
 function Loop:start(...)

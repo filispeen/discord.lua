@@ -144,7 +144,7 @@ local class = require("../core/class")
 -- Guild class
 local Guild = class("Guild")
 
-function Guild.new(data, http)
+function Guild.new(data, http, client)
     local self = {}
     setmetatable(self, {
         __index = Guild
@@ -183,6 +183,7 @@ function Guild.new(data, http)
     self.mfa_level = data.mfa_level or 1
 
     self.http = http
+    self.client = client
 
     return self
 end
@@ -406,9 +407,38 @@ function Guild:fetch_audit_logs(opts)
     local response = route:get_audit_logs(self.id, params)
     local entries = {}
     for i, entry_data in ipairs((response and response.audit_log_entries) or {}) do
-        entries[i] = AuditLog.AuditLogEntry.new(entry_data, self, self.http)
+        entries[i] = AuditLog.AuditLogEntry.new(entry_data, self, self.http, self.client)
     end
     return entries
+end
+
+function Guild:iter_audit_logs(opts)
+    opts = opts or {}
+    local Paginator = require("../core/paginator")
+    local AuditLog = require("./audit_log")
+    if not self.http then
+        error("Guild has no http client attached, cannot iterate audit logs", 0)
+    end
+    local route = require("../http/route").new(self.http)
+    return Paginator.new(function(page)
+        local params = {
+            limit = page.limit,
+            before = page.before,
+            after = opts.after,
+            user_id = opts.user_id,
+            action_type = opts.action_type,
+        }
+        local response = route:get_audit_logs(self.id, params)
+        local entries = {}
+        for i, entry_data in ipairs((response and response.audit_log_entries) or {}) do
+            entries[i] = AuditLog.AuditLogEntry.new(entry_data, self, self.http, self.client)
+        end
+        return entries
+    end, {
+        page_size = opts.page_size or 100,
+        limit = opts.limit,
+        before = opts.before,
+    }):iter()
 end
 
 function Guild:fetch_integrations()

@@ -59,15 +59,30 @@ local class = require("../core/class")
 local AuditLogChanges = class("AuditLogChanges")
 local AuditLogEntry = class("AuditLogEntry")
 
-local function role_stubs(list)
+local function resolve_role(data, client)
+    if client and client.roles and data and data.id then
+        local cached = client.roles:get(data.guild_id, data.id)
+        if cached then
+            return require("./role").new(cached)
+        end
+    end
+    return { id = data.id, name = data.name }
+end
+
+local function role_stubs(list, client, guild)
     local stubs = {}
     for _, role_data in ipairs(list or {}) do
-        table.insert(stubs, { id = role_data.id, name = role_data.name })
+        local data = role_data
+        if client and guild and client.roles then
+            data = client.roles:get(guild.id, role_data.id) or role_data
+            data.guild_id = guild.id
+        end
+        table.insert(stubs, resolve_role(data, client))
     end
     return stubs
 end
 
-function AuditLogChanges.new(changes_data)
+function AuditLogChanges.new(changes_data, client, guild)
     local self = {}
     setmetatable(self, { __index = AuditLogChanges })
 
@@ -80,12 +95,12 @@ function AuditLogChanges.new(changes_data)
             if self.before.roles == nil then
                 self.before.roles = {}
             end
-            self.after.roles = role_stubs(elem.new_value)
+            self.after.roles = role_stubs(elem.new_value, client, guild)
         elseif key == "$remove" then
             if self.after.roles == nil then
                 self.after.roles = {}
             end
-            self.before.roles = role_stubs(elem.new_value)
+            self.before.roles = role_stubs(elem.new_value, client, guild)
         else
             if elem.old_value ~= nil then
                 self.before[key] = elem.old_value
@@ -99,7 +114,7 @@ function AuditLogChanges.new(changes_data)
     return self
 end
 
-function AuditLogEntry.new(data, guild, http)
+function AuditLogEntry.new(data, guild, http, client)
     local self = {}
     setmetatable(self, { __index = AuditLogEntry })
 
@@ -110,7 +125,8 @@ function AuditLogEntry.new(data, guild, http)
     self.target_id = data.target_id
     self.reason = data.reason
     self.extra = data.options
-    self.changes = AuditLogChanges.new(data.changes)
+    self.client = client or (guild and guild.client)
+    self.changes = AuditLogChanges.new(data.changes, self.client, guild)
 
     self.guild = guild
     self.guild_id = data.guild_id or (guild and guild.id)

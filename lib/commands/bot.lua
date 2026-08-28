@@ -28,6 +28,7 @@ function Bot.new(token, ratelimiter, intents)
     self.command_descriptions = {}
     self.command_checks = {}
     self.cogs = {}
+    self.extensions = {}
     self.listeners = {}
     self.http = nil
     self.prefixes = {}
@@ -397,6 +398,100 @@ end
 
 function Bot:remove_cog(cog)
     self.cogs[cog.name] = nil
+end
+
+local function copy_table(value)
+    local copy = {}
+    for key, item in pairs(value) do
+        copy[key] = item
+    end
+    return copy
+end
+
+local function extension_snapshot(bot)
+    return {
+        commands = copy_table(bot.commands),
+        command_descriptions = copy_table(bot.command_descriptions),
+        command_checks = copy_table(bot.command_checks),
+        cogs = copy_table(bot.cogs),
+        listeners = copy_table(bot.listeners),
+        prefixes = copy_table(bot.prefixes),
+        application_commands = copy_table(bot.application_commands),
+        components = copy_table(bot.components),
+        interactions = copy_table(bot.interactions),
+        tree_commands = copy_table(bot.command_tree.commands),
+    }
+end
+
+local function restore_extension_snapshot(bot, snapshot)
+    bot.commands = snapshot.commands
+    bot.command_descriptions = snapshot.command_descriptions
+    bot.command_checks = snapshot.command_checks
+    bot.cogs = snapshot.cogs
+    bot.listeners = snapshot.listeners
+    bot.prefixes = snapshot.prefixes
+    bot.application_commands = snapshot.application_commands
+    bot.components = snapshot.components
+    bot.interactions = snapshot.interactions
+    bot.command_tree.commands = snapshot.tree_commands
+end
+
+function Bot:load_extension(name)
+    if type(name) ~= "string" or name == "" then
+        error("Bot:load_extension requires a module name", 0)
+    end
+    if self.extensions[name] then
+        error("Extension is already loaded: " .. name, 0)
+    end
+
+    local ok, extension = pcall(require, name)
+    if not ok then
+        error("Failed to load extension " .. name .. ": " .. tostring(extension), 0)
+    end
+    if type(extension) ~= "table" or type(extension.setup) ~= "function" then
+        package.loaded[name] = nil
+        error("Extension " .. name .. " must return a table with setup(bot)", 0)
+    end
+
+    local snapshot = extension_snapshot(self)
+    local setup_ok, cleanup = pcall(extension.setup, self)
+    if not setup_ok then
+        restore_extension_snapshot(self, snapshot)
+        package.loaded[name] = nil
+        error("Failed to set up extension " .. name .. ": " .. tostring(cleanup), 0)
+    end
+
+    self.extensions[name] = {
+        module = extension,
+        snapshot = snapshot,
+        cleanup = type(cleanup) == "function" and cleanup or nil,
+    }
+    return extension
+end
+
+function Bot:unload_extension(name)
+    local loaded = self.extensions[name]
+    if not loaded then
+        error("Extension is not loaded: " .. tostring(name), 0)
+    end
+
+    local teardown = loaded.module.teardown or loaded.cleanup
+    local ok, err = true, nil
+    if teardown then
+        ok, err = pcall(teardown, self)
+    end
+    restore_extension_snapshot(self, loaded.snapshot)
+    self.extensions[name] = nil
+    package.loaded[name] = nil
+    if not ok then
+        error("Failed to tear down extension " .. name .. ": " .. tostring(err), 0)
+    end
+    return true
+end
+
+function Bot:reload_extension(name)
+    self:unload_extension(name)
+    return self:load_extension(name)
 end
 
 function Bot:get_command(name)

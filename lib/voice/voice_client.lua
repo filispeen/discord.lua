@@ -750,12 +750,19 @@ function VoiceClient:send_audio_packet(data, encode)
             return false, udp_err
         end
     else
-        -- Send raw packet
+        local opus_packet = data
+        local dave_session = self.gateway and self.gateway.state and self.gateway.state.dave_session
+        if dave_session and dave_session:ready() then
+            local ciphertext, dave_err = dave_session:encrypt_opus(state.ssrc, opus_packet)
+            if not ciphertext then
+                return false, dave_err
+            end
+            opus_packet = ciphertext
+        end
         if not self.udp then
             return false, "UDP not connected"
         end
-
-        local success, err = self.udp:send(data)
+        local success, err = self.udp:send(opus_packet)
         if not success then
             return false, err
         end
@@ -840,7 +847,7 @@ function VoiceClient:_start_playback()
             -- false/err return (encoder not ready, DAVE encrypt
             -- failure, UDP not connected), not error(), so its result
             -- must be checked here or a failing send just goes quiet.
-            local send_ok, send_err = self:send_audio_packet(chunk, true)
+            local send_ok, send_err = self:send_audio_packet(chunk, not (source.is_opus and source:is_opus()))
             if not send_ok then
                 error("send_audio_packet failed: " .. tostring(send_err), 0)
             end

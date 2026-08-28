@@ -48,6 +48,10 @@ function AudioSource:is_playing()
     return true
 end
 
+function AudioSource:is_opus()
+    return false
+end
+
 function AudioSource:cleanup()
 end
 
