@@ -634,4 +634,77 @@ function Route:delete_template(guild_id, code)
     return self.http:delete("/guilds/" .. guild_id .. "/templates/" .. code)
 end
 
+function Route:get_current_application()
+    return self.http:get("/oauth2/applications/@me")
+end
+
+function Route:edit_current_application(payload)
+    return self.http:patch("/applications/@me", payload)
+end
+
+function Route:get_application(application_id)
+    return self.http:get("/applications/" .. application_id .. "/rpc")
+end
+
+function Route:get_application_role_connection_metadata(application_id)
+    return self.http:get("/applications/" .. application_id .. "/role-connections/metadata")
+end
+
+function Route:update_application_role_connection_metadata(application_id, payload)
+    return self.http:put("/applications/" .. application_id .. "/role-connections/metadata", payload)
+end
+
+function Route:get_skus(application_id)
+    return self.http:get("/applications/" .. application_id .. "/skus")
+end
+
+function Route:get_entitlements(application_id, params)
+    local parts = {}
+    for key, value in pairs(params or {}) do
+        if value ~= nil then
+            if type(value) == "table" then value = table.concat(value, ",") end
+            parts[#parts + 1] = key .. "=" .. tostring(value)
+        end
+    end
+    local suffix = #parts > 0 and "?" .. table.concat(parts, "&") or ""
+    return self.http:get("/applications/" .. application_id .. "/entitlements" .. suffix)
+end
+
+function Route:consume_entitlement(application_id, entitlement_id)
+    return self.http:post("/applications/" .. application_id .. "/entitlements/" .. entitlement_id .. "/consume")
+end
+
+function Route:create_test_entitlement(application_id, payload)
+    return self.http:post("/applications/" .. application_id .. "/entitlements", payload)
+end
+
+function Route:delete_test_entitlement(application_id, entitlement_id)
+    return self.http:delete("/applications/" .. application_id .. "/entitlements/" .. entitlement_id)
+end
+
+function Route:get_sku_subscriptions(sku_id, params)
+    local parts = {}
+    for key, value in pairs(params or {}) do
+        if value ~= nil then parts[#parts + 1] = key .. "=" .. tostring(value) end
+    end
+    local suffix = #parts > 0 and "?" .. table.concat(parts, "&") or ""
+    return self.http:get("/skus/" .. sku_id .. "/subscriptions" .. suffix)
+end
+
+function Route:get_subscription(sku_id, subscription_id)
+    return self.http:get("/skus/" .. sku_id .. "/subscriptions/" .. subscription_id)
+end
+
+function Route:get_onboarding(guild_id)
+    return self.http:get("/guilds/" .. guild_id .. "/onboarding")
+end
+
+function Route:edit_onboarding(guild_id, payload, reason)
+    return self.http:put("/guilds/" .. guild_id .. "/onboarding", payload, opts_with_reason(reason))
+end
+
+function Route:modify_guild_incident_actions(guild_id, payload, reason)
+    return self.http:put("/guilds/" .. guild_id .. "/incident-actions", payload, opts_with_reason(reason))
+end
+
 return Route

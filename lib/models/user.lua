@@ -47,6 +47,11 @@ function User.new(data)
     self.email = data.email or nil
     self.flags = data.flags or 0
     self.premium_type = data.premium_type or 0
+    self.global_name = data.global_name
+    self.accent_color = data.accent_color
+    self.banner = data.banner
+    self.primary_guild = data.primary_guild and require("./primary_guild").new(data.primary_guild) or nil
+    self.collectibles = data.collectibles and require("./collectibles").Collectibles.new(data.collectibles) or nil
 
     return self
 end

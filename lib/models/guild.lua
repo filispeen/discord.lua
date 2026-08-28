@@ -591,4 +591,46 @@ function Guild:fetch_active_threads()
     return data
 end
 
+function Guild:onboarding()
+    if not self.http then error("Guild has no http client attached, cannot fetch onboarding", 0) end
+    local Route = require("../http/route")
+    local Onboarding = require("./onboarding").Onboarding
+    return Onboarding.new(Route.new(self.http):get_onboarding(self.id), self, self.http)
+end
+
+function Guild:edit_onboarding(opts)
+    if not self.http then error("Guild has no http client attached, cannot edit onboarding", 0) end
+    opts = opts or {}
+    local payload = {}
+    if opts.prompts ~= nil then
+        payload.prompts = {}
+        for index, prompt in ipairs(opts.prompts) do
+            payload.prompts[index] = type(prompt.to_dict) == "function" and prompt:to_dict() or prompt
+        end
+    end
+    if opts.default_channel_ids ~= nil then payload.default_channel_ids = opts.default_channel_ids end
+    if opts.default_channels ~= nil then
+        payload.default_channel_ids = {}
+        for index, channel in ipairs(opts.default_channels) do
+            payload.default_channel_ids[index] = type(channel) == "table" and channel.id or channel
+        end
+    end
+    if opts.enabled ~= nil then payload.enabled = opts.enabled end
+    if opts.mode ~= nil then payload.mode = opts.mode end
+    local Route = require("../http/route")
+    local Onboarding = require("./onboarding").Onboarding
+    return Onboarding.new(Route.new(self.http):edit_onboarding(self.id, payload, opts.reason), self, self.http)
+end
+
+function Guild:modify_incident_actions(opts)
+    if not self.http then error("Guild has no http client attached, cannot modify incident actions", 0) end
+    opts = opts or {}
+    local payload = {}
+    if opts.invites_disabled_until ~= nil then payload.invites_disabled_until = opts.invites_disabled_until end
+    if opts.dms_disabled_until ~= nil then payload.dms_disabled_until = opts.dms_disabled_until end
+    local Route = require("../http/route")
+    local IncidentsData = require("./incidents")
+    return IncidentsData.new(Route.new(self.http):modify_guild_incident_actions(self.id, payload, opts.reason))
+end
+
 return Guild

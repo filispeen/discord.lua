@@ -91,6 +91,8 @@ function Client.new(token, ratelimiter, intents, opts)
         soundboard_sounds = {},
         emojis = {},
         stickers = {},
+        entitlements = {},
+        subscriptions = {},
         -- Initial presence sent with IDENTIFY, see Shard:dispatch's HELLO
         -- handling. Client:change_presence updates presence live once
         -- the gateway is already connected instead.
@@ -204,6 +206,81 @@ function Client:delete_application_emoji(emoji_id)
     if not self.http then error("Client has no http client attached, cannot delete application emoji", 0) end
     local Route = require("../http/route")
     return Route.new(self.http):delete_application_emoji(self:get_application_id(), emoji_id)
+end
+
+function Client:application_info()
+    if not self.http then error("Client has no http client attached, cannot fetch application info", 0) end
+    local Route = require("../http/route")
+    local AppInfo = require("./application").AppInfo
+    local data = Route.new(self.http):get_current_application()
+    self.application_id = data.id or self.application_id
+    return AppInfo.new(data, self.http)
+end
+
+function Client:fetch_application(application_id)
+    if not self.http then error("Client has no http client attached, cannot fetch application", 0) end
+    local Route = require("../http/route")
+    local AppInfo = require("./application").PartialAppInfo
+    return AppInfo.new(Route.new(self.http):get_application(application_id), self.http)
+end
+
+function Client:fetch_role_connection_metadata_records()
+    if not self.http then error("Client has no http client attached, cannot fetch role connection metadata", 0) end
+    local Route = require("../http/route")
+    local Metadata = require("./application_role_connection")
+    local data = Route.new(self.http):get_application_role_connection_metadata(self:get_application_id())
+    local records = {}
+    for index, item in ipairs(data or {}) do records[index] = Metadata.new(item) end
+    return records
+end
+
+function Client:update_role_connection_metadata_records(records)
+    if not self.http then error("Client has no http client attached, cannot update role connection metadata", 0) end
+    local payload = {}
+    for index, record in ipairs(records or {}) do
+        payload[index] = type(record.to_dict) == "function" and record:to_dict() or record
+    end
+    local Route = require("../http/route")
+    local Metadata = require("./application_role_connection")
+    local data = Route.new(self.http):update_application_role_connection_metadata(self:get_application_id(), payload)
+    local result = {}
+    for index, item in ipairs(data or {}) do result[index] = Metadata.new(item) end
+    return result
+end
+
+function Client:fetch_skus()
+    if not self.http then error("Client has no http client attached, cannot fetch SKUs", 0) end
+    local Route = require("../http/route")
+    local SKU = require("./monetization").SKU
+    local data = Route.new(self.http):get_skus(self:get_application_id())
+    local result = {}
+    for index, item in ipairs(data or {}) do result[index] = SKU.new(item, self.http) end
+    return result
+end
+
+function Client:fetch_entitlements(opts)
+    if not self.http then error("Client has no http client attached, cannot fetch entitlements", 0) end
+    local Route = require("../http/route")
+    local Entitlement = require("./monetization").Entitlement
+    local data = Route.new(self.http):get_entitlements(self:get_application_id(), opts)
+    local result = {}
+    for index, item in ipairs(data or {}) do result[index] = Entitlement.new(item, self.http) end
+    return result
+end
+
+function Client:create_test_entitlement(sku_id, owner_id, owner_type)
+    if not self.http then error("Client has no http client attached, cannot create test entitlement", 0) end
+    local Route = require("../http/route")
+    local Entitlement = require("./monetization").Entitlement
+    local payload = { sku_id = sku_id, owner_id = owner_id, owner_type = owner_type or 1 }
+    return Entitlement.new(Route.new(self.http):create_test_entitlement(self:get_application_id(), payload), self.http)
+end
+
+function Client:fetch_subscription(sku_id, subscription_id)
+    if not self.http then error("Client has no http client attached, cannot fetch subscription", 0) end
+    local Route = require("../http/route")
+    local Subscription = require("./monetization").Subscription
+    return Subscription.new(Route.new(self.http):get_subscription(sku_id, subscription_id), self.http)
 end
 
 -- Sends a voice state update (opcode 4) to join, move between, or leave
@@ -805,27 +882,47 @@ function Client:start_gateway()
     end)
 
     self.gateway:on_dispatch("ENTITLEMENT_CREATE", function(data)
-        self:emit("entitlement_create", data)
+        local Entitlement = require("./monetization").Entitlement
+        local entitlement = Entitlement.new(data, self.http)
+        self.entitlements[entitlement.id] = entitlement
+        self:emit("entitlement_create", entitlement)
     end)
 
     self.gateway:on_dispatch("ENTITLEMENT_UPDATE", function(data)
-        self:emit("entitlement_update", data)
+        local Entitlement = require("./monetization").Entitlement
+        local old_entitlement = data and self.entitlements[data.id] or nil
+        local entitlement = Entitlement.new(data, self.http)
+        self.entitlements[entitlement.id] = entitlement
+        self:emit("entitlement_update", old_entitlement, entitlement)
     end)
 
     self.gateway:on_dispatch("ENTITLEMENT_DELETE", function(data)
-        self:emit("entitlement_delete", data)
+        local Entitlement = require("./monetization").Entitlement
+        local entitlement = data and self.entitlements[data.id] or Entitlement.new(data, self.http)
+        if data then self.entitlements[data.id] = nil end
+        self:emit("entitlement_delete", entitlement)
     end)
 
     self.gateway:on_dispatch("SUBSCRIPTION_CREATE", function(data)
-        self:emit("subscription_create", data)
+        local Subscription = require("./monetization").Subscription
+        local subscription = Subscription.new(data, self.http)
+        self.subscriptions[subscription.id] = subscription
+        self:emit("subscription_create", subscription)
     end)
 
     self.gateway:on_dispatch("SUBSCRIPTION_UPDATE", function(data)
-        self:emit("subscription_update", data)
+        local Subscription = require("./monetization").Subscription
+        local old_subscription = data and self.subscriptions[data.id] or nil
+        local subscription = Subscription.new(data, self.http)
+        self.subscriptions[subscription.id] = subscription
+        self:emit("subscription_update", old_subscription, subscription)
     end)
 
     self.gateway:on_dispatch("SUBSCRIPTION_DELETE", function(data)
-        self:emit("subscription_delete", data)
+        local Subscription = require("./monetization").Subscription
+        local subscription = data and self.subscriptions[data.id] or Subscription.new(data, self.http)
+        if data then self.subscriptions[data.id] = nil end
+        self:emit("subscription_delete", subscription)
     end)
 
     self.gateway:on_dispatch("USER_UPDATE", function(data)
