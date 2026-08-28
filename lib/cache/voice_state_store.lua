@@ -77,4 +77,16 @@ function VoiceStateStore:get_channel_id(guild_id, user_id)
     return state and state.channel_id
 end
 
+function VoiceStateStore:remove_guild(guild_id)
+    if not guild_id then
+        return
+    end
+    local prefix = tostring(guild_id) .. ":"
+    for cache_key in pairs(self.cache.entries) do
+        if cache_key:sub(1, #prefix) == prefix then
+            self.cache.remove(cache_key)
+        end
+    end
+end
+
 return VoiceStateStore

@@ -62,4 +62,15 @@ function ChannelStore:remove(channel_id)
     self.cache.remove(channel_id)
 end
 
+function ChannelStore:remove_guild(guild_id)
+    if not guild_id then
+        return
+    end
+    for channel_id, entry in pairs(self.cache.entries) do
+        if entry.value.guild_id == guild_id then
+            self.cache.remove(channel_id)
+        end
+    end
+end
+
 return ChannelStore

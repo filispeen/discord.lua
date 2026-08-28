@@ -84,6 +84,9 @@ function Client.new(token, ratelimiter, intents, opts)
         channels = ChannelStore.new(),
         members = MemberStore.new(),
         roles = RoleStore.new(),
+        automod_rules = {},
+        stage_instances = {},
+        soundboard_sounds = {},
         -- Initial presence sent with IDENTIFY, see Shard:dispatch's HELLO
         -- handling. Client:change_presence updates presence live once
         -- the gateway is already connected instead.
@@ -433,6 +436,23 @@ function Client:start_gateway()
         self:emit("guild_create", data)
     end)
 
+    self.gateway:on_dispatch("GUILD_UPDATE", function(data)
+        self:emit("guild_update", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_DELETE", function(data)
+        if data and data.id then
+            self.channels:remove_guild(data.id)
+            self.members:remove_guild(data.id)
+            self.roles:remove_guild(data.id)
+            self.voice_states:remove_guild(data.id)
+            self.automod_rules[data.id] = nil
+            self.stage_instances[data.id] = nil
+            self.soundboard_sounds[data.id] = nil
+        end
+        self:emit("guild_delete", data)
+    end)
+
     self.gateway:on_dispatch("GUILD_MEMBER_ADD", function(data)
         if data and data.guild_id then
             self.members:put(data.guild_id, data)
@@ -548,6 +568,189 @@ function Client:start_gateway()
 
     self.gateway:on_dispatch("THREAD_MEMBERS_UPDATE", function(data)
         self:emit("thread_members_update", data)
+    end)
+
+    self.gateway:on_dispatch("CHANNEL_PINS_UPDATE", function(data)
+        self:emit("channel_pins_update", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_EMOJIS_UPDATE", function(data)
+        self:emit("guild_emojis_update", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_STICKERS_UPDATE", function(data)
+        self:emit("guild_stickers_update", data)
+    end)
+
+    self.gateway:on_dispatch("AUTO_MODERATION_RULE_CREATE", function(data)
+        local AutoModRule = require("./automod").AutoModRule
+        local rule = AutoModRule.new(data, nil, self.http)
+        if rule.guild_id and rule.id then
+            self.automod_rules[rule.guild_id] = self.automod_rules[rule.guild_id] or {}
+            self.automod_rules[rule.guild_id][rule.id] = rule
+        end
+        self:emit("automod_rule_create", rule)
+    end)
+
+    self.gateway:on_dispatch("AUTO_MODERATION_RULE_UPDATE", function(data)
+        local AutoModRule = require("./automod").AutoModRule
+        local old_rule = data and data.guild_id and data.id and self.automod_rules[data.guild_id]
+            and self.automod_rules[data.guild_id][data.id] or nil
+        local rule = AutoModRule.new(data, nil, self.http)
+        if rule.guild_id and rule.id then
+            self.automod_rules[rule.guild_id] = self.automod_rules[rule.guild_id] or {}
+            self.automod_rules[rule.guild_id][rule.id] = rule
+        end
+        self:emit("automod_rule_update", old_rule, rule)
+    end)
+
+    self.gateway:on_dispatch("AUTO_MODERATION_RULE_DELETE", function(data)
+        local AutoModRule = require("./automod").AutoModRule
+        local rule = data and data.guild_id and data.id and self.automod_rules[data.guild_id]
+            and self.automod_rules[data.guild_id][data.id] or AutoModRule.new(data, nil, self.http)
+        if data and data.guild_id and data.id and self.automod_rules[data.guild_id] then
+            self.automod_rules[data.guild_id][data.id] = nil
+        end
+        self:emit("automod_rule_delete", rule)
+    end)
+
+    self.gateway:on_dispatch("AUTO_MODERATION_ACTION_EXECUTION", function(data)
+        self:emit("automod_action_execution", data)
+    end)
+
+    self.gateway:on_dispatch("MESSAGE_POLL_VOTE_ADD", function(data)
+        self:emit("message_poll_vote_add", data)
+    end)
+
+    self.gateway:on_dispatch("MESSAGE_POLL_VOTE_REMOVE", function(data)
+        self:emit("message_poll_vote_remove", data)
+    end)
+
+    self.gateway:on_dispatch("STAGE_INSTANCE_CREATE", function(data)
+        local StageInstance = require("./stage_instance")
+        local instance = StageInstance.new(data, nil, self.http)
+        if instance.guild_id and instance.id then
+            self.stage_instances[instance.guild_id] = self.stage_instances[instance.guild_id] or {}
+            self.stage_instances[instance.guild_id][instance.id] = instance
+        end
+        self:emit("stage_instance_create", instance)
+    end)
+
+    self.gateway:on_dispatch("STAGE_INSTANCE_UPDATE", function(data)
+        local StageInstance = require("./stage_instance")
+        local old_instance = data and data.guild_id and data.id and self.stage_instances[data.guild_id]
+            and self.stage_instances[data.guild_id][data.id] or nil
+        local instance = StageInstance.new(data, nil, self.http)
+        if instance.guild_id and instance.id then
+            self.stage_instances[instance.guild_id] = self.stage_instances[instance.guild_id] or {}
+            self.stage_instances[instance.guild_id][instance.id] = instance
+        end
+        self:emit("stage_instance_update", old_instance, instance)
+    end)
+
+    self.gateway:on_dispatch("STAGE_INSTANCE_DELETE", function(data)
+        local StageInstance = require("./stage_instance")
+        local instance = data and data.guild_id and data.id and self.stage_instances[data.guild_id]
+            and self.stage_instances[data.guild_id][data.id] or StageInstance.new(data, nil, self.http)
+        if data and data.guild_id and data.id and self.stage_instances[data.guild_id] then
+            self.stage_instances[data.guild_id][data.id] = nil
+        end
+        self:emit("stage_instance_delete", instance)
+    end)
+
+    self.gateway:on_dispatch("GUILD_SOUNDBOARD_SOUND_CREATE", function(data)
+        local Sound = require("./sound")
+        local sound = Sound.new(data, data and data.guild_id, self.http)
+        if sound.guild_id and sound.id then
+            self.soundboard_sounds[sound.guild_id] = self.soundboard_sounds[sound.guild_id] or {}
+            self.soundboard_sounds[sound.guild_id][sound.id] = sound
+        end
+        self:emit("guild_soundboard_sound_create", sound)
+    end)
+
+    self.gateway:on_dispatch("GUILD_SOUNDBOARD_SOUND_UPDATE", function(data)
+        local Sound = require("./sound")
+        local old_sound = data and data.guild_id and (data.sound_id or data.id) and self.soundboard_sounds[data.guild_id]
+            and self.soundboard_sounds[data.guild_id][data.sound_id or data.id] or nil
+        local sound = Sound.new(data, data and data.guild_id, self.http)
+        if sound.guild_id and sound.id then
+            self.soundboard_sounds[sound.guild_id] = self.soundboard_sounds[sound.guild_id] or {}
+            self.soundboard_sounds[sound.guild_id][sound.id] = sound
+        end
+        self:emit("guild_soundboard_sound_update", old_sound, sound)
+    end)
+
+    self.gateway:on_dispatch("GUILD_SOUNDBOARD_SOUND_DELETE", function(data)
+        local Sound = require("./sound")
+        local sound_id = data and (data.sound_id or data.id)
+        local sound = data and data.guild_id and sound_id and self.soundboard_sounds[data.guild_id]
+            and self.soundboard_sounds[data.guild_id][sound_id] or Sound.new(data, data and data.guild_id, self.http)
+        if data and data.guild_id and sound_id and self.soundboard_sounds[data.guild_id] then
+            self.soundboard_sounds[data.guild_id][sound_id] = nil
+        end
+        self:emit("guild_soundboard_sound_delete", sound)
+    end)
+
+    self.gateway:on_dispatch("GUILD_SOUNDBOARD_SOUNDS_UPDATE", function(data)
+        local Sound = require("./sound")
+        if data and data.guild_id then
+            local sounds = {}
+            for _, sound_data in ipairs(data.soundboard_sounds or {}) do
+                local sound = Sound.new(sound_data, data.guild_id, self.http)
+                sounds[sound.id] = sound
+            end
+            self.soundboard_sounds[data.guild_id] = sounds
+        end
+        self:emit("guild_soundboard_sounds_update", data)
+    end)
+
+    self.gateway:on_dispatch("GUILD_AUDIT_LOG_ENTRY_CREATE", function(data)
+        local AuditLogEntry = require("./audit_log").AuditLogEntry
+        self:emit("audit_log_entry_create", AuditLogEntry.new(data, nil, self.http))
+    end)
+
+    self.gateway:on_dispatch("ENTITLEMENT_CREATE", function(data)
+        self:emit("entitlement_create", data)
+    end)
+
+    self.gateway:on_dispatch("ENTITLEMENT_UPDATE", function(data)
+        self:emit("entitlement_update", data)
+    end)
+
+    self.gateway:on_dispatch("ENTITLEMENT_DELETE", function(data)
+        self:emit("entitlement_delete", data)
+    end)
+
+    self.gateway:on_dispatch("SUBSCRIPTION_CREATE", function(data)
+        self:emit("subscription_create", data)
+    end)
+
+    self.gateway:on_dispatch("SUBSCRIPTION_UPDATE", function(data)
+        self:emit("subscription_update", data)
+    end)
+
+    self.gateway:on_dispatch("SUBSCRIPTION_DELETE", function(data)
+        self:emit("subscription_delete", data)
+    end)
+
+    self.gateway:on_dispatch("USER_UPDATE", function(data)
+        local User = require("./user")
+        local old_user = self.user
+        local user = User.new(data)
+        self.user = user
+        self:emit("user_update", old_user, user)
+    end)
+
+    self.gateway:on_dispatch("VOICE_CHANNEL_EFFECT_SEND", function(data)
+        self:emit("voice_channel_effect_send", data)
+    end)
+
+    self.gateway:on_dispatch("VOICE_CHANNEL_STATUS_UPDATE", function(data)
+        self:emit("voice_channel_status_update", data)
+    end)
+
+    self.gateway:on_dispatch("APPLICATION_COMMAND_PERMISSIONS_UPDATE", function(data)
+        self:emit("application_command_permissions_update", data)
     end)
 
     self.gateway:start()

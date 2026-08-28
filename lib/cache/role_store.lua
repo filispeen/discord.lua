@@ -94,4 +94,15 @@ function RoleStore:get_all(guild_id)
     return result
 end
 
+function RoleStore:remove_guild(guild_id)
+    local ids = self.by_guild[guild_id]
+    if not ids then
+        return
+    end
+    for role_id in pairs(ids) do
+        self.cache.remove(key(guild_id, role_id))
+    end
+    self.by_guild[guild_id] = nil
+end
+
 return RoleStore

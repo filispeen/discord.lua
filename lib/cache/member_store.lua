@@ -95,4 +95,15 @@ function MemberStore:get_all(guild_id)
     return result
 end
 
+function MemberStore:remove_guild(guild_id)
+    local ids = self.by_guild[guild_id]
+    if not ids then
+        return
+    end
+    for user_id in pairs(ids) do
+        self.cache.remove(key(guild_id, user_id))
+    end
+    self.by_guild[guild_id] = nil
+end
+
 return MemberStore
