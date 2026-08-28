@@ -137,6 +137,57 @@ function Message.new(data, http)
     return self
 end
 
+function Message:_copy()
+    local copy = {}
+    for key, value in pairs(self) do
+        if key == "reactions" then
+            copy.reactions = {}
+            for index, reaction in ipairs(value) do
+                local reaction_copy = {}
+                for reaction_key, reaction_value in pairs(reaction) do
+                    reaction_copy[reaction_key] = reaction_value
+                end
+                setmetatable(reaction_copy, getmetatable(reaction))
+                copy.reactions[index] = reaction_copy
+            end
+        elseif key == "poll" and value then
+            copy.poll = Poll.from_dict(value:to_dict(), copy)
+        else
+            copy[key] = value
+        end
+    end
+    return setmetatable(copy, getmetatable(self))
+end
+
+function Message:_update(data)
+    data = data or {}
+    local fields = {
+        "id", "author", "content", "channel_id", "guild_id", "mention_everyone",
+        "tts", "mention_roles", "mention_channels", "mentions", "attachments",
+        "embeds", "webhook_id", "type", "timestamp", "edited_timestamp", "pinned",
+        "mention", "role_mentions",
+    }
+    for _, field in ipairs(fields) do
+        if data[field] ~= nil then
+            if field == "timestamp" or field == "edited_timestamp" then
+                self[field] = tonumber(data[field])
+            else
+                self[field] = data[field]
+            end
+        end
+    end
+    if data.reactions ~= nil then
+        self.reactions = {}
+        for _, reaction_data in ipairs(data.reactions) do
+            table.insert(self.reactions, Reaction.new(reaction_data))
+        end
+    end
+    if data.poll ~= nil then
+        self.poll = Poll.from_dict(data.poll, self)
+    end
+    return self
+end
+
 -- Check if message mentions a specific user
 function Message:mentions_user(user_id)
     for _, m in ipairs(self.mentions or {}) do

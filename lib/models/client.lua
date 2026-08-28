@@ -63,6 +63,7 @@ function Client.new(token, ratelimiter, intents, opts)
     local ChannelStore = require("../cache/channel_store")
     local MemberStore = require("../cache/member_store")
     local RoleStore = require("../cache/role_store")
+    local MessageStore = require("../cache/message_store")
     opts = opts or {}
 
     if opts.activity ~= nil and type(opts.activity.to_dict) ~= "function" then
@@ -84,6 +85,7 @@ function Client.new(token, ratelimiter, intents, opts)
         channels = ChannelStore.new(),
         members = MemberStore.new(),
         roles = RoleStore.new(),
+        messages = MessageStore.new(),
         automod_rules = {},
         stage_instances = {},
         soundboard_sounds = {},
@@ -253,6 +255,10 @@ function Client:get_guild_roles(guild_id)
     return self.roles:get_all(guild_id)
 end
 
+function Client:get_cached_message(channel_id, message_id)
+    return self.messages:get(channel_id, message_id)
+end
+
 -- Create HTTP client
 function Client:_create_http()
     local ratelimiter = require("../http/ratelimiter")
@@ -297,35 +303,68 @@ function Client:start_gateway()
 
     self.gateway:on_dispatch("MESSAGE_CREATE", function(data)
         local Message = require("./message")
-        self:emit("message_create", Message.new(data, self.http))
+        local message = Message.new(data, self.http)
+        self.messages:put(message)
+        self:emit("message_create", message)
     end)
 
     self.gateway:on_dispatch("MESSAGE_UPDATE", function(data)
+        local message = data and self.messages:get(data.channel_id, data.id)
+        if message then
+            local old_message = message:_copy()
+            message:_update(data)
+            self:emit("message_update", old_message, message)
+            return
+        end
         local Message = require("./message")
-        self:emit("message_update", Message.new(data, self.http))
+        local new_message = Message.new(data, self.http)
+        self.messages:put(new_message)
+        self:emit("message_update", nil, new_message)
     end)
 
     self.gateway:on_dispatch("MESSAGE_DELETE", function(data)
+        if data then
+            self.messages:remove(data.channel_id, data.id)
+        end
         self:emit("message_delete", data)
     end)
 
     self.gateway:on_dispatch("MESSAGE_DELETE_BULK", function(data)
+        if data then
+            self.messages:remove_many(data.channel_id, data.ids)
+        end
         self:emit("message_delete_bulk", data)
     end)
 
     self.gateway:on_dispatch("MESSAGE_REACTION_ADD", function(data)
+        local message = data and self.messages:get(data.channel_id, data.message_id)
+        if message then
+            message:_add_reaction(data, self.user and self.user.id)
+        end
         self:emit("message_reaction_add", data)
     end)
 
     self.gateway:on_dispatch("MESSAGE_REACTION_REMOVE", function(data)
+        local message = data and self.messages:get(data.channel_id, data.message_id)
+        if message then
+            message:_remove_reaction(data, self.user and self.user.id)
+        end
         self:emit("message_reaction_remove", data)
     end)
 
     self.gateway:on_dispatch("MESSAGE_REACTION_REMOVE_ALL", function(data)
+        local message = data and self.messages:get(data.channel_id, data.message_id)
+        if message then
+            message:_clear_reactions()
+        end
         self:emit("message_reaction_remove_all", data)
     end)
 
     self.gateway:on_dispatch("MESSAGE_REACTION_REMOVE_EMOJI", function(data)
+        local message = data and self.messages:get(data.channel_id, data.message_id)
+        if message then
+            message:_clear_emoji(data.emoji)
+        end
         self:emit("message_reaction_remove_emoji", data)
     end)
 
@@ -619,10 +658,18 @@ function Client:start_gateway()
     end)
 
     self.gateway:on_dispatch("MESSAGE_POLL_VOTE_ADD", function(data)
+        local message = data and self.messages:get(data.channel_id, data.message_id)
+        if message and message.poll then
+            message.poll:_add_vote(data.answer_id, data.user_id, self.user and self.user.id)
+        end
         self:emit("message_poll_vote_add", data)
     end)
 
     self.gateway:on_dispatch("MESSAGE_POLL_VOTE_REMOVE", function(data)
+        local message = data and self.messages:get(data.channel_id, data.message_id)
+        if message and message.poll then
+            message.poll:_remove_vote(data.answer_id, data.user_id, self.user and self.user.id)
+        end
         self:emit("message_poll_vote_remove", data)
     end)
 

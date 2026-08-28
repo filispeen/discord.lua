@@ -238,6 +238,46 @@ function Poll:get_answer(id)
     return nil
 end
 
+function Poll:_add_vote(answer_id, user_id, own_user_id)
+    if not self.results then
+        self.results = PollResults.new({})
+    end
+    local answer_count
+    for _, entry in ipairs(self.results.answer_counts) do
+        if entry.id == answer_id then
+            answer_count = entry
+            break
+        end
+    end
+    if not answer_count then
+        answer_count = PollAnswerCount.new({ id = answer_id, count = 0 })
+        table.insert(self.results.answer_counts, answer_count)
+    end
+    answer_count.count = answer_count.count + 1
+    if user_id == own_user_id then
+        answer_count.me = true
+    end
+    return answer_count
+end
+
+function Poll:_remove_vote(answer_id, user_id, own_user_id)
+    if not self.results then
+        return nil
+    end
+    for _, entry in ipairs(self.results.answer_counts) do
+        if entry.id == answer_id then
+            if entry.count > 0 then
+                entry.count = entry.count - 1
+            end
+            if user_id == own_user_id then
+                entry.me = false
+            end
+            return entry
+        end
+    end
+    return nil
+end
+
 function Poll:has_ended()
     if not self.results then
         return nil

@@ -325,4 +325,74 @@ describe("Client remaining gateway dispatch wiring", function()
         assert.is_nil(client.stage_instances.guild1)
         assert.is_nil(client.soundboard_sounds.guild1)
     end)
+
+    it("caches messages and emits old and new models on update", function()
+        local client, handlers = make_client_with_fake_gateway()
+        local old_message, new_message
+        client:on("message_update", function(old, new)
+            old_message, new_message = old, new
+        end)
+
+        handlers["MESSAGE_CREATE"]({ id = "message1", channel_id = "channel1", content = "before" })
+        handlers["MESSAGE_UPDATE"]({ id = "message1", channel_id = "channel1", content = "after" })
+
+        assert.equals("before", old_message.content)
+        assert.equals("after", new_message.content)
+        assert.equals(new_message, client.messages:get("channel1", "message1"))
+        assert.equals(new_message, client:get_cached_message("channel1", "message1"))
+    end)
+
+    it("keeps cached reactions synchronized with gateway events", function()
+        local client, handlers = make_client_with_fake_gateway()
+        client.user = { id = "bot1" }
+        handlers["MESSAGE_CREATE"]({ id = "message1", channel_id = "channel1" })
+
+        handlers["MESSAGE_REACTION_ADD"]({
+            message_id = "message1", channel_id = "channel1", user_id = "bot1", emoji = { name = "🔥" },
+        })
+        local message = client.messages:get("channel1", "message1")
+        assert.equals(1, message.reactions[1].count)
+        assert.is_true(message.reactions[1].me)
+
+        handlers["MESSAGE_REACTION_REMOVE"]({
+            message_id = "message1", channel_id = "channel1", user_id = "bot1", emoji = { name = "🔥" },
+        })
+        assert.equals(0, #message.reactions)
+    end)
+
+    it("keeps cached poll vote counts synchronized with gateway events", function()
+        local client, handlers = make_client_with_fake_gateway()
+        client.user = { id = "bot1" }
+        handlers["MESSAGE_CREATE"]({
+            id = "message1", channel_id = "channel1",
+            poll = {
+                question = { text = "Q" },
+                answers = { { answer_id = 1, poll_media = { text = "A" } } },
+                results = { is_finalized = false, answer_counts = { { id = 1, count = 0 } } },
+            },
+        })
+
+        handlers["MESSAGE_POLL_VOTE_ADD"]({ message_id = "message1", channel_id = "channel1", user_id = "bot1", answer_id = 1 })
+        local poll = client.messages:get("channel1", "message1").poll
+        assert.equals(1, poll.results.answer_counts[1].count)
+        assert.is_true(poll.results.answer_counts[1].me)
+
+        handlers["MESSAGE_POLL_VOTE_REMOVE"]({ message_id = "message1", channel_id = "channel1", user_id = "bot1", answer_id = 1 })
+        assert.equals(0, poll.results.answer_counts[1].count)
+        assert.is_false(poll.results.answer_counts[1].me)
+    end)
+
+    it("invalidates cached messages on single and bulk delete", function()
+        local client, handlers = make_client_with_fake_gateway()
+        handlers["MESSAGE_CREATE"]({ id = "message1", channel_id = "channel1" })
+        handlers["MESSAGE_CREATE"]({ id = "message2", channel_id = "channel1" })
+        handlers["MESSAGE_CREATE"]({ id = "message3", channel_id = "channel1" })
+
+        handlers["MESSAGE_DELETE"]({ id = "message1", channel_id = "channel1" })
+        handlers["MESSAGE_DELETE_BULK"]({ ids = { "message2", "message3" }, channel_id = "channel1" })
+
+        assert.is_nil(client.messages:get("channel1", "message1"))
+        assert.is_nil(client.messages:get("channel1", "message2"))
+        assert.is_nil(client.messages:get("channel1", "message3"))
+    end)
 end)
