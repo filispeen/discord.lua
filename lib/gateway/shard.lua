@@ -17,6 +17,11 @@
 --   Shard:send_heartbeat() -> nil
 --     Sends a heartbeat.
 --
+--   Shard:change_presence(status, activity_payload, since?) -> self
+--     Sends a presence update (opcode 3). activity_payload is a plain
+--     dict (an Activity/Game/Streaming/CustomActivity :to_dict()
+--     result), or nil to clear the activity.
+--
 --   Shard:on_ready(callback) -> self
 --     Listen for READY event.
 --
@@ -174,6 +179,37 @@ function Shard:voice_state_update(guild_id, channel_id, self_mute, self_deaf)
     return self
 end
 
+-- Send a presence update (opcode 3). activity_payload should already be
+-- a plain dict (the result of an Activity/Game/Streaming/CustomActivity
+-- :to_dict() call), not a class instance -- callers going through
+-- Client:change_presence/ShardManager:change_presence have already
+-- done that conversion once so it is not repeated per shard.
+-- activity_payload = nil clears the current activity. Discord expects
+-- the wire value "invisible" for what pycord calls Status.offline;
+-- that string mapping is done by the caller (Client:change_presence),
+-- this method just forwards whatever status string it is given.
+function Shard:change_presence(status, activity_payload, since)
+    local activities = {}
+    if activity_payload then
+        activities[1] = activity_payload
+    end
+
+    if status == "idle" and not since then
+        since = math.floor(os.time() * 1000)
+    end
+
+    self:send({
+        op = opcodes.PRESENCE_UPDATE,
+        d = {
+            activities = activities,
+            afk = false,
+            since = since or 0,
+            status = status or "online",
+        },
+    })
+    return self
+end
+
 -- Send heartbeat
 function Shard:send_heartbeat()
     local heartbeat = { op = opcodes.HEARTBEAT, d = { seq = self._state.seq } }
@@ -233,6 +269,26 @@ function Shard:dispatch(event)
 
             if self.total_shards and self.total_shards > 1 then
                 identify_data.shard = { self.shard_id, self.total_shards }
+            end
+
+            -- Initial presence set via Client.new's opts.status/opts.activity
+            -- (see Client:change_presence for the live-update equivalent
+            -- after the gateway is already connected). Uses "activities"
+            -- (a list), matching Discord's current Update Presence gateway
+            -- doc shape used by change_presence below, rather than
+            -- pycord's older singular "game" key in its own IDENTIFY
+            -- presence block.
+            if self.client._initial_status or self.client._initial_activity then
+                local activity_payload = nil
+                if self.client._initial_activity then
+                    activity_payload = self.client._initial_activity:to_dict()
+                end
+                identify_data.presence = {
+                    status = self.client._initial_status or "online",
+                    activities = activity_payload and { activity_payload } or {},
+                    since = 0,
+                    afk = false,
+                }
             end
 
             self:identify(identify_data)

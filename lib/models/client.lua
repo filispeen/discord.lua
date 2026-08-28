@@ -2,8 +2,16 @@
 -- Main client model for Discord.lua
 --
 -- Public Contract:
---   Client.new(token, ratelimiter) -> Client
---     Creates a new Discord client.
+--   Client.new(token, ratelimiter, intents?, opts?) -> Client
+--     Creates a new Discord client. opts.status/opts.activity set the
+--     initial presence sent with IDENTIFY (see Shard:dispatch's HELLO
+--     handling); opts.activity must be a Game/Streaming/Activity/
+--     CustomActivity instance from lib/models/activity.lua. Use
+--     Client:change_presence to update presence after connecting.
+--
+--   Client:change_presence(opts) -> boolean, string?
+--     Updates the live presence (status/activity) through the gateway,
+--     see the method's own doc comment below for opts fields.
 --
 --   Client:http -> table
 --     HTTP client instance.
@@ -49,12 +57,18 @@ local class = require("../core/class")
 -- Client class
 local Client = class("Client")
 
-function Client.new(token, ratelimiter, intents)
+function Client.new(token, ratelimiter, intents, opts)
     local enums = require("../core/enums")
     local VoiceStateStore = require("../cache/voice_state_store")
     local ChannelStore = require("../cache/channel_store")
     local MemberStore = require("../cache/member_store")
     local RoleStore = require("../cache/role_store")
+    opts = opts or {}
+
+    if opts.activity ~= nil and type(opts.activity.to_dict) ~= "function" then
+        error("Client.new opts.activity must be a BaseActivity (Game/Streaming/Activity/CustomActivity) with a to_dict method", 0)
+    end
+
     local self = {
         token = token,
         ratelimiter = ratelimiter or {},
@@ -70,6 +84,11 @@ function Client.new(token, ratelimiter, intents)
         channels = ChannelStore.new(),
         members = MemberStore.new(),
         roles = RoleStore.new(),
+        -- Initial presence sent with IDENTIFY, see Shard:dispatch's HELLO
+        -- handling. Client:change_presence updates presence live once
+        -- the gateway is already connected instead.
+        _initial_status = opts.status,
+        _initial_activity = opts.activity,
     }
     setmetatable(self, {
         __index = Client
@@ -128,6 +147,28 @@ function Client:fetch_template(code)
     return Template.new(data, self.http)
 end
 
+-- Fetches a guild Widget by guild_id, mirrors pycord's
+-- Client.fetch_widget(). Same Client-level HTTP-fetch style as
+-- Client:fetch_template above -- a widget is fetched by guild_id
+-- directly, no guild instance required (the widget.json endpoint is
+-- public and needs no auth, but this project's http client always
+-- signs requests the same way regardless, same as get_invite).
+function Client:fetch_widget(guild_id)
+    if not self.http then
+        error("Client:fetch_widget called with no http client attached", 0)
+    end
+    if not guild_id then
+        error("Client:fetch_widget requires a guild_id", 0)
+    end
+
+    local Route = require("../http/route")
+    local WidgetModule = require("./widget")
+    local route = Route.new(self.http)
+
+    local data = route:get_widget(guild_id)
+    return WidgetModule.Widget.new(data, self.http)
+end
+
 -- Sends a voice state update (opcode 4) to join, move between, or leave
 -- a voice channel. channel_id = nil disconnects. Requires the gateway to
 -- be started (Client:start_gateway / Bot:run). This is the hook voice
@@ -137,6 +178,39 @@ function Client:voice_state_update(guild_id, channel_id, self_mute, self_deaf)
         error("Client:voice_state_update called before start_gateway()", 0)
     end
     return self.gateway:voice_state_update(guild_id, channel_id, self_mute, self_deaf)
+end
+
+-- Changes the client's live presence (status + activity), mirrors
+-- pycord's Client.change_presence / AutoShardedClient.change_presence.
+-- opts.status: status string ("online"/"idle"/"dnd"/"invisible"/
+--   "offline"), defaults to "online" when nil. "offline" is remapped
+--   to the wire value "invisible" same as pycord's Status.offline ->
+--   "invisible" (Discord's gateway only accepts "invisible" from
+--   clients, "offline" is only ever a received/displayed value).
+-- opts.activity: a Game/Streaming/Activity/CustomActivity instance
+--   (see lib/models/activity.lua), or nil to clear the current
+--   activity.
+-- opts.shard_id: update only that shard's presence instead of every
+--   shard the gateway manages (same shard_id parameter pycord's
+--   AutoShardedClient.change_presence exposes).
+-- Requires the gateway to already be started (Client:start_gateway /
+-- Bot:run), same requirement as Client:voice_state_update. For the
+-- presence a bot connects with initially, pass opts.status/opts.activity
+-- to Client.new instead (sent as part of IDENTIFY, see shard.lua).
+function Client:change_presence(opts)
+    opts = opts or {}
+    if not self.gateway then
+        error("Client:change_presence called before start_gateway()", 0)
+    end
+
+    local status = opts.status
+    if status == nil then
+        status = "online"
+    elseif status == "offline" then
+        status = "invisible"
+    end
+
+    return self.gateway:change_presence(status, opts.activity, opts.shard_id)
 end
 
 -- Returns the last known voice state for a member in a guild, built

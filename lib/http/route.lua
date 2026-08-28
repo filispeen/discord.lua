@@ -367,6 +367,26 @@ function Route:get_audit_logs(guild_id, params)
     return self.http:get("/guilds/" .. guild_id .. "/audit-logs" .. query)
 end
 
+-- Welcome Screen
+
+function Route:get_welcome_screen(guild_id)
+    return self.http:get("/guilds/" .. guild_id .. "/welcome-screen")
+end
+
+function Route:edit_welcome_screen(guild_id, payload, reason)
+    return self.http:patch("/guilds/" .. guild_id .. "/welcome-screen", payload, opts_with_reason(reason))
+end
+
+-- Widget
+
+function Route:get_widget(guild_id)
+    return self.http:get("/guilds/" .. guild_id .. "/widget.json")
+end
+
+function Route:edit_widget(guild_id, payload)
+    return self.http:patch("/guilds/" .. guild_id .. "/widget", payload)
+end
+
 -- Stage Instances
 
 function Route:get_stage_instance(channel_id)

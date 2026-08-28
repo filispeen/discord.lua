@@ -127,4 +127,21 @@ M.OPTION_TYPE = {
     ATTACHMENT = 12,
 }
 
+-- Activity types, per Discord's Activity Types documentation. Used by
+-- lib/models/activity.lua to tag BaseActivity subclasses and to pick
+-- the right wrapper class in activity.create_activity(). Kept as a
+-- plain name -> int table (same pattern as OPTION_TYPE above) rather
+-- than pycord's try_enum(ActivityType, ...) machinery -- this project
+-- has no generic enum-with-fallback helper, and the raw int is stored
+-- as-is on every activity class's .type field, same no-wrapper
+-- convention already used for e.g. ScheduledEvent.status.
+M.ACTIVITY_TYPE = {
+    PLAYING = 0,
+    STREAMING = 1,
+    LISTENING = 2,
+    WATCHING = 3,
+    CUSTOM = 4,
+    COMPETING = 5,
+}
+
 return M

@@ -117,6 +117,27 @@
 --     POST /guilds/{guild_id}/templates. opts.name (required),
 --     opts.description (optional), mirrors pycord's
 --     Guild.create_template().
+--
+--   guild:welcome_screen() -> WelcomeScreen
+--     GET /guilds/{guild_id}/welcome-screen, mirrors pycord's
+--     Guild.welcome_screen().
+--
+--   guild:edit_welcome_screen(opts) -> WelcomeScreen
+--     Shorthand for WelcomeScreen:edit without fetching first, mirrors
+--     pycord's Guild.edit_welcome_screen(). opts.description /
+--     opts.welcome_channels / opts.enabled / opts.reason, all
+--     optional -- see lib/models/welcome_screen.lua.
+--
+--   guild:widget() -> Widget
+--     GET /guilds/{guild_id}/widget.json, mirrors pycord's
+--     Guild.widget().
+--
+--   guild:edit_widget(opts) -> nil
+--     PATCH /guilds/{guild_id}/widget, mirrors pycord's
+--     Guild.edit_widget(enabled=..., channel=...). opts.enabled /
+--     opts.channel_id, both optional. opts.clear_channel = true sends
+--     an explicit JSON null for channel_id (clears the widget
+--     channel) -- see lib/models/widget.lua.
 
 local class = require("../core/class")
 
@@ -443,6 +464,67 @@ function Guild:create_template(opts)
 
     local data = route:create_template(self.id, payload)
     return Template.new(data, self.http)
+end
+
+function Guild:welcome_screen()
+    if not self.http then
+        error("Guild has no http client attached, cannot fetch welcome screen", 0)
+    end
+
+    local Route = require("../http/route")
+    local WelcomeScreenModule = require("./welcome_screen")
+    local route = Route.new(self.http)
+
+    local data = route:get_welcome_screen(self.id)
+    return WelcomeScreenModule.WelcomeScreen.new(data, self, self.http)
+end
+
+function Guild:edit_welcome_screen(opts)
+    opts = opts or {}
+    if not self.http then
+        error("Guild has no http client attached, cannot edit welcome screen", 0)
+    end
+
+    local WelcomeScreenModule = require("./welcome_screen")
+    local screen = WelcomeScreenModule.WelcomeScreen.new({}, self, self.http)
+    return screen:edit(opts)
+end
+
+function Guild:widget()
+    if not self.http then
+        error("Guild has no http client attached, cannot fetch widget", 0)
+    end
+
+    local Route = require("../http/route")
+    local WidgetModule = require("./widget")
+    local route = Route.new(self.http)
+
+    local data = route:get_widget(self.id)
+    return WidgetModule.Widget.new(data, self.http)
+end
+
+function Guild:edit_widget(opts)
+    opts = opts or {}
+    if not self.http then
+        error("Guild has no http client attached, cannot edit widget", 0)
+    end
+
+    local Route = require("../http/route")
+    local route = Route.new(self.http)
+
+    local payload = {}
+    if opts.clear_channel then
+        local json = require("../core/json_compat")
+        payload.channel_id = json.null
+    elseif opts.channel_id ~= nil then
+        payload.channel_id = opts.channel_id
+    end
+    if opts.enabled ~= nil then
+        payload.enabled = opts.enabled
+    end
+
+    route:edit_widget(self.id, payload)
+    return nil
 end
 
 return Guild

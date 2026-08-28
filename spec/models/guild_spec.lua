@@ -460,4 +460,171 @@ describe("Guild", function()
             assert.equals("new1", template.code)
         end)
     end)
+
+    describe("Guild:welcome_screen", function()
+        local function make_ws_http(get_response)
+            local calls = {}
+            return {
+                calls = calls,
+                get = function(_self, endpoint)
+                    table.insert(calls, { method = "get", endpoint = endpoint })
+                    return get_response
+                end,
+            }
+        end
+
+        it("errors when no http client is attached", function()
+            local guild = Guild.new({ id = "1", name = "Test" })
+            assert.has_error(function()
+                guild:welcome_screen()
+            end)
+        end)
+
+        it("GETs the guild welcome-screen endpoint and returns a WelcomeScreen instance", function()
+            local http = make_ws_http({
+                description = "Welcome!",
+                welcome_channels = {
+                    { channel_id = "c1", description = "Read the rules", emoji_name = "wave" },
+                },
+            })
+            local guild = Guild.new({ id = "guild1", name = "Test", features = {} }, http)
+
+            local screen = guild:welcome_screen()
+
+            assert.equals(1, #http.calls)
+            assert.equals("/guilds/guild1/welcome-screen", http.calls[1].endpoint)
+            assert.equals("Welcome!", screen.description)
+            assert.equals("c1", screen.welcome_channels[1].channel_id)
+            assert.equals("guild1", screen.guild_id)
+        end)
+    end)
+
+    describe("Guild:edit_welcome_screen", function()
+        local function make_ws_http(patch_response)
+            local calls = {}
+            return {
+                calls = calls,
+                patch = function(_self, endpoint, payload, opts)
+                    table.insert(calls, { method = "patch", endpoint = endpoint, payload = payload, opts = opts })
+                    return patch_response
+                end,
+            }
+        end
+
+        it("errors when no http client is attached", function()
+            local guild = Guild.new({ id = "1", name = "Test" })
+            assert.has_error(function()
+                guild:edit_welcome_screen({ description = "x" })
+            end)
+        end)
+
+        it("PATCHes the guild welcome-screen endpoint without fetching first", function()
+            local http = make_ws_http({
+                description = "New text",
+                welcome_channels = {},
+            })
+            local guild = Guild.new({ id = "guild1", name = "Test" }, http)
+
+            local screen = guild:edit_welcome_screen({ description = "New text", enabled = true, reason = "refresh" })
+
+            assert.equals(1, #http.calls)
+            assert.equals("/guilds/guild1/welcome-screen", http.calls[1].endpoint)
+            assert.equals("New text", http.calls[1].payload.description)
+            assert.equals(true, http.calls[1].payload.enabled)
+            assert.equals("refresh", http.calls[1].opts.reason)
+            assert.equals("New text", screen.description)
+        end)
+    end)
+
+    describe("Guild:widget", function()
+        local function make_widget_http(get_response)
+            local calls = {}
+            return {
+                calls = calls,
+                get = function(_self, endpoint)
+                    table.insert(calls, { method = "get", endpoint = endpoint })
+                    return get_response
+                end,
+            }
+        end
+
+        it("errors when no http client is attached", function()
+            local guild = Guild.new({ id = "1", name = "Test" })
+            assert.has_error(function()
+                guild:widget()
+            end)
+        end)
+
+        it("GETs the guild widget.json endpoint and returns a Widget instance", function()
+            local http = make_widget_http({
+                id = "guild1",
+                name = "Test",
+                instant_invite = "https://discord.gg/abc123",
+                channels = { { id = "c1", name = "general", position = 0 } },
+                members = {},
+            })
+            local guild = Guild.new({ id = "guild1", name = "Test" }, http)
+
+            local widget = guild:widget()
+
+            assert.equals(1, #http.calls)
+            assert.equals("/guilds/guild1/widget.json", http.calls[1].endpoint)
+            assert.equals("guild1", widget.id)
+            assert.equals(1, #widget.channels)
+            assert.equals("https://discord.gg/abc123", widget:invite_url())
+        end)
+    end)
+
+    describe("Guild:edit_widget", function()
+        local function make_widget_http(patch_response)
+            local calls = {}
+            return {
+                calls = calls,
+                patch = function(_self, endpoint, payload)
+                    table.insert(calls, { method = "patch", endpoint = endpoint, payload = payload })
+                    return patch_response
+                end,
+            }
+        end
+
+        it("errors when no http client is attached", function()
+            local guild = Guild.new({ id = "1", name = "Test" })
+            assert.has_error(function()
+                guild:edit_widget({ enabled = true })
+            end)
+        end)
+
+        it("PATCHes the guild widget endpoint with enabled and channel_id", function()
+            local http = make_widget_http({ enabled = true, channel_id = "c1" })
+            local guild = Guild.new({ id = "guild1", name = "Test" }, http)
+
+            local result = guild:edit_widget({ enabled = true, channel_id = "c1" })
+
+            assert.equals(1, #http.calls)
+            assert.equals("/guilds/guild1/widget", http.calls[1].endpoint)
+            assert.equals(true, http.calls[1].payload.enabled)
+            assert.equals("c1", http.calls[1].payload.channel_id)
+            assert.is_nil(result)
+        end)
+
+        it("sends an explicit JSON null for channel_id when opts.clear_channel is set", function()
+            local json = require("./core/json_compat")
+            local http = make_widget_http({ enabled = true, channel_id = nil })
+            local guild = Guild.new({ id = "guild1", name = "Test" }, http)
+
+            guild:edit_widget({ clear_channel = true })
+
+            assert.equals(json.null, http.calls[1].payload.channel_id)
+        end)
+
+        it("omits fields that are not given", function()
+            local http = make_widget_http({})
+            local guild = Guild.new({ id = "guild1", name = "Test" }, http)
+
+            guild:edit_widget({})
+
+            assert.is_nil(http.calls[1].payload.enabled)
+            assert.is_nil(http.calls[1].payload.channel_id)
+        end)
+    end)
 end)

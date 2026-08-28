@@ -186,3 +186,50 @@ describe("Client:fetch_template", function()
         assert.equals("/guilds/templates/abc123", calls[1].endpoint)
     end)
 end)
+
+describe("Client:fetch_widget", function()
+    local function fake_http()
+        local calls = {}
+        return {
+            calls = calls,
+            get = function(_self, endpoint)
+                table.insert(calls, { method = "GET", endpoint = endpoint })
+                return {
+                    id = "guild1",
+                    name = "Fetched Guild",
+                    instant_invite = "https://discord.gg/abc123",
+                    channels = {},
+                    members = {},
+                }
+            end,
+        }, calls
+    end
+
+    it("errors when no http client is attached", function()
+        local client = Client.new("token")
+        assert.has_error(function()
+            client:fetch_widget("guild1")
+        end)
+    end)
+
+    it("errors when no guild_id is given", function()
+        local client = Client.new("token")
+        client.http = (fake_http())
+        assert.has_error(function()
+            client:fetch_widget(nil)
+        end)
+    end)
+
+    it("GETs the guild widget.json endpoint and returns a Widget", function()
+        local client = Client.new("token")
+        local http, calls = fake_http()
+        client.http = http
+
+        local widget = client:fetch_widget("guild1")
+
+        assert.equals(1, #calls)
+        assert.equals("/guilds/guild1/widget.json", calls[1].endpoint)
+        assert.equals("Fetched Guild", widget.name)
+        assert.equals("https://discord.gg/abc123", widget:invite_url())
+    end)
+end)

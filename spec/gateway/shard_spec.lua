@@ -251,6 +251,75 @@ describe("Shard", function()
         package.loaded["gateway.shard"] = nil
     end)
 
+    it("change_presence sends opcode 3 with the activity payload wrapped in an activities list", function()
+        local sent = {}
+        local function mock_read() coroutine.yield() end
+        local function mock_write(message)
+            if message then
+                table.insert(sent, message.payload)
+            end
+        end
+        package.loaded["coro-websocket"] = {
+            connect = function() return {}, mock_read, mock_write end,
+            parseUrl = mock_parse_url,
+        }
+        package.loaded["gateway.shard"] = nil
+        local FreshShard = require("./gateway/shard")
+        local json = require("./core/json_compat")
+
+        local mock_client = MockHTTPClient.new("test_token")
+        local shard = FreshShard.new(mock_client, 0, 3)
+        shard:connect()
+        shard:change_presence("dnd", { type = 0, name = "with the API" })
+
+        assert.equals(1, #sent)
+        local decoded = json.decode(sent[1])
+        assert.equals(3, decoded.op)
+        assert.equals("dnd", decoded.d.status)
+        assert.is_false(decoded.d.afk)
+        assert.equals(1, #decoded.d.activities)
+        assert.equals("with the API", decoded.d.activities[1].name)
+
+        package.loaded["coro-websocket"] = {
+            connect = function() return {}, mock_read, mock_write end,
+            parseUrl = mock_parse_url,
+        }
+        package.loaded["gateway.shard"] = nil
+    end)
+
+    it("change_presence sends an empty activities list when clearing the activity", function()
+        local sent = {}
+        local function mock_read() coroutine.yield() end
+        local function mock_write(message)
+            if message then
+                table.insert(sent, message.payload)
+            end
+        end
+        package.loaded["coro-websocket"] = {
+            connect = function() return {}, mock_read, mock_write end,
+            parseUrl = mock_parse_url,
+        }
+        package.loaded["gateway.shard"] = nil
+        local FreshShard = require("./gateway/shard")
+        local json = require("./core/json_compat")
+
+        local mock_client = MockHTTPClient.new("test_token")
+        local shard = FreshShard.new(mock_client, 0, 3)
+        shard:connect()
+        shard:change_presence("online", nil)
+
+        assert.equals(1, #sent)
+        local decoded = json.decode(sent[1])
+        assert.equals("online", decoded.d.status)
+        assert.equals(0, #decoded.d.activities)
+
+        package.loaded["coro-websocket"] = {
+            connect = function() return {}, mock_read, mock_write end,
+            parseUrl = mock_parse_url,
+        }
+        package.loaded["gateway.shard"] = nil
+    end)
+
     it("should actually deliver identify through send after self.ws is set", function()
         local sent = {}
         -- Blocks forever, simulating a real coro-http read() that only

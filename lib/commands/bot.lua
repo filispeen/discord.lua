@@ -40,6 +40,13 @@ function Bot.new(token, ratelimiter, intents)
     self.auto_sync_commands = true
     self.context_class = nil
     self.application_context_class = nil
+    -- Optional initial presence, read by Bot:connect() when building the
+    -- underlying Client. Set bot.status/bot.activity (a Game/Streaming/
+    -- Activity/CustomActivity from lib/models/activity.lua) before
+    -- Bot:run()/Bot:connect() to have it sent with IDENTIFY. Use
+    -- Bot:change_presence for live updates after connecting.
+    self.status = nil
+    self.activity = nil
     return self
 end
 
@@ -468,6 +475,18 @@ function Bot:get_author_voice_channel_id(message)
     return self:get_voice_channel_id(message.guild_id, message.author.id)
 end
 
+-- Delegates to Client:change_presence, see its doc comment in
+-- lib/models/client.lua for opts fields (status/activity/shard_id).
+-- Requires Bot:run()/Bot:connect() to already have been called. For
+-- the presence a bot connects with initially, set bot.status/
+-- bot.activity before calling Bot:run()/Bot:connect() instead.
+function Bot:change_presence(opts)
+    if not self.client then
+        error("Bot has no client, call Bot:run() or Bot:connect() first", 0)
+    end
+    return self.client:change_presence(opts)
+end
+
 -- Registers a prefix command by name with its callback, mirrors register_command
 -- but matches the README/examples calling convention: client:command(name, fn)
 function Bot:command(name, func, description)
@@ -581,7 +600,10 @@ function Bot:connect()
     self:clear_interactions()
 
     local Client = require("../models/client")
-    self.client = Client.new(self.token, self.ratelimiter, self.intents)
+    self.client = Client.new(self.token, self.ratelimiter, self.intents, {
+        status = self.status,
+        activity = self.activity,
+    })
     self.client:_create_http()
     self.http = self.client.http
 

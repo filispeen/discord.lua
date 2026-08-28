@@ -20,6 +20,10 @@
 --   ShardManager:dispatch(event) -> nil
 --     Dispatches an event to all shards.
 --
+--   ShardManager:change_presence(status, activity, shard_id?) -> boolean, string?
+--     Sends a presence update (opcode 3) through one shard or every
+--     shard when shard_id is nil.
+--
 --   ShardManager:on_ready(callback) -> self
 --     Listen for bot ready event.
 --
@@ -210,6 +214,39 @@ function ShardManager:voice_state_update(guild_id, channel_id, self_mute, self_d
         return false, "no shard available for guild " .. tostring(guild_id)
     end
     shard:voice_state_update(guild_id, channel_id, self_mute, self_deaf)
+    return true
+end
+
+-- Sends a presence update (opcode 3) to one shard (shard_id) or, when
+-- shard_id is nil, to every shard the manager knows about -- mirrors
+-- pycord's AutoShardedClient.change_presence, which updates every
+-- shard's own gateway connection since presence is per-connection, not
+-- something a single gateway message can broadcast for the whole bot.
+-- activity is a BaseActivity-like instance (Game/Streaming/Activity/
+-- CustomActivity, see lib/models/activity.lua) with a :to_dict()
+-- method, or nil to clear it; :to_dict() is called once up front
+-- rather than once per shard.
+function ShardManager:change_presence(status, activity, shard_id)
+    local activity_payload = nil
+    if activity ~= nil then
+        if type(activity.to_dict) ~= "function" then
+            error("activity must be a BaseActivity (Game/Streaming/Activity/CustomActivity) with a to_dict method", 0)
+        end
+        activity_payload = activity:to_dict()
+    end
+
+    if shard_id ~= nil then
+        local shard = self:get_shard(shard_id)
+        if not shard then
+            return false, "no shard available with id " .. tostring(shard_id)
+        end
+        shard:change_presence(status, activity_payload)
+        return true
+    end
+
+    for _, shard in pairs(self._shards) do
+        shard:change_presence(status, activity_payload)
+    end
     return true
 end
 
