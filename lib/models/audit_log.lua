@@ -132,6 +132,26 @@ function AuditLogEntry.new(data, guild, http, client)
     self.guild_id = data.guild_id or (guild and guild.id)
     self.http = http or (guild and guild.http)
 
+    if self.client and self.guild_id then
+        local member_data = self.user_id and self.client.members and self.client.members:get(self.guild_id, self.user_id)
+        if member_data then
+            self.member = require("./member").new(member_data, guild)
+            self.user = require("./user").new(member_data.user)
+        end
+        if self.target_id then
+            local channel_data = self.client.channels and self.client.channels:get(self.target_id)
+            local role_data = self.client.roles and self.client.roles:get(self.guild_id, self.target_id)
+            local target_member = self.client.members and self.client.members:get(self.guild_id, self.target_id)
+            if channel_data then
+                self.target = require("./channel").new(channel_data, guild, self.http)
+            elseif role_data then
+                self.target = require("./role").new(role_data)
+            elseif target_member then
+                self.target = require("./member").new(target_member, guild)
+            end
+        end
+    end
+
     return self
 end
 

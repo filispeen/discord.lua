@@ -437,7 +437,8 @@ function Guild:iter_audit_logs(opts)
     end, {
         page_size = opts.page_size or 100,
         limit = opts.limit,
-        before = opts.before,
+        cursor = opts.before,
+        cursor_key = "before",
     }):iter()
 end
 

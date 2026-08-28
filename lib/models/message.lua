@@ -371,6 +371,30 @@ function Message:get_reaction_users(emoji, opts)
     return users
 end
 
+function Message:iter_reaction_users(emoji, opts)
+    opts = opts or {}
+    if not self.http then
+        error("Message has no http client attached, cannot iterate reaction users", 0)
+    end
+    local Paginator = require("../core/paginator")
+    local Route = require("../http/route")
+    local User = require("./user")
+    local encoded = url_encode(normalize_emoji(emoji))
+    return Paginator.new(function(page)
+        local data = Route.new(self.http):get_reaction_users(self.channel_id, self.id, encoded, page)
+        local users = {}
+        for i, user_data in ipairs(data or {}) do
+            users[i] = User.new(user_data)
+        end
+        return users
+    end, {
+        page_size = opts.page_size or 100,
+        limit = opts.limit,
+        cursor = opts.after,
+        cursor_key = "after",
+    }):iter()
+end
+
 function Message:_add_reaction(data, own_user_id)
     local key = Reaction.key(data.emoji)
     for _, r in ipairs(self.reactions) do

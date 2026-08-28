@@ -102,7 +102,7 @@ function IntegrationApplication.new(data)
     self.icon = data.icon
     self.description = data.description
     self.summary = data.summary
-    self.user = data.bot
+    self.user = data.bot and require("./user").new(data.bot) or nil
     return self
 end
 
@@ -112,7 +112,7 @@ local function apply_base(self, data, guild, http)
     self.type = data.type
     self.name = data.name
     self.account = IntegrationAccount.new(data.account)
-    self.user = data.user
+    self.user = data.user and require("./user").new(data.user) or nil
     self.enabled = data.enabled or false
 
     self.guild = guild
@@ -148,6 +148,9 @@ function StreamIntegration.new(data, guild, http)
     self.expire_grace_period = data.expire_grace_period
     self.synced_at = data.synced_at
     self.role_id = data.role_id
+    local client = guild and guild.client
+    local role_data = client and client.roles and client.roles:get(self.guild_id, self.role_id)
+    self.role = role_data and require("./role").new(role_data) or nil
     self.syncing = data.syncing or false
     self.enable_emoticons = data.enable_emoticons
     self.subscriber_count = data.subscriber_count

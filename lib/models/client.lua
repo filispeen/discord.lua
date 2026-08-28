@@ -268,6 +268,39 @@ function Client:fetch_entitlements(opts)
     return result
 end
 
+function Client:iter_entitlements(opts)
+    opts = opts or {}
+    if not self.http then
+        error("Client has no http client attached, cannot iterate entitlements", 0)
+    end
+    local Paginator = require("../core/paginator")
+    local Route = require("../http/route")
+    local Entitlement = require("./monetization").Entitlement
+    local cursor_key = opts.after and "after" or "before"
+    return Paginator.new(function(page)
+        local params = {}
+        for key, value in pairs(opts) do
+            if key ~= "page_size" and key ~= "limit" and key ~= "before" and key ~= "after" then
+                params[key] = value
+            end
+        end
+        params.limit = page.limit
+        if page.before then params.before = page.before end
+        if page.after then params.after = page.after end
+        local data = Route.new(self.http):get_entitlements(self:get_application_id(), params)
+        local result = {}
+        for i, item in ipairs(data or {}) do
+            result[i] = Entitlement.new(item, self.http)
+        end
+        return result
+    end, {
+        page_size = opts.page_size or 100,
+        limit = opts.limit,
+        cursor = opts[cursor_key],
+        cursor_key = cursor_key,
+    }):iter()
+end
+
 function Client:create_test_entitlement(sku_id, owner_id, owner_type)
     if not self.http then error("Client has no http client attached, cannot create test entitlement", 0) end
     local Route = require("../http/route")

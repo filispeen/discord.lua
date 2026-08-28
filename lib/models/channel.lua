@@ -275,6 +275,31 @@ function Channel:fetch_archived_threads(opts)
     return data
 end
 
+function Channel:iter_archived_threads(opts)
+    opts = opts or {}
+    if not self.http then
+        error("Channel has no http client attached, cannot iterate archived threads", 0)
+    end
+    local Paginator = require("../core/paginator")
+    local Route = require("../http/route")
+    local Thread = require("./thread")
+    return Paginator.new(function(page)
+        local data = Route.new(self.http):get_archived_threads(self.id, opts.kind, page)
+        local threads = {}
+        for i, thread_data in ipairs((data and data.threads) or {}) do
+            threads[i] = Thread.new(thread_data, self.guild, self.http)
+        end
+        return { data = data, threads = threads }
+    end, {
+        page_size = opts.page_size or 100,
+        limit = opts.limit,
+        cursor = opts.before,
+        cursor_key = "before",
+        extract = function(result) return result.threads end,
+        has_more = function(result) return result.data and result.data.has_more end,
+    }):iter()
+end
+
 function Channel:create_webhook(opts)
     opts = opts or {}
     if not self.http then
