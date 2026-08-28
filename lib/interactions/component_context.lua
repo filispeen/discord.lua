@@ -65,6 +65,10 @@ local function build_message_data(content, opts)
     if opts.components then
         data.components = opts.components
     end
+    if opts.files and #opts.files > 0 then
+        local Multipart = require("../http/multipart")
+        data = Multipart.with_attachments(data, opts.files)
+    end
     return data
 end
 
@@ -73,6 +77,7 @@ function ComponentContext:respond(content, opts)
         error("ComponentContext has no rest client attached, cannot respond", 0)
     end
 
+    opts = opts or {}
     local payload = {
         type = 4, -- CHANNEL_MESSAGE_WITH_SOURCE
         data = build_message_data(content, opts),
@@ -81,7 +86,8 @@ function ComponentContext:respond(content, opts)
     return self.bot.rest:create_interaction_response(
         self.interaction_id,
         self.interaction_token,
-        payload
+        payload,
+        opts.files
     )
 end
 
@@ -90,6 +96,7 @@ function ComponentContext:update(content, opts)
         error("ComponentContext has no rest client attached, cannot update", 0)
     end
 
+    opts = opts or {}
     local payload = {
         type = 7, -- UPDATE_MESSAGE
         data = build_message_data(content, opts),
@@ -98,7 +105,8 @@ function ComponentContext:update(content, opts)
     return self.bot.rest:create_interaction_response(
         self.interaction_id,
         self.interaction_token,
-        payload
+        payload,
+        opts.files
     )
 end
 

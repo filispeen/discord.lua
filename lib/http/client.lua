@@ -105,7 +105,10 @@ function Client:request(method, endpoint, options)
 
     -- Add body if provided
     local request_body = nil
-    if options and options.body then
+    if options and options.files then
+        local Multipart = require("./multipart")
+        request_body, headers["Content-Type"] = Multipart.build(options.body or {}, options.files)
+    elseif options and options.body then
         if type(options.body) == "table" then
             request_body = json.encode(options.body)
             headers["Content-Type"] = "application/json"
@@ -175,6 +178,20 @@ end
 function Client:patch(endpoint, body, options)
     options = options or {}
     options.body = body
+    return self:request("PATCH", endpoint, options)
+end
+
+function Client:post_multipart(endpoint, payload, files, options)
+    options = options or {}
+    options.body = payload
+    options.files = files
+    return self:request("POST", endpoint, options)
+end
+
+function Client:patch_multipart(endpoint, payload, files, options)
+    options = options or {}
+    options.body = payload
+    options.files = files
     return self:request("PATCH", endpoint, options)
 end
 

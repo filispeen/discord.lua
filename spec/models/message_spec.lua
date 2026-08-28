@@ -397,4 +397,29 @@ describe("Message", function()
 
         assert.equals("/channels/c1/polls/1/answers/1", http.calls[1].endpoint)
     end)
+
+    it("uploads files when replying or editing", function()
+        local File = require("./models/file")
+        local calls = {}
+        local http = {
+            post_multipart = function(_self, endpoint, payload, files)
+                calls[#calls + 1] = { method = "POST", endpoint = endpoint, payload = payload, files = files }
+            end,
+            patch_multipart = function(_self, endpoint, payload, files)
+                calls[#calls + 1] = { method = "PATCH", endpoint = endpoint, payload = payload, files = files }
+            end,
+        }
+        local message = Message.new({ id = "1", channel_id = "c1" }, http)
+        local file = File.from_bytes("hello", "note.txt")
+
+        message:reply("reply", { files = { file } })
+        message:edit("edit", { files = { file }, attachments = {} })
+
+        assert.equals("POST", calls[1].method)
+        assert.equals("/channels/c1/messages", calls[1].endpoint)
+        assert.equals("note.txt", calls[1].payload.attachments[1].filename)
+        assert.equals("PATCH", calls[2].method)
+        assert.equals("/channels/c1/messages/1", calls[2].endpoint)
+        assert.same({}, calls[2].payload.attachments)
+    end)
 end)

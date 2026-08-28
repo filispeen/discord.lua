@@ -88,7 +88,15 @@ end
 
 -- Messages
 
-function Route:send_message(channel_id, payload)
+function Route:send_message(channel_id, payload, files)
+    if files and #files > 0 then
+        local Multipart = require("./multipart")
+        return self.http:post_multipart(
+            "/channels/" .. channel_id .. "/messages",
+            Multipart.with_attachments(payload, files),
+            files
+        )
+    end
     return self.http:post("/channels/" .. channel_id .. "/messages", payload)
 end
 
@@ -96,7 +104,15 @@ function Route:get_message(channel_id, message_id)
     return self.http:get("/channels/" .. channel_id .. "/messages/" .. message_id)
 end
 
-function Route:edit_message(channel_id, message_id, payload)
+function Route:edit_message(channel_id, message_id, payload, files)
+    if files and #files > 0 then
+        local Multipart = require("./multipart")
+        return self.http:patch_multipart(
+            "/channels/" .. channel_id .. "/messages/" .. message_id,
+            Multipart.with_attachments(payload, files),
+            files
+        )
+    end
     return self.http:patch("/channels/" .. channel_id .. "/messages/" .. message_id, payload)
 end
 
@@ -233,18 +249,20 @@ end
 
 -- Interaction responses
 
-function Route:create_interaction_response(interaction_id, interaction_token, payload)
-    return self.http:post(
-        "/interactions/" .. interaction_id .. "/" .. interaction_token .. "/callback",
-        payload
-    )
+function Route:create_interaction_response(interaction_id, interaction_token, payload, files)
+    local endpoint = "/interactions/" .. interaction_id .. "/" .. interaction_token .. "/callback"
+    if files and #files > 0 then
+        return self.http:post_multipart(endpoint, payload, files)
+    end
+    return self.http:post(endpoint, payload)
 end
 
-function Route:edit_interaction_response(application_id, interaction_token, payload)
-    return self.http:patch(
-        "/webhooks/" .. application_id .. "/" .. interaction_token .. "/messages/@original",
-        payload
-    )
+function Route:edit_interaction_response(application_id, interaction_token, payload, files)
+    local endpoint = "/webhooks/" .. application_id .. "/" .. interaction_token .. "/messages/@original"
+    if files and #files > 0 then
+        return self.http:patch_multipart(endpoint, payload, files)
+    end
+    return self.http:patch(endpoint, payload)
 end
 
 -- Soundboard

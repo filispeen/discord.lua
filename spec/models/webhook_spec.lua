@@ -80,8 +80,23 @@ describe("Webhook", function()
             token = "test_token",
         })
 
-        -- This should attempt to make an HTTP request
-        -- We're just verifying it doesn't error on token check
         assert.equals("123", webhook.id)
+    end)
+
+    it("sends files through the attached http client", function()
+        local File = require("./models/file")
+        local call
+        local http = {
+            post_multipart = function(_self, endpoint, payload, files)
+                call = { endpoint = endpoint, payload = payload, files = files }
+                return { id = "message1" }
+            end,
+        }
+        local webhook = Webhook.new({ id = "123", channel_id = "456", token = "test_token" }, http)
+        local result = webhook:send("hello", { files = { File.from_bytes("data", "note.txt") } })
+
+        assert.equals("/webhooks/123/test_token", call.endpoint)
+        assert.equals("note.txt", call.payload.attachments[1].filename)
+        assert.equals("message1", result.id)
     end)
 end)

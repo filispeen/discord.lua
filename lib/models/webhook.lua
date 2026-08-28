@@ -38,7 +38,7 @@ local json = require("../core/json_compat")
 -- Webhook class
 local Webhook = class("Webhook")
 
-function Webhook.new(data)
+function Webhook.new(data, http)
     local self = {}
     setmetatable(self, {
         __index = Webhook
@@ -52,34 +52,41 @@ function Webhook.new(data)
     self.user = data.user
     self.avatar = data.avatar or nil
     self.application_id = data.application_id or nil
+    self.http = http
 
     return self
 end
 
--- Send a message via webhook
-function Webhook:send(content, options)
+function Webhook:send(content, opts)
     if not self.token then
         error("Webhook token not available", 0)
     end
-
-    local headers = {
-        ["Content-Type"] = "application/json",
-        ["Authorization"] = "Bearer " .. self.token,
-    }
-
-    local url = "https://discord.com/api/v10/webhooks/" .. self.id
-    local http = require("../http/client")
-    local response, err = http.request(url, {
-        method = "POST",
-        headers = headers,
-        body = json.encode({ content = content, options = options }),
-    })
-
-    if not response then
-        error("Webhook send failed: " .. tostring(err), 0)
+    if not self.http then
+        error("Webhook has no http client attached, cannot send", 0)
     end
-
-    return json.decode(response.body) or {}
+    opts = opts or {}
+    local payload = {}
+    if type(content) == "table" then
+        for key, value in pairs(content) do
+            if key ~= "files" then
+                payload[key] = value
+            end
+        end
+    else
+        payload.content = content
+    end
+    for key, value in pairs(opts) do
+        if key ~= "files" then
+            payload[key] = value
+        end
+    end
+    local files = opts.files or (type(content) == "table" and content.files)
+    local endpoint = "/webhooks/" .. self.id .. "/" .. self.token
+    if files and #files > 0 then
+        local Multipart = require("../http/multipart")
+        return self.http:post_multipart(endpoint, Multipart.with_attachments(payload, files), files)
+    end
+    return self.http:post(endpoint, payload)
 end
 
 return Webhook

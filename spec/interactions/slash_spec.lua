@@ -118,6 +118,34 @@ describe("SlashCommandContext", function()
         end)
     end)
 
+    it("uploads files in initial and edited interaction responses", function()
+        local File = require("./models/file")
+        local calls = {}
+        local client = {
+            application_id = "app1",
+            rest = {
+                create_interaction_response = function(_self, interaction_id, token, payload, files)
+                    calls[#calls + 1] = { kind = "create", id = interaction_id, token = token, payload = payload, files = files }
+                end,
+                edit_interaction_response = function(_self, application_id, token, payload, files)
+                    calls[#calls + 1] = { kind = "edit", id = application_id, token = token, payload = payload, files = files }
+                end,
+            },
+        }
+        local ctx = slash.new({ id = "int1", token = "tok1", data = { name = "cmd", options = {} } }, client)
+        local file = File.from_bytes("data", "note.txt")
+
+        ctx:respond("hello", { files = { file } })
+        ctx:edit("updated", { files = { file } })
+
+        assert.equals("create", calls[1].kind)
+        assert.equals("note.txt", calls[1].payload.data.attachments[1].filename)
+        assert.equals(file, calls[1].files[1])
+        assert.equals("edit", calls[2].kind)
+        assert.equals("note.txt", calls[2].payload.attachments[1].filename)
+        assert.equals(file, calls[2].files[1])
+    end)
+
     describe("SlashCommandContext:get_arg and :require_arg", function()
         it("get_arg returns the default when the argument is missing", function()
             local interaction = { id = "int1", token = "tok1", data = { name = "cmd", options = {} } }

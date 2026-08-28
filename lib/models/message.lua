@@ -208,23 +208,50 @@ function Message:mentions_role(role_id)
     return false
 end
 
--- Sends a new message to the same channel, mirrors pycord Message.reply
--- (as a plain channel send, discord.lua has no reply-reference field yet).
-function Message:reply(content)
+local function message_payload(content, opts)
+    local payload = {}
+    if type(content) == "table" then
+        for key, value in pairs(content) do
+            if key ~= "files" then
+                payload[key] = value
+            end
+        end
+    else
+        payload.content = content
+    end
+    for key, value in pairs(opts or {}) do
+        if key ~= "files" then
+            payload[key] = value
+        end
+    end
+    local files = (opts and opts.files) or (type(content) == "table" and content.files)
+    return payload, files
+end
+
+function Message:reply(content, opts)
     if not self.http then
         error("Message has no http client attached, cannot reply")
     end
-    local payload = type(content) == "table" and content or { content = content }
-    return self.http:post("/channels/" .. self.channel_id .. "/messages", payload)
+    local payload, files = message_payload(content, opts)
+    local endpoint = "/channels/" .. self.channel_id .. "/messages"
+    if files and #files > 0 then
+        local Multipart = require("../http/multipart")
+        return self.http:post_multipart(endpoint, Multipart.with_attachments(payload, files), files)
+    end
+    return self.http:post(endpoint, payload)
 end
 
--- Edits this message's content via PATCH /channels/{channel_id}/messages/{id}.
-function Message:edit(content)
+function Message:edit(content, opts)
     if not self.http then
         error("Message has no http client attached, cannot edit")
     end
-    local payload = type(content) == "table" and content or { content = content }
-    return self.http:patch("/channels/" .. self.channel_id .. "/messages/" .. self.id, payload)
+    local payload, files = message_payload(content, opts)
+    local endpoint = "/channels/" .. self.channel_id .. "/messages/" .. self.id
+    if files and #files > 0 then
+        local Multipart = require("../http/multipart")
+        return self.http:patch_multipart(endpoint, Multipart.with_attachments(payload, files), files)
+    end
+    return self.http:patch(endpoint, payload)
 end
 
 -- Deletes this message via DELETE /channels/{channel_id}/messages/{id}.

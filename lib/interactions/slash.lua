@@ -245,6 +245,11 @@ function M.SlashCommandContext:respond(content, opts)
         data.components = opts.components
     end
 
+    local files = opts.files
+    if files and #files > 0 then
+        local Multipart = require("../http/multipart")
+        data = Multipart.with_attachments(data, files)
+    end
     local payload = {
         type = 4, -- CHANNEL_MESSAGE_WITH_SOURCE
         data = data,
@@ -253,7 +258,8 @@ function M.SlashCommandContext:respond(content, opts)
     return self.bot.rest:create_interaction_response(
         self.interaction_id,
         self.interaction_token,
-        payload
+        payload,
+        files
     )
 end
 
@@ -277,10 +283,16 @@ function M.SlashCommandContext:edit(content, opts)
         payload.components = opts.components
     end
 
+    local files = opts.files
+    if files and #files > 0 then
+        local Multipart = require("../http/multipart")
+        payload = Multipart.with_attachments(payload, files)
+    end
     return self.bot.rest:edit_interaction_response(
         self.bot.application_id,
         self.interaction_token,
-        payload
+        payload,
+        files
     )
 end
 
