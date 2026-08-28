@@ -57,6 +57,49 @@ function Webhook.new(data, http)
     return self
 end
 
+function Webhook.fetch(webhook_id, http, webhook_token)
+    if not http then
+        error("Webhook.fetch requires an http client", 0)
+    end
+    local Route = require("../http/route")
+    local route = Route.new(http)
+    local data
+    if webhook_token then
+        data = route:get_webhook_with_token(webhook_id, webhook_token)
+    else
+        data = route:get_webhook(webhook_id)
+    end
+    return Webhook.new(data, http)
+end
+
+function Webhook:edit(opts)
+    opts = opts or {}
+    if not self.http then
+        error("Webhook has no http client attached, cannot edit", 0)
+    end
+    local payload = {}
+    if opts.name ~= nil then
+        payload.name = opts.name
+    end
+    if opts.avatar ~= nil then
+        payload.avatar = opts.avatar
+    end
+    local Route = require("../http/route")
+    local data = Route.new(self.http):edit_webhook(self.id, payload, opts.reason)
+    for key, value in pairs(data or {}) do
+        self[key] = value
+    end
+    return self
+end
+
+function Webhook:delete(reason)
+    if not self.http then
+        error("Webhook has no http client attached, cannot delete", 0)
+    end
+    local Route = require("../http/route")
+    return Route.new(self.http):delete_webhook(self.id, reason)
+end
+
 function Webhook:send(content, opts)
     if not self.token then
         error("Webhook token not available", 0)

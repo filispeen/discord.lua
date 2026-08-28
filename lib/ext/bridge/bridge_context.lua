@@ -117,9 +117,11 @@ function BridgeContext:_followup_send(content, opts)
             payload.components = opts.components
         end
 
-        local endpoint = "/webhooks/" .. tostring(self.bot.application_id)
-            .. "/" .. tostring(self._source.interaction_token)
-        return self.bot.rest:post(endpoint, payload)
+        return self.bot.rest:create_followup_message(
+            self.bot.application_id,
+            self._source.interaction_token,
+            payload
+        )
     end
 
     return self._source:reply(content)

@@ -252,6 +252,67 @@ function Channel:create_thread(opts)
     return Thread.new(created, self.guild, self.http)
 end
 
+function Channel:fetch_archived_threads(opts)
+    opts = opts or {}
+    if not self.http then
+        error("Channel has no http client attached, cannot fetch archived threads", 0)
+    end
+    local params = {}
+    if opts.before then
+        params.before = opts.before
+    end
+    if opts.limit then
+        params.limit = opts.limit
+    end
+    local Route = require("../http/route")
+    local Thread = require("./thread")
+    local data = Route.new(self.http):get_archived_threads(self.id, opts.kind, params)
+    local threads = {}
+    for index, thread_data in ipairs(data.threads or {}) do
+        threads[index] = Thread.new(thread_data, self.guild, self.http)
+    end
+    data.threads = threads
+    return data
+end
+
+function Channel:create_webhook(opts)
+    opts = opts or {}
+    if not self.http then
+        error("Channel has no http client attached, cannot create webhook", 0)
+    end
+    if not opts.name then
+        error("Channel:create_webhook requires opts.name", 0)
+    end
+    local Route = require("../http/route")
+    local Webhook = require("./webhook")
+    local data = Route.new(self.http):create_webhook(self.id, { name = opts.name, avatar = opts.avatar }, opts.reason)
+    return Webhook.new(data, self.http)
+end
+
+function Channel:fetch_webhooks()
+    if not self.http then
+        error("Channel has no http client attached, cannot fetch webhooks", 0)
+    end
+    local Route = require("../http/route")
+    local Webhook = require("./webhook")
+    local data = Route.new(self.http):get_channel_webhooks(self.id)
+    local webhooks = {}
+    for index, webhook_data in ipairs(data or {}) do
+        webhooks[index] = Webhook.new(webhook_data, self.http)
+    end
+    return webhooks
+end
+
+function Channel:follow(webhook_channel_id, reason)
+    if not self.http then
+        error("Channel has no http client attached, cannot follow", 0)
+    end
+    local Route = require("../http/route")
+    local Webhook = require("./webhook")
+    local data = Route.new(self.http):follow_channel(self.id, webhook_channel_id, reason)
+    return Webhook.new({ id = data.webhook_id }, self.http)
+end
+
 function Channel:create_instance(opts)
     opts = opts or {}
     if not self.http then

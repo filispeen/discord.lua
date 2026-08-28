@@ -324,6 +324,45 @@ function Message:clear_reactions()
         "/reactions")
 end
 
+function Message:pin(reason)
+    if not self.http then
+        error("Message has no http client attached, cannot pin", 0)
+    end
+    local Route = require("../http/route")
+    return Route.new(self.http):pin_message(self.channel_id, self.id, reason)
+end
+
+function Message:unpin(reason)
+    if not self.http then
+        error("Message has no http client attached, cannot unpin", 0)
+    end
+    local Route = require("../http/route")
+    return Route.new(self.http):unpin_message(self.channel_id, self.id, reason)
+end
+
+function Message:get_reaction_users(emoji, opts)
+    if not self.http then
+        error("Message has no http client attached, cannot get_reaction_users", 0)
+    end
+    opts = opts or {}
+    local params = {}
+    if opts.limit then
+        params.limit = opts.limit
+    end
+    if opts.after then
+        params.after = opts.after
+    end
+    local Route = require("../http/route")
+    local User = require("./user")
+    local encoded = url_encode(normalize_emoji(emoji))
+    local data = Route.new(self.http):get_reaction_users(self.channel_id, self.id, encoded, params)
+    local users = {}
+    for index, user_data in ipairs(data or {}) do
+        users[index] = User.new(user_data)
+    end
+    return users
+end
+
 function Message:_add_reaction(data, own_user_id)
     local key = Reaction.key(data.emoji)
     for _, r in ipairs(self.reactions) do

@@ -527,4 +527,19 @@ function Guild:edit_widget(opts)
     return nil
 end
 
+function Guild:fetch_active_threads()
+    if not self.http then
+        error("Guild has no http client attached, cannot fetch active threads", 0)
+    end
+    local Route = require("../http/route")
+    local Thread = require("./thread")
+    local data = Route.new(self.http):get_active_threads(self.id)
+    local threads = {}
+    for index, thread_data in ipairs(data.threads or {}) do
+        threads[index] = Thread.new(thread_data, self, self.http)
+    end
+    data.threads = threads
+    return data
+end
+
 return Guild

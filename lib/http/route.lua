@@ -247,6 +247,83 @@ function Route:remove_role(guild_id, user_id, role_id, reason)
     )
 end
 
+function Route:pin_message(channel_id, message_id, reason)
+    return self.http:put("/channels/" .. channel_id .. "/pins/" .. message_id, nil, opts_with_reason(reason))
+end
+
+function Route:unpin_message(channel_id, message_id, reason)
+    return self.http:delete("/channels/" .. channel_id .. "/pins/" .. message_id, opts_with_reason(reason))
+end
+
+function Route:get_reaction_users(channel_id, message_id, emoji, params)
+    local query = ""
+    if params then
+        local parts = {}
+        for key, value in pairs(params) do
+            parts[#parts + 1] = key .. "=" .. tostring(value)
+        end
+        if #parts > 0 then
+            query = "?" .. table.concat(parts, "&")
+        end
+    end
+    return self.http:get("/channels/" .. channel_id .. "/messages/" .. message_id .. "/reactions/" .. emoji .. query)
+end
+
+function Route:get_active_threads(guild_id)
+    return self.http:get("/guilds/" .. guild_id .. "/threads/active")
+end
+
+function Route:get_archived_threads(channel_id, kind, params)
+    local suffix = kind == "private" and "/private" or "/public"
+    if kind == "joined_private" then
+        suffix = "/users/@me/threads/archived/private"
+        return self.http:get("/channels/" .. channel_id .. suffix)
+    end
+    local query = ""
+    if params then
+        local parts = {}
+        for key, value in pairs(params) do
+            parts[#parts + 1] = key .. "=" .. tostring(value)
+        end
+        if #parts > 0 then
+            query = "?" .. table.concat(parts, "&")
+        end
+    end
+    return self.http:get("/channels/" .. channel_id .. "/threads/archived" .. suffix .. query)
+end
+
+function Route:create_webhook(channel_id, payload, reason)
+    return self.http:post("/channels/" .. channel_id .. "/webhooks", payload, opts_with_reason(reason))
+end
+
+function Route:get_channel_webhooks(channel_id)
+    return self.http:get("/channels/" .. channel_id .. "/webhooks")
+end
+
+function Route:follow_channel(channel_id, webhook_channel_id, reason)
+    return self.http:post(
+        "/channels/" .. channel_id .. "/followers",
+        { webhook_channel_id = webhook_channel_id },
+        opts_with_reason(reason)
+    )
+end
+
+function Route:get_webhook(webhook_id)
+    return self.http:get("/webhooks/" .. webhook_id)
+end
+
+function Route:get_webhook_with_token(webhook_id, webhook_token)
+    return self.http:get("/webhooks/" .. webhook_id .. "/" .. webhook_token)
+end
+
+function Route:edit_webhook(webhook_id, payload, reason)
+    return self.http:patch("/webhooks/" .. webhook_id, payload, opts_with_reason(reason))
+end
+
+function Route:delete_webhook(webhook_id, reason)
+    return self.http:delete("/webhooks/" .. webhook_id, opts_with_reason(reason))
+end
+
 -- Interaction responses
 
 function Route:create_interaction_response(interaction_id, interaction_token, payload, files)
@@ -263,6 +340,38 @@ function Route:edit_interaction_response(application_id, interaction_token, payl
         return self.http:patch_multipart(endpoint, payload, files)
     end
     return self.http:patch(endpoint, payload)
+end
+
+function Route:get_original_interaction_response(application_id, interaction_token)
+    return self.http:get("/webhooks/" .. application_id .. "/" .. interaction_token .. "/messages/@original")
+end
+
+function Route:delete_original_interaction_response(application_id, interaction_token)
+    return self.http:delete("/webhooks/" .. application_id .. "/" .. interaction_token .. "/messages/@original")
+end
+
+function Route:create_followup_message(application_id, interaction_token, payload, files)
+    local endpoint = "/webhooks/" .. application_id .. "/" .. interaction_token
+    if files and #files > 0 then
+        return self.http:post_multipart(endpoint, payload, files)
+    end
+    return self.http:post(endpoint, payload)
+end
+
+function Route:get_followup_message(application_id, interaction_token, message_id)
+    return self.http:get("/webhooks/" .. application_id .. "/" .. interaction_token .. "/messages/" .. message_id)
+end
+
+function Route:edit_followup_message(application_id, interaction_token, message_id, payload, files)
+    local endpoint = "/webhooks/" .. application_id .. "/" .. interaction_token .. "/messages/" .. message_id
+    if files and #files > 0 then
+        return self.http:patch_multipart(endpoint, payload, files)
+    end
+    return self.http:patch(endpoint, payload)
+end
+
+function Route:delete_followup_message(application_id, interaction_token, message_id)
+    return self.http:delete("/webhooks/" .. application_id .. "/" .. interaction_token .. "/messages/" .. message_id)
 end
 
 -- Soundboard

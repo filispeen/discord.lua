@@ -296,4 +296,67 @@ function M.SlashCommandContext:edit(content, opts)
     )
 end
 
+local function followup_payload(content, opts)
+    local payload = {}
+    if type(content) == "table" then
+        for key, value in pairs(content) do
+            if key ~= "files" then
+                payload[key] = value
+            end
+        end
+    else
+        payload.content = content
+    end
+    opts = opts or {}
+    if opts.ephemeral then
+        payload.flags = 64
+    end
+    if opts.embeds then
+        payload.embeds = opts.embeds
+    end
+    if opts.components then
+        payload.components = opts.components
+    end
+    local files = opts.files or (type(content) == "table" and content.files)
+    if files and #files > 0 then
+        local Multipart = require("../http/multipart")
+        payload = Multipart.with_attachments(payload, files)
+    end
+    return payload, files
+end
+
+function M.SlashCommandContext:original_response()
+    local Message = require("../models/message")
+    local data = self.bot.rest:get_original_interaction_response(self.bot.application_id, self.interaction_token)
+    return Message.new(data, self.bot.http)
+end
+
+function M.SlashCommandContext:delete_original_response()
+    return self.bot.rest:delete_original_interaction_response(self.bot.application_id, self.interaction_token)
+end
+
+function M.SlashCommandContext:send_followup(content, opts)
+    local Message = require("../models/message")
+    local payload, files = followup_payload(content, opts)
+    local data = self.bot.rest:create_followup_message(self.bot.application_id, self.interaction_token, payload, files)
+    return Message.new(data, self.bot.http)
+end
+
+function M.SlashCommandContext:fetch_followup(message_id)
+    local Message = require("../models/message")
+    local data = self.bot.rest:get_followup_message(self.bot.application_id, self.interaction_token, message_id)
+    return Message.new(data, self.bot.http)
+end
+
+function M.SlashCommandContext:edit_followup(message_id, content, opts)
+    local Message = require("../models/message")
+    local payload, files = followup_payload(content, opts)
+    local data = self.bot.rest:edit_followup_message(self.bot.application_id, self.interaction_token, message_id, payload, files)
+    return Message.new(data, self.bot.http)
+end
+
+function M.SlashCommandContext:delete_followup(message_id)
+    return self.bot.rest:delete_followup_message(self.bot.application_id, self.interaction_token, message_id)
+end
+
 return M
