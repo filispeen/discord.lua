@@ -122,6 +122,8 @@ function Message.new(data, http)
     end
     self.webhook_id = data.webhook_id or nil
     self.type = data.type or "DEFAULT"
+    self.flags = data.flags or 0
+    self.flag_set = require("./flags").MessageFlags.new(self.flags)
 
     -- Timestamps
     self.timestamp = data.timestamp and tonumber(data.timestamp)
@@ -164,7 +166,7 @@ function Message:_update(data)
     local fields = {
         "id", "author", "content", "channel_id", "guild_id", "mention_everyone",
         "tts", "mention_roles", "mention_channels", "mentions", "attachments",
-        "embeds", "webhook_id", "type", "timestamp", "edited_timestamp", "pinned",
+        "embeds", "webhook_id", "type", "flags", "timestamp", "edited_timestamp", "pinned",
         "mention", "role_mentions",
     }
     for _, field in ipairs(fields) do
@@ -175,6 +177,9 @@ function Message:_update(data)
                 self[field] = data[field]
             end
         end
+    end
+    if data.flags ~= nil then
+        self.flag_set = require("./flags").MessageFlags.new(self.flags)
     end
     if data.reactions ~= nil then
         self.reactions = {}
@@ -223,6 +228,9 @@ local function message_payload(content, opts)
         if key ~= "files" then
             payload[key] = value
         end
+    end
+    if type(payload.allowed_mentions) == "table" and type(payload.allowed_mentions.to_dict) == "function" then
+        payload.allowed_mentions = payload.allowed_mentions:to_dict()
     end
     local files = (opts and opts.files) or (type(content) == "table" and content.files)
     return payload, files

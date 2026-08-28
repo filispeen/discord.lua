@@ -3,7 +3,11 @@ local class = require("../core/class")
 local Nameplate = class("Nameplate")
 function Nameplate.new(data)
     data = data or {}
-    local self = { sku_id = data.sku_id, palette = data.palette, label = data.label, asset = data.asset }
+    local self = {
+        sku_id = data.sku_id, palette = data.palette, label = data.label, asset = data.asset,
+        static_asset = data.asset and require("./asset").from_collectible(data.asset, false) or nil,
+        animated_asset = data.asset and require("./asset").from_collectible(data.asset, true) or nil,
+    }
     setmetatable(self, { __index = Nameplate })
     return self
 end

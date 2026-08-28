@@ -39,6 +39,7 @@ function User.new(data)
     self.username = data.username
     self.discriminator = data.discriminator
     self.avatar = data.avatar
+    self.avatar_asset = data.avatar and require("./asset").from_avatar(data.id, data.avatar) or nil
     self.bot = data.bot or false
     self.system = data.system or false
     self.mfa_enabled = data.mfa_enabled or false
@@ -50,6 +51,7 @@ function User.new(data)
     self.global_name = data.global_name
     self.accent_color = data.accent_color
     self.banner = data.banner
+    self.banner_asset = data.banner and require("./asset").from_icon(data.id, data.banner, "banners") or nil
     self.primary_guild = data.primary_guild and require("./primary_guild").new(data.primary_guild) or nil
     self.collectibles = data.collectibles and require("./collectibles").Collectibles.new(data.collectibles) or nil
 

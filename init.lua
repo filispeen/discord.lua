@@ -20,6 +20,13 @@ local enums = require("./lib/core/enums")
 local M = {
     Bot = Bot,
     enums = enums,
+    Asset = require("./lib/models/asset"),
+    Colour = require("./lib/models/colour").Colour,
+    Color = require("./lib/models/colour").Color,
+    PartialEmoji = require("./lib/models/partial_emoji"),
+    AllowedMentions = require("./lib/models/allowed_mentions"),
+    Flags = require("./lib/models/flags"),
+    Permissions = require("./lib/models/permission").Permissions,
 }
 
 setmetatable(M, {

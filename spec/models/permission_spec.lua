@@ -21,7 +21,7 @@ local permission = require("./models/permission")
 
 describe("Permissions", function()
     it("defines ADMINISTRATOR permission", function()
-        assert.equals(268435456, permission.ADMINISTRATOR)
+        assert.equals(8, permission.ADMINISTRATOR)
     end)
 
     it("defines VIEW_CHANNEL permission", function()

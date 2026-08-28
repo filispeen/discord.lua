@@ -49,6 +49,7 @@ function Role.new(data)
     self.id = data.id
     self.name = data.name
     self.color = data.color or 0
+    self.colour = require("./colour").Colour.new(self.color)
     self.hoist = data.hoist or false
     self.mentionable = data.mentionable or false
     self.permissions = data.permissions or 0

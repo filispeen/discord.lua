@@ -16,6 +16,7 @@ function Embed.new(data)
     self.url = data.url
     self.description = data.description
     self.color = data.color or 0
+    self.colour = require("./colour").Colour.new(self.color)
     self.timestamp = data.timestamp
     self.footer = data.footer
     self.image = data.image
@@ -34,6 +35,10 @@ function Embed.new(data)
     self.to_json = Embed.to_json
 
     return self
+end
+
+local function colour_value(value)
+    return type(value) == "table" and value.value or value
 end
 
 function Embed.with_author(self, name, url, icon_url, color)
@@ -90,7 +95,8 @@ function Embed.with_fields(self, fields)
 end
 
 function Embed.with_color(self, color)
-    self.color = color
+    self.color = colour_value(color)
+    self.colour = require("./colour").Colour.new(self.color)
     return self
 end
 

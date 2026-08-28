@@ -153,6 +153,7 @@ function Guild.new(data, http)
     self.id = data.id
     self.name = data.name
     self.icon = data.icon
+    self.icon_asset = data.icon and require("./asset").from_guild_icon(data.id, data.icon) or nil
     self.owner_id = data.owner_id
     self.roles = data.roles or {}
     self.emojis = data.emojis or {}

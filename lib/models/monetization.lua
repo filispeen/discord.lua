@@ -23,6 +23,7 @@ function SKU.new(data, http)
         name = data.name,
         slug = data.slug,
         flags = data.flags or 0,
+        flag_set = require("./flags").SKUFlags.new(data.flags or 0),
         http = http,
     }
     setmetatable(self, { __index = SKU })
