@@ -89,6 +89,8 @@ function Client.new(token, ratelimiter, intents, opts)
         automod_rules = {},
         stage_instances = {},
         soundboard_sounds = {},
+        emojis = {},
+        stickers = {},
         -- Initial presence sent with IDENTIFY, see Shard:dispatch's HELLO
         -- handling. Client:change_presence updates presence live once
         -- the gateway is already connected instead.
@@ -172,6 +174,36 @@ function Client:fetch_widget(guild_id)
 
     local data = route:get_widget(guild_id)
     return WidgetModule.Widget.new(data, self.http)
+end
+
+function Client:fetch_application_emojis()
+    if not self.http then error("Client has no http client attached, cannot fetch application emojis", 0) end
+    local Route = require("../http/route")
+    local Emoji = require("./emoji")
+    local data = Route.new(self.http):get_application_emojis(self:get_application_id())
+    local emojis = {}
+    for i, item in ipairs(data.items or data or {}) do emojis[i] = Emoji.new(item, nil, self.http) end
+    return emojis
+end
+
+function Client:create_application_emoji(name, image)
+    if not self.http then error("Client has no http client attached, cannot create application emoji", 0) end
+    local Route = require("../http/route")
+    local Emoji = require("./emoji")
+    return Emoji.new(Route.new(self.http):create_application_emoji(self:get_application_id(), { name = name, image = image }), nil, self.http)
+end
+
+function Client:edit_application_emoji(emoji_id, name)
+    if not self.http then error("Client has no http client attached, cannot edit application emoji", 0) end
+    local Route = require("../http/route")
+    local Emoji = require("./emoji")
+    return Emoji.new(Route.new(self.http):edit_application_emoji(self:get_application_id(), emoji_id, { name = name }), nil, self.http)
+end
+
+function Client:delete_application_emoji(emoji_id)
+    if not self.http then error("Client has no http client attached, cannot delete application emoji", 0) end
+    local Route = require("../http/route")
+    return Route.new(self.http):delete_application_emoji(self:get_application_id(), emoji_id)
 end
 
 -- Sends a voice state update (opcode 4) to join, move between, or leave
@@ -614,10 +646,26 @@ function Client:start_gateway()
     end)
 
     self.gateway:on_dispatch("GUILD_EMOJIS_UPDATE", function(data)
+        if data and data.guild_id then
+            local Emoji = require("./emoji")
+            local emojis = {}
+            for index, emoji_data in ipairs(data.emojis or {}) do
+                emojis[index] = Emoji.new(emoji_data, { id = data.guild_id }, self.http)
+            end
+            self.emojis[data.guild_id] = emojis
+        end
         self:emit("guild_emojis_update", data)
     end)
 
     self.gateway:on_dispatch("GUILD_STICKERS_UPDATE", function(data)
+        if data and data.guild_id then
+            local Sticker = require("./sticker")
+            local stickers = {}
+            for index, sticker_data in ipairs(data.stickers or {}) do
+                stickers[index] = Sticker.new(sticker_data, { id = data.guild_id }, self.http)
+            end
+            self.stickers[data.guild_id] = stickers
+        end
         self:emit("guild_stickers_update", data)
     end)
 

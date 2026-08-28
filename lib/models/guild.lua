@@ -527,6 +527,55 @@ function Guild:edit_widget(opts)
     return nil
 end
 
+function Guild:fetch_emojis()
+    if not self.http then error("Guild has no http client attached, cannot fetch emojis", 0) end
+    local Route = require("../http/route")
+    local Emoji = require("./emoji")
+    local data = Route.new(self.http):get_guild_emojis(self.id)
+    local result = {}
+    for i, item in ipairs(data or {}) do result[i] = Emoji.new(item, self, self.http) end
+    self.emojis = result
+    return result
+end
+
+function Guild:create_emoji(opts)
+    opts = opts or {}
+    if not self.http then error("Guild has no http client attached, cannot create emoji", 0) end
+    if not opts.name or not opts.image then error("Guild:create_emoji requires opts.name and opts.image", 0) end
+    local Route = require("../http/route")
+    local Emoji = require("./emoji")
+    local data = Route.new(self.http):create_guild_emoji(self.id, { name = opts.name, image = opts.image, roles = opts.roles }, opts.reason)
+    return Emoji.new(data, self, self.http)
+end
+
+function Guild:fetch_stickers()
+    if not self.http then error("Guild has no http client attached, cannot fetch stickers", 0) end
+    local Route = require("../http/route")
+    local Sticker = require("./sticker")
+    local data = Route.new(self.http):get_guild_stickers(self.id)
+    local result = {}
+    for i, item in ipairs(data or {}) do result[i] = Sticker.new(item, self, self.http) end
+    self.stickers = result
+    return result
+end
+
+function Guild:fetch_sticker(sticker_id)
+    if not self.http then error("Guild has no http client attached, cannot fetch sticker", 0) end
+    local Route = require("../http/route")
+    local Sticker = require("./sticker")
+    return Sticker.new(Route.new(self.http):get_guild_sticker(self.id, sticker_id), self, self.http)
+end
+
+function Guild:create_sticker(opts)
+    opts = opts or {}
+    if not self.http then error("Guild has no http client attached, cannot create sticker", 0) end
+    if not opts.name or not opts.description or not opts.tags or not opts.file then error("Guild:create_sticker requires opts.name, opts.description, opts.tags and opts.file", 0) end
+    local Route = require("../http/route")
+    local Sticker = require("./sticker")
+    local data = Route.new(self.http):create_guild_sticker(self.id, { name = opts.name, description = opts.description, tags = opts.tags }, { opts.file }, opts.reason)
+    return Sticker.new(data, self, self.http)
+end
+
 function Guild:fetch_active_threads()
     if not self.http then
         error("Guild has no http client attached, cannot fetch active threads", 0)

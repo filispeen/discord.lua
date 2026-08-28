@@ -31,7 +31,7 @@ local class = require("../core/class")
 -- Sticker class
 local Sticker = class("Sticker")
 
-function Sticker.new(data)
+function Sticker.new(data, guild, http)
     local self = {}
     setmetatable(self, {
         __index = Sticker
@@ -44,6 +44,9 @@ function Sticker.new(data)
     self.pack_id = data.pack_id or nil
     self.type = data.type or 1
     self.user = data.user or nil
+    self.guild = guild
+    self.guild_id = data.guild_id or (guild and guild.id)
+    self.http = http or (guild and guild.http)
 
     -- Pack info
     if data.pack then
@@ -72,6 +75,26 @@ end
 -- Check if this is a premium sticker
 function Sticker:is_premium()
     return self.type == 2
+end
+
+function Sticker:edit(opts)
+    opts = opts or {}
+    if not self.http or not self.guild_id then error("Sticker has no guild http context, cannot edit", 0) end
+    local Route = require("../http/route")
+    local data = Route.new(self.http):edit_guild_sticker(self.guild_id, self.id, {
+        name = opts.name,
+        description = opts.description,
+        tags = opts.tags,
+    }, opts.reason)
+    self.name = data.name or self.name
+    self.description = data.description or self.description
+    return self
+end
+
+function Sticker:delete(reason)
+    if not self.http or not self.guild_id then error("Sticker has no guild http context, cannot delete", 0) end
+    local Route = require("../http/route")
+    return Route.new(self.http):delete_guild_sticker(self.guild_id, self.id, reason)
 end
 
 return Sticker

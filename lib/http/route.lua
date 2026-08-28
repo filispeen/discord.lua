@@ -324,6 +324,61 @@ function Route:delete_webhook(webhook_id, reason)
     return self.http:delete("/webhooks/" .. webhook_id, opts_with_reason(reason))
 end
 
+function Route:get_guild_emojis(guild_id)
+    return self.http:get("/guilds/" .. guild_id .. "/emojis")
+end
+
+function Route:create_guild_emoji(guild_id, payload, reason)
+    return self.http:post("/guilds/" .. guild_id .. "/emojis", payload, opts_with_reason(reason))
+end
+
+function Route:edit_guild_emoji(guild_id, emoji_id, payload, reason)
+    return self.http:patch("/guilds/" .. guild_id .. "/emojis/" .. emoji_id, payload, opts_with_reason(reason))
+end
+
+function Route:delete_guild_emoji(guild_id, emoji_id, reason)
+    return self.http:delete("/guilds/" .. guild_id .. "/emojis/" .. emoji_id, opts_with_reason(reason))
+end
+
+function Route:get_application_emojis(application_id)
+    return self.http:get("/applications/" .. application_id .. "/emojis")
+end
+
+function Route:create_application_emoji(application_id, payload)
+    return self.http:post("/applications/" .. application_id .. "/emojis", payload)
+end
+
+function Route:edit_application_emoji(application_id, emoji_id, payload)
+    return self.http:patch("/applications/" .. application_id .. "/emojis/" .. emoji_id, payload)
+end
+
+function Route:delete_application_emoji(application_id, emoji_id)
+    return self.http:delete("/applications/" .. application_id .. "/emojis/" .. emoji_id)
+end
+
+function Route:get_guild_stickers(guild_id)
+    return self.http:get("/guilds/" .. guild_id .. "/stickers")
+end
+
+function Route:get_guild_sticker(guild_id, sticker_id)
+    return self.http:get("/guilds/" .. guild_id .. "/stickers/" .. sticker_id)
+end
+
+function Route:create_guild_sticker(guild_id, payload, files, reason)
+    if files and #files > 0 then
+        return self.http:post_multipart("/guilds/" .. guild_id .. "/stickers", payload, files, opts_with_reason(reason))
+    end
+    return self.http:post("/guilds/" .. guild_id .. "/stickers", payload, opts_with_reason(reason))
+end
+
+function Route:edit_guild_sticker(guild_id, sticker_id, payload, reason)
+    return self.http:patch("/guilds/" .. guild_id .. "/stickers/" .. sticker_id, payload, opts_with_reason(reason))
+end
+
+function Route:delete_guild_sticker(guild_id, sticker_id, reason)
+    return self.http:delete("/guilds/" .. guild_id .. "/stickers/" .. sticker_id, opts_with_reason(reason))
+end
+
 -- Interaction responses
 
 function Route:create_interaction_response(interaction_id, interaction_token, payload, files)
