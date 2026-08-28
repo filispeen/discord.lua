@@ -27,6 +27,14 @@ local M = {
     AllowedMentions = require("./lib/models/allowed_mentions"),
     Flags = require("./lib/models/flags"),
     Permissions = require("./lib/models/permission").Permissions,
+    ui = {
+        ActionRow = require("./lib/ui/action_row"),
+        Checkbox = require("./lib/ui/checkbox"),
+        CheckboxGroup = require("./lib/ui/checkbox_group"),
+        RadioGroup = require("./lib/ui/radio_group"),
+        InputText = require("./lib/ui/input_text"),
+        File = require("./lib/ui/file"),
+    },
 }
 
 setmetatable(M, {

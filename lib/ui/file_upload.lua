@@ -29,13 +29,14 @@ function FileUpload.new(opts)
 
     self.url = opts.url
     self.spoiler = opts.spoiler or false
+    self.v2 = true
 
     return self
 end
 
 function FileUpload:to_component()
     return {
-        type = 13,
+        type = 19,
         file = { url = self.url },
         spoiler = self.spoiler,
     }

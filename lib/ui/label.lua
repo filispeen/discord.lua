@@ -38,6 +38,7 @@ function Label.new(opts)
     self.text = opts.text
     self.description = opts.description
     self.component = opts.component
+    self.v2 = true
 
     return self
 end

@@ -78,6 +78,7 @@ function Button.new(opts)
     self.emoji = opts.emoji
     self.disabled = opts.disabled or false
     self.callback = opts.callback
+    self.width = 1
     self:set_row(opts.row)
 
     return self

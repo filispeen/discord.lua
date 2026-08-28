@@ -24,11 +24,11 @@ describe("FileUpload", function()
         end)
     end)
 
-    it("serializes to a type 13 component", function()
+    it("serializes to a type 19 component", function()
         local file = FileUpload.new({ url = "attachment://report.pdf", spoiler = true })
         local component = file:to_component()
 
-        assert.equals(13, component.type)
+        assert.equals(19, component.type)
         assert.equals("attachment://report.pdf", component.file.url)
         assert.is_true(component.spoiler)
     end)

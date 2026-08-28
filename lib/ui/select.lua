@@ -63,6 +63,7 @@ function Select.new(opts)
     self.options = opts.options or {}
     self.disabled = opts.disabled or false
     self.callback = opts.callback
+    self.width = 5
     self:set_row(opts.row)
 
     return self

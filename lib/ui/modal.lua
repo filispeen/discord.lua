@@ -57,18 +57,20 @@ function Modal:add_item(item)
 end
 
 function Modal:to_component()
-    local rows = {}
+    local components = {}
     for _, item in ipairs(self.items) do
-        table.insert(rows, {
-            type = 1,
-            components = { item.to_component and item:to_component() or item },
-        })
+        local component = item.to_component and item:to_component() or item
+        if item.v2 then
+            components[#components + 1] = component
+        else
+            components[#components + 1] = { type = 1, components = { component } }
+        end
     end
 
     return {
         title = self.title,
         custom_id = self.custom_id,
-        components = rows,
+        components = components,
     }
 end
 

@@ -118,24 +118,20 @@ function View:timeout(ms)
 end
 
 function View:to_components()
-    local rows = {}
-    for i = 0, MAX_ROWS - 1 do
-        rows[i] = {}
-    end
+    local rows, components = {}, {}
+    for i = 0, MAX_ROWS - 1 do rows[i] = {} end
 
     for _, item in ipairs(self.items) do
-        local row_index = item.row or 0
-        table.insert(rows[row_index], item:to_component())
+        if item.type == "action_row" then
+            components[#components + 1] = item:to_component()
+        else
+            local row_index = item.row or 0
+            table.insert(rows[row_index], item:to_component())
+        end
     end
 
-    local components = {}
     for i = 0, MAX_ROWS - 1 do
-        if #rows[i] > 0 then
-            table.insert(components, {
-                type = 1,
-                components = rows[i],
-            })
-        end
+        if #rows[i] > 0 then components[#components + 1] = { type = 1, components = rows[i] } end
     end
 
     return components
