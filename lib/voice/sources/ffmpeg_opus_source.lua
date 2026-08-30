@@ -2,6 +2,7 @@ local class = require("../../core/class")
 local luv = require("../../core/luv_compat")
 local AudioSource = require("./source")
 local OggStream = require("../oggparse")
+local native_lib = require("../native_lib")
 
 local FFmpegOpusSource = class("FFmpegOpusSource", AudioSource)
 
@@ -82,10 +83,16 @@ function FFmpegOpusSource.new(source, opts)
     self._stdout = stdout
     self._stderr_pipe = stderr
 
-    local process, pid_or_err = luv.spawn(opts.executable or "ffmpeg", {
+    local bundled_executable = native_lib.resolve_executable("ffmpeg")
+    local executable = opts.executable or bundled_executable or "ffmpeg"
+    local spawn_options = {
         args = args,
         stdio = { stdin, stdout, stderr },
-    }, function(code, signal)
+    }
+    if bundled_executable and executable == bundled_executable then
+        spawn_options.env = native_lib.windows_dll_env()
+    end
+    local process, pid_or_err = luv.spawn(executable, spawn_options, function(code, signal)
         self._running = false
         self._exit_code = code
         self._exit_signal = signal
@@ -99,7 +106,7 @@ function FFmpegOpusSource.new(source, opts)
         if stdin and stdin.close then stdin:close() end
         if stdout.close then stdout:close() end
         if stderr.close then stderr:close() end
-        error("FFmpegOpusSource failed to spawn " .. tostring(opts.executable or "ffmpeg") .. ": " .. tostring(pid_or_err), 0)
+        error("FFmpegOpusSource failed to spawn " .. tostring(executable) .. ": " .. tostring(pid_or_err), 0)
     end
 
     self._process = process
@@ -208,20 +215,25 @@ function FFmpegOpusSource.probe(source, callback, opts)
         error("FFmpegOpusSource.probe requires a callback", 0)
     end
 
-    local executable = opts.probe_executable or "ffprobe"
+    local bundled_executable = native_lib.resolve_executable("ffprobe")
+    local executable = opts.probe_executable or bundled_executable or "ffprobe"
     local stdout = luv.new_pipe(false)
     local stderr = luv.new_pipe(false)
     local output, errors = "", ""
     local process
-
-    process = luv.spawn(executable, {
+    local spawn_options = {
         args = {
             "-v", "error", "-select_streams", "a:0",
             "-show_entries", "stream=codec_name,bit_rate",
             "-of", "default=noprint_wrappers=1", source,
         },
         stdio = { nil, stdout, stderr },
-    }, function(code)
+    }
+    if bundled_executable and executable == bundled_executable then
+        spawn_options.env = native_lib.windows_dll_env()
+    end
+
+    process = luv.spawn(executable, spawn_options, function(code)
         if process then process:close() end
         local codec, bitrate = parse_probe(output)
         callback(codec, bitrate, code == 0 and nil or errors)

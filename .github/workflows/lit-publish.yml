@@ -32,26 +32,26 @@ jobs:
           curl -L https://github.com/luvit/lit/raw/master/get-lit.sh | sh
           echo "$PWD" >> $GITHUB_PATH
 
-      - name: Install libsodium (Windows dlls)
+      - name: Install libsodium (Windows DLL bundle)
         run: |
           sudo apt-get update
           sudo apt-get install -y jq unzip
           curl -s https://api.github.com/repos/jedisct1/libsodium/releases/latest | jq -r '.assets[] | select(.name | test("msvc.zip$")) | .browser_download_url' | xargs -I{} curl -L -o libsodium-latest-msvc.zip {}
           unzip libsodium-latest-msvc.zip 'libsodium/*/Release/v143/dynamic/*.dll' -d ./
-          mkdir -p ./lib/dlls
+          mkdir -p ./lib/bundle/windows-x64/dll
           for arch in x64 Win32 ARM64; do
-            mv "./libsodium/$arch/Release/v143/dynamic/libsodium.dll" "./lib/dlls/libsodium-$arch.dll"
+            mv "./libsodium/$arch/Release/v143/dynamic/libsodium.dll" "./lib/bundle/windows-x64/dll/libsodium-$arch.dll"
             echo "Copied libsodium.dll for $arch"
           done
 
-      - name: Build libopus (Windows dlls)
+      - name: Build libopus (Windows DLL bundle)
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake make gcc-mingw-w64 binutils-mingw-w64-i686 binutils-mingw-w64-x86-64
           git clone --depth 1 --branch "${OPUS_TAG}" https://github.com/xiph/opus.git opus-src
-          mkdir -p ./lib/dlls
+          mkdir -p ./lib/bundle/windows-x64/dll
 
-          declare -A targets=( [x64]=x86_64-w64-mingw32 [Win32]=i686-w64-mingw32 )
+          declare -A targets=( [x64]=x86_64-w64-mingw32 [x86]=i686-w64-mingw32 )
           for arch in "${!targets[@]}"; do
               host="${targets[$arch]}"
 
@@ -71,17 +71,17 @@ jobs:
                   -DOPUS_BUILD_TESTING=OFF
               cmake --build "${build_dir}" --config Release --parallel "$(nproc)"
 
-              if ! find "${build_dir}" -iname "libopus.dll" -exec cp {} "./lib/dlls/opus-${arch}.dll" \; ; then
+              if ! find "${build_dir}" -iname "libopus.dll" -exec cp {} "./lib/bundle/windows-x64/dll/libopus-0.${arch}.dll" \; ; then
                   echo "FAIL ${arch}: build finished but opus.dll was not found"
                   exit 1
               fi
 
-              if [ ! -f "./lib/dlls/opus-${arch}.dll" ]; then
+              if [ ! -f "./lib/bundle/windows-x64/dll/libopus-0.${arch}.dll" ]; then
                   echo "FAIL ${arch}: opus.dll was not produced"
                   exit 1
               fi
 
-              echo "OK ${arch}: $(file "./lib/dlls/opus-${arch}.dll")"
+              echo "OK ${arch}: $(file "./lib/bundle/windows-x64/dll/libopus-0.${arch}.dll")"
           done
 
       - name: Write a version into package.lua

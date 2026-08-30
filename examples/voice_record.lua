@@ -15,11 +15,11 @@
 --   - Run under luvit on Windows (this library's ffi/luv target), not
 --     WSL/Linux, since that's where lib/voice/native_lib.lua's bundled
 --     dll resolution (see lib/voice/native_lib.lua and PROG.md) applies.
---   - lib/dlls/opus-x64.dll and lib/dlls/libsodium-x64.dll present next
+--   - lib/bundle/libopus-0.x64.dll and lib/bundle/libsodium-x64.dll present next
 --     to this checkout (lib/**.dll is gitignored and only built by
 --     .github/workflows/lit-publish.yml, so for a local manual test
 --     either run `lit install` against a published release or copy
---     matching dlls into lib/dlls/ yourself).
+--     matching dlls into lib/bundle/ yourself).
 --   - Another real user actually speaking in the same voice channel,
 --     so the jitter buffer and decoder have real RTP traffic to work
 --     with; recording a channel with nobody talking only proves the

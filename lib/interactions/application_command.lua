@@ -19,6 +19,41 @@ local class = require("../core/class")
 -- ApplicationCommand class
 local ApplicationCommand = class("ApplicationCommand")
 
+local function validate_options(options)
+    if options == nil then
+        return {}
+    end
+    if type(options) ~= "table" then
+        error("ApplicationCommand options must be an array of option tables", 0)
+    end
+
+    local count, max_index = 0, 0
+    for key in pairs(options) do
+        if type(key) ~= "number" or key < 1 or key ~= math.floor(key) then
+            error("ApplicationCommand options must be an array: { { name = ..., type = ... } }", 0)
+        end
+        count = count + 1
+        if key > max_index then
+            max_index = key
+        end
+    end
+    if count ~= max_index then
+        error("ApplicationCommand options must not have gaps", 0)
+    end
+
+    for index, option in ipairs(options) do
+        if type(option) ~= "table"
+            or type(option.name) ~= "string"
+            or option.name == ""
+            or type(option.type) ~= "number"
+        then
+            error("ApplicationCommand option #" .. index .. " requires string name and numeric type", 0)
+        end
+    end
+
+    return options
+end
+
 -- Discord application command types
 ApplicationCommand.TYPE_CHAT_INPUT = 1
 ApplicationCommand.TYPE_USER = 2
@@ -33,7 +68,7 @@ function ApplicationCommand.new(name, description, options)
     self.id = ""
     self.name = name
     self.description = description
-    self.options = options or {}
+    self.options = validate_options(options)
     self.aliases = {}
     self.type = ApplicationCommand.TYPE_CHAT_INPUT
     self.guild_ids = nil

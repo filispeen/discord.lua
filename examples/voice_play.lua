@@ -12,15 +12,6 @@
 -- Channel:connect()'s public contract documents.
 
 local discord = require("../init")
-local PCMSource = require("../lib/voice/sources/pcm_source")
-
--- Optional: set to your test server's guild ID (as a string) to
--- register /join, /play, /leave as guild-scoped commands, which
--- Discord activates within seconds. Leave nil for global commands,
--- which can take up to an hour to propagate on first registration.
-local TEST_GUILD_ID = os.getenv("TEST_GUILD_ID")
-local GUILD_IDS = TEST_GUILD_ID and { TEST_GUILD_ID } or nil
-
 -- GUILD_VOICE_STATES is needed to track who is in which voice channel,
 -- on top of GUILDS for basic guild/channel caching.
 local intents = discord.enums.combine_intents(
@@ -34,6 +25,7 @@ local bot = discord.Bot(nil, intents)
 -- Channel:connect() so /play and /leave can reuse the same connection
 -- a prior /join established, instead of reconnecting.
 local voice_clients = {}
+local logging_bound = false
 
 -- Without this, an error thrown inside a slash command callback (see
 -- Bot:dispatch_interaction's pcall) is swallowed silently: the command
@@ -43,12 +35,27 @@ local voice_clients = {}
 -- explaining why).
 bot:on("application_command_error", function(ctx, err)
     print("Slash command error:", tostring(err))
+    os.exit(1)
 end)
 
 bot:on("ready", function()
     print("Bot is ready!")
     if bot.user then
         print("Bot ID: " .. bot.user.id)
+    end
+    if not logging_bound then
+        logging_bound = true
+        bot.client:on("interaction_create", function(interaction)
+            print("voice interaction", interaction and interaction.data and interaction.data.name or "unknown")
+        end)
+        for _, event in ipairs({
+            "voice_state_update", "voice_server_update", "VOICE_CLIENT_CONNECTED",
+            "VOICE_CLIENT_SESSION_INVALIDATED", "VOICE_CLIENT_RECONNECT_FAILED"
+        }) do
+            bot.client:on(event, function(payload)
+                print("voice event", event, payload and payload.channel_id or payload and payload.reason or "")
+            end)
+        end
     end
 
     -- bot.auto_sync_commands (default true) already calls this inside
@@ -62,9 +69,7 @@ bot:on("ready", function()
     end)
     if sync_ok then
         print("Slash commands synced.")
-        if TEST_GUILD_ID then
-            print("Guild-scoped to:", TEST_GUILD_ID)
-        end
+        print("Global command scope")
     else
         print("Slash command sync FAILED:", tostring(sync_result))
     end
@@ -77,7 +82,6 @@ end)
 -- Slash command that joins the invoking user's current voice channel.
 bot:slash_command("join", {
     description = "Joins your voice channel",
-    guild_ids = GUILD_IDS,
     callback = function(ctx)
         print("/join invoked by", ctx.author and ctx.author.id)
 
@@ -113,89 +117,112 @@ bot:slash_command("join", {
     end,
 })
 
--- Slash command that plays the bundled test tone (examples/assets/
--- test_tone.pcm: 3s 440Hz sine, raw 16-bit 48kHz stereo PCM) through
--- the voice connection /join established for this guild. Encoding and
--- DAVE encryption (if the session negotiated it) happen inside
--- VoiceClient:play/_start_playback/send_audio_packet, this command
--- only has to hand it a source.
-local function play_pcm_file(ctx, path, label)
-    print("play_pcm_file invoked:", label, path)
+local function http_source_options(source)
+    if source:match("^https?://") then
+        return {
+            before_options = {
+                "-reconnect", "1",
+                "-reconnect_streamed", "1",
+                "-reconnect_delay_max", "5",
+            },
+        }
+    end
+    return {}
+end
 
+local function play_audio(ctx)
     if not ctx.guild then
         ctx:respond("This command only works inside a server.")
         return
     end
-
+    local source_path = ctx:require_arg("source")
     local voice_client = voice_clients[ctx.guild.id]
     if not voice_client then
-        print("play_pcm_file: no voice_client for guild", ctx.guild.id)
+        print("voice playback rejected", "no voice client")
         ctx:respond("Not connected to voice, use /join first.")
         return
     end
-
-    local ok, source_or_err = pcall(PCMSource.new, path)
-    if not ok then
-        print("play_pcm_file: PCMSource.new failed:", tostring(source_or_err))
-        ctx:respond("Could not open " .. label .. ": " .. tostring(source_or_err))
+    print("voice source", source_path)
+    local started, source_or_err = voice_client:play_ffmpeg(source_path, http_source_options(source_path))
+    if not started then
+        print("voice playback failed", tostring(source_or_err))
+        ctx:respond("Could not play audio: " .. tostring(source_or_err))
         return
     end
-
-    local play_ok, play_err = pcall(function()
-        return voice_client:play(source_or_err)
-    end)
-
-    if play_ok then
-        print("play_pcm_file: playback started for", label)
-        ctx:respond("Playing " .. label .. ".")
-    else
-        print("play_pcm_file: voice_client:play failed:", tostring(play_err))
-        ctx:respond("Could not start playback: " .. tostring(play_err))
-    end
+    print("voice playback started", source_or_err.pid or "unknown")
+    ctx:respond("Playing audio.")
 end
 
 bot:slash_command("play", {
-    description = "Plays a short test tone in the connected voice channel",
-    guild_ids = GUILD_IDS,
+    description = "Plays local audio or an HTTP(S) URL through FFmpeg",
+    options = {
+        {
+            name = "source",
+            type = discord.enums.OPTION_TYPE.STRING,
+            description = "Local path or HTTP(S) audio URL",
+            required = true,
+        },
+    },
     callback = function(ctx)
-        play_pcm_file(ctx, "./examples/assets/test_tone.pcm", "test tone")
+        play_audio(ctx)
     end,
 })
 
--- Slash command that plays i_will_survive.pcm (converted from
--- examples/i_will_survive.mp3 via
--- ffmpeg -i i_will_survive.mp3 -f s16le -ar 48000 -ac 2 i_will_survive.pcm,
--- required since PCMSource only reads raw PCM, not MP3). ~4m06s.
-bot:slash_command("playsong", {
-    description = "Plays I Will Survive in the connected voice channel",
-    guild_ids = GUILD_IDS,
+bot:slash_command("volume", {
+    description = "Sets active PCM audio to value percent volume",
+    options = {
+        {
+            name = "volume",
+            type = discord.enums.OPTION_TYPE.INTEGER,
+            description = "Sets your volume to specified value",
+            required = true,
+        },
+    },
     callback = function(ctx)
-        play_pcm_file(ctx, "./examples/assets/i_will_survive.pcm", "I Will Survive")
+        local volume = ctx:require_arg("volume") / 100
+        if not ctx.guild then
+            ctx:respond("This command only works inside a server.")
+            return
+        end
+        local voice_client = voice_clients[ctx.guild.id]
+        if not voice_client then
+            print("voice ffmpeg volume rejected", "no voice client")
+            ctx:respond("Not connected to voice, use /join first.")
+            return
+        end
+        local changed, change_err = voice_client:set_volume(volume)
+        if not changed then
+            print("voice volume change failed", tostring(change_err))
+            ctx:respond(tostring(change_err))
+            return
+        end
+        print("voice volume changed", volume * 100)
+        ctx:respond("Volume set to " .. volume * 100 .. " percent.")
     end,
 })
 
--- Slash command that plays a 60s pure 440Hz sine tone (examples/assets/
--- test_tone_60s.pcm, generated via
--- ffmpeg -f lavfi -i "sine=frequency=440:duration=60" -f s16le -ar 48000
--- -ac 2 test_tone_60s.pcm). Long enough to judge periodic glitches with
--- an unambiguous, artifact-free signal: unlike I Will Survive (a real
--- mp3 -> pcm conversion, which could in principle carry its own
--- encoding artifacts) or the 3s test tone (too short to catch anything
--- roughly periodic), a continuous pure tone makes any actual dropout
--- immediately and unmistakably audible as a "click" or gap, with
--- nothing else in the signal to mask or be confused with it.
-bot:slash_command("playtone60", {
-    description = "Plays a 60s test tone in the connected voice channel",
-    guild_ids = GUILD_IDS,
+bot:slash_command("leave", {
+    description = "Leaves the voice channel",
     callback = function(ctx)
-        play_pcm_file(ctx, "./examples/assets/test_tone_60s.pcm", "60s test tone")
+        if not ctx.guild then
+            ctx:respond("This command only works inside a server.")
+            return
+        end
+
+        local voice_client = voice_clients[ctx.guild.id]
+        if not voice_client then
+            ctx:respond("Not connected to voice.")
+            return
+        end
+
+        voice_client:stop()
+        ctx:respond("Stopped.")
     end,
 })
 
 -- Slash command that disconnects from voice in this guild.
 bot:slash_command("leave", {
     description = "Leaves the voice channel",
-    guild_ids = GUILD_IDS,
     callback = function(ctx)
         if not ctx.guild then
             ctx:respond("This command only works inside a server.")

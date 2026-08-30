@@ -502,10 +502,18 @@ function VoiceClient:disconnect(force)
 
         self.client:voice_state_update(self.guild.id, nil, false, false)
     else
-        -- Graceful disconnect
         if self.state.playing then
             self:stop()
         end
+        if self.udp and self.udp.close then
+            self.udp:close()
+        end
+        if self.gateway and self.gateway.close then
+            self.gateway:close()
+        end
+        self.client:off("voice_state_update", self._on_voice_state_update)
+        self.client:off("voice_server_update", self._on_voice_server_update)
+        self.client:voice_state_update(self.guild.id, nil, false, false)
     end
 
     state.connected = false
@@ -588,6 +596,46 @@ function VoiceClient:play(source, options)
     -- the timer's own reads resume.
     self:_start_playback()
 
+    return true
+end
+
+function VoiceClient:play_ffmpeg(source, opts)
+    local FFmpegAudioSource = require("./sources/ffmpeg_audio_source")
+    local ok, audio_source_or_err = pcall(FFmpegAudioSource.new, source, opts)
+    if not ok then
+        return false, tostring(audio_source_or_err)
+    end
+
+    local started, start_err = self:play(audio_source_or_err)
+    if not started then
+        audio_source_or_err:cleanup()
+        return false, start_err
+    end
+
+    return true, audio_source_or_err
+end
+
+function VoiceClient:set_volume(volume)
+    if type(volume) ~= "number" or volume < 0 then
+        return false, "Volume must be a non-negative number"
+    end
+
+    local source = self.state.source
+    if not self.state.playing or not source then
+        return false, "Not playing"
+    end
+    if source.is_opus and source:is_opus() then
+        return false, "Cannot change volume of an Opus passthrough source"
+    end
+
+    if source.original and source.volume ~= nil then
+        source.volume = volume
+        return true
+    end
+
+    local PCMVolumeTransformer = require("./sources/pcm_volume_transformer")
+    self.state.source = PCMVolumeTransformer.new(source, volume)
+    self:_start_playback()
     return true
 end
 
@@ -815,6 +863,7 @@ function VoiceClient:_start_playback()
     -- current_time >= next_frame_time poll loop, just event-driven
     -- instead of busy-polled.
     local playback_started_at = luv.now()
+    local source_started = false
     self._playback_tick_count = 0
 
     local schedule_next_tick
@@ -824,6 +873,7 @@ function VoiceClient:_start_playback()
         local tick_index = self._playback_tick_count
 
         local stopped = false
+        local waiting_for_source = false
 
         local tick_ok, tick_err = pcall(function()
             if not source:is_playing() then
@@ -831,10 +881,16 @@ function VoiceClient:_start_playback()
                 return
             end
 
+            if not source_started and source.is_ready and not source:is_ready() then
+                waiting_for_source = true
+                return
+            end
+
             -- Read next frame from source
             local chunk, pending = source:read()
             if not chunk then
                 if pending == "pending" then
+                    waiting_for_source = true
                     return
                 end
                 -- Source finished, stop playback
@@ -842,6 +898,8 @@ function VoiceClient:_start_playback()
                 self:stop()
                 return
             end
+
+            source_started = true
 
             -- Encode and send. send_audio_packet reports failure via a
             -- false/err return (encoder not ready, DAVE encrypt
@@ -873,7 +931,14 @@ function VoiceClient:_start_playback()
         end
 
         if not stopped then
-            schedule_next_tick(tick_index)
+            if waiting_for_source then
+                self._playback_tick_count = self._playback_tick_count - 1
+                playback_started_at = luv.now()
+                self._timer = luv.new_timer()
+                self._timer:start(5, 0, run_tick)
+            else
+                schedule_next_tick(tick_index)
+            end
         end
     end
 

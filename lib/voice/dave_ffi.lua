@@ -23,8 +23,8 @@
 --     wraps daveMaxSupportedProtocolVersion(), used for the
 --     max_dave_protocol_version field in IDENTIFY.
 --
--- Build requirement: lib/dlls/libdave-x64.dll (Windows) and
--- lib/dlls/libdave.so (Linux) are bundled prebuilt binaries copied from
+-- Build requirement: lib/bundle/libdave-x64.dll (Windows) and
+-- lib/bundle/linux-x64/lib/libdave.so (Linux x64) are bundled prebuilt binaries copied from
 -- discord/libdave's official v1.1.1 GitHub release assets
 -- (libdave-Windows-X64-boringssl.zip, libdave-Linux-X64-boringssl.zip),
 -- not built from source in this repo. If those releases are ever
@@ -216,7 +216,7 @@ local function load_dave()
     -- Unlike crypto.lua's load_sodium (Windows-only bundled path,
     -- libsodium expected as a system package on Linux/macOS), libdave is
     -- not expected to be installed system-wide anywhere, so this checks
-    -- lib/dlls/ on both Windows and Linux (see native_lib.resolve_any_platform).
+    -- lib/bundle/ on both Windows and Linux (see native_lib.resolve_any_platform).
     -- Falls back to the bare name in case a system libdave does exist
     -- (e.g. manually installed), or on macOS where nothing is bundled.
     local bundled_path = native_lib.resolve_any_platform("libdave")

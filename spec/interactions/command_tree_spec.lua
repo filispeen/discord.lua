@@ -85,6 +85,28 @@ describe("CommandTree", function()
         end
     end)
 
+    it("syncs a command when an option description changes", function()
+        local remote = {
+            {
+                name = "volume",
+                description = "Sets volume",
+                type = 1,
+                options = {
+                    { name = "amount", description = "Old description", type = 4, required = true },
+                },
+            },
+        }
+        local http = make_http({ ["/applications/1/commands"] = remote })
+        local tree = CommandTree.new(http)
+        tree:add(ApplicationCommand.new("volume", "Sets volume", {
+            { name = "amount", description = "New description", type = 4, required = true },
+        }))
+
+        tree:sync("1")
+
+        assert.equals("PUT", http.calls[2].method)
+    end)
+
     it("syncs each guild's commands to their own endpoint", function()
         local http = make_http({})
         local tree = CommandTree.new(http)

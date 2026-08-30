@@ -1,6 +1,6 @@
 local luv = require("../core/luv_compat")
 
-local unpack = table.unpack or unpack
+local unpack = rawget(table, "unpack") or _G.unpack
 
 local Loop = {}
 Loop.__index = Loop

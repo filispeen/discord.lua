@@ -27,6 +27,15 @@ describe("ApplicationCommand", function()
         assert.is_true(dict.options[1].required)
     end)
 
+    it("rejects a single option table instead of an array", function()
+        assert.has_error(function()
+            ApplicationCommand.new("echo", "Echoes text", {
+                name = "text",
+                type = 3,
+            })
+        end, "ApplicationCommand options must be an array: { { name = ..., type = ... } }")
+    end)
+
     it("marks an option autocomplete true once a callback is set", function()
         local cmd = ApplicationCommand.new("search", "Search", {
             { name = "query", type = 3 },

@@ -79,11 +79,8 @@ local function load_sodium()
         return
     end
 
-    -- Prefer the dll bundled in lib/dlls/ (see native_lib.lua) on
-    -- Windows, since a bare ffi.load("sodium") only checks the OS's
-    -- normal library search path and won't find it there on its own.
-    -- Falls back to the bare name so a system-installed libsodium (the
-    -- expected setup on Linux/macOS) still works.
+    -- Prefer the platform-specific shared library bundled in lib/bundle/.
+    -- Falls back to the bare name when no matching bundle is available.
     local bundled_path = native_lib.resolve("libsodium")
 
     local success = pcall(function()

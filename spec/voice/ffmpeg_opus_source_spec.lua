@@ -55,6 +55,7 @@ describe("FFmpegOpusSource", function()
         package.loaded["./core/luv_compat"] = nil
         package.loaded["./voice/oggparse"] = nil
         package.loaded["./voice/sources/ffmpeg_opus_source"] = nil
+        package.loaded["../native_lib"] = nil
     end)
 
     it("uses copy passthrough and returns Ogg audio packets", function()
@@ -66,6 +67,32 @@ describe("FFmpegOpusSource", function()
 
         assert.is_true(source:is_opus())
         assert.equals("audio", source:read())
+    end)
+
+    it("adds the bundled Windows DLL directory to PATH", function()
+        package.loaded["../native_lib"] = {
+            resolve_executable = function(name) return "bundled-" .. name .. ".exe" end,
+            windows_dll_env = function() return { "PATH=bundle-dll-path" } end,
+        }
+
+        local FFmpegOpusSource = load_source()
+        FFmpegOpusSource.new("song.webm")
+
+        assert.equals("bundled-ffmpeg.exe", created.executable)
+        assert.same({ "PATH=bundle-dll-path" }, created.options.env)
+    end)
+
+    it("adds the bundled Windows DLL directory to ffprobe PATH", function()
+        package.loaded["../native_lib"] = {
+            resolve_executable = function(name) return "bundled-" .. name .. ".exe" end,
+            windows_dll_env = function() return { "PATH=bundle-dll-path" } end,
+        }
+
+        local FFmpegOpusSource = load_source()
+        FFmpegOpusSource.probe("song.webm", function() end)
+
+        assert.equals("bundled-ffprobe.exe", created.executable)
+        assert.same({ "PATH=bundle-dll-path" }, created.options.env)
     end)
 
     it("provides writable stdin for pipe sources", function()

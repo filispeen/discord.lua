@@ -212,6 +212,28 @@ describe("VoiceClient", function()
             assert.is_true(success)
         end)
 
+        it("graceful disconnect requests that Discord leaves the voice channel", function()
+            local calls = {}
+            mock_client.voice_state_update = function(_self, guild_id, channel_id, self_mute, self_deaf)
+                table.insert(calls, {
+                    guild_id = guild_id,
+                    channel_id = channel_id,
+                    self_mute = self_mute,
+                    self_deaf = self_deaf,
+                })
+            end
+
+            client:disconnect(false)
+
+            assert.equals(1, #calls)
+            assert.equals(mock_guild.id, calls[1].guild_id)
+            assert.is_nil(calls[1].channel_id)
+            assert.is_false(calls[1].self_mute)
+            assert.is_false(calls[1].self_deaf)
+            assert.equals(0, #mock_client._listeners["voice_state_update"])
+            assert.equals(0, #mock_client._listeners["voice_server_update"])
+        end)
+
         it("should disconnect forcefully", function()
             local success, err = pcall(function()
                 client:disconnect(true)
@@ -273,6 +295,109 @@ describe("VoiceClient", function()
 
             assert.is_true(not success)
             assert.equals("Not connected", err)
+        end)
+    end)
+
+    describe("Playback source readiness", function()
+        local client
+
+        before_each(function()
+            client = VoiceClient.new(mock_client, mock_channel)
+        end)
+
+        it("does not advance playback timing while a source is pending", function()
+            local reads = 0
+            local sent = 0
+            local source = {
+                is_opus = function() return false end,
+                is_playing = function() return true end,
+                read = function()
+                    reads = reads + 1
+                    if reads == 1 then
+                        return nil, "pending"
+                    end
+                    return string.rep("a", 3840)
+                end,
+            }
+            client.state.connected = true
+            client.send_audio_packet = function()
+                sent = sent + 1
+                return true
+            end
+
+            client:play(source)
+            created_timers[#created_timers].callback()
+
+            assert.equals(0, sent)
+            assert.equals(0, client._playback_tick_count)
+            assert.equals(5, created_timers[#created_timers].interval)
+
+            created_timers[#created_timers].callback()
+
+            assert.equals(1, sent)
+            assert.equals(1, client._playback_tick_count)
+        end)
+
+        it("creates and plays a generic FFmpeg audio source", function()
+            local previous = package.loaded["./sources/ffmpeg_audio_source"]
+            local created_source
+            package.loaded["./sources/ffmpeg_audio_source"] = {
+                new = function(source, opts)
+                    created_source = {
+                        source = source,
+                        opts = opts,
+                        cleanup = function() end,
+                    }
+                    return created_source
+                end,
+            }
+            client.state.connected = true
+            client._start_playback = function() end
+
+            local started, source_or_err = client:play_ffmpeg("song.mp3", { loglevel = "error" })
+
+            package.loaded["./sources/ffmpeg_audio_source"] = previous
+            assert.is_true(started)
+            assert.equals(created_source, source_or_err)
+            assert.equals("song.mp3", created_source.source)
+            assert.equals("error", created_source.opts.loglevel)
+        end)
+    end)
+
+    describe("Volume", function()
+        local client
+
+        before_each(function()
+            client = VoiceClient.new(mock_client, mock_channel)
+        end)
+
+        it("wraps a current PCM source without restarting it", function()
+            local source = {
+                is_opus = function() return false end,
+                is_playing = function() return true end,
+                read = function() return nil, "pending" end,
+            }
+            client.state.playing = true
+            client.state.source = source
+
+            local changed, err = client:set_volume(0.5)
+
+            assert.is_true(changed)
+            assert.is_nil(err)
+            assert.equals(0.5, client.state.source.volume)
+            assert.equals(source, client.state.source.original)
+        end)
+
+        it("rejects volume changes for Opus passthrough", function()
+            client.state.playing = true
+            client.state.source = {
+                is_opus = function() return true end,
+            }
+
+            local changed, err = client:set_volume(0.5)
+
+            assert.is_false(changed)
+            assert.equals("Cannot change volume of an Opus passthrough source", err)
         end)
     end)
 

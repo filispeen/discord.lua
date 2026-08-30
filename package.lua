@@ -25,7 +25,7 @@ return {
   files = {
     "init.lua",
     "lib/**.lua",
-    "lib/**.dll",
+    "lib/bundle/**",
     "README.md",
     "package.lua",
     "discord/**.lua",

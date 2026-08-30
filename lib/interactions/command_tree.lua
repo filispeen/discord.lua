@@ -98,6 +98,7 @@ local function commands_equal(local_dict, remote_dict)
         local remote_opt = remote_options[i]
         if not remote_opt
             or opt.name ~= remote_opt.name
+            or (opt.description or "") ~= (remote_opt.description or "")
             or opt.type ~= remote_opt.type
             or (opt.required or false) ~= (remote_opt.required or false)
             or (opt.autocomplete or false) ~= (remote_opt.autocomplete or false)

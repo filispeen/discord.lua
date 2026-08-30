@@ -1,5 +1,4 @@
--- spec/voice/native_lib_spec.lua
--- Tests for lib/voice/native_lib.lua's bundled dll path resolution.
+-- Tests for lib/voice/native_lib.lua's bundled native path resolution.
 
 require("spec_helper")
 
@@ -24,11 +23,11 @@ describe("native_lib", function()
         assert.is_nil(native_lib.resolve("opus"))
     end)
 
-    it("returns nil on non-Windows platforms", function()
+    it("returns nil on Linux when the requested shared library is absent", function()
         package.loaded["ffi"] = { os = "Linux", arch = "x64" }
 
         local native_lib = reload_native_lib()
-        assert.is_nil(native_lib.resolve("opus"))
+        assert.is_nil(native_lib.resolve("nonexistent_lib_xyz"))
     end)
 
     it("returns nil on Windows when the arch has no known dll suffix", function()
@@ -45,23 +44,14 @@ describe("native_lib", function()
         assert.is_nil(native_lib.resolve("nonexistent_lib_xyz"))
     end)
 
-    it("resolves an absolute path ending in the expected filename on Windows/x64", function()
+    it("resolves an absolute bundled libsodium path on Windows/x64", function()
         package.loaded["ffi"] = { os = "Windows", arch = "x64" }
 
         local native_lib = reload_native_lib()
-
-        local tmp_dir = "lib/dlls"
-        os.execute("mkdir -p " .. tmp_dir)
-        local f = io.open(tmp_dir .. "/opus-x64.dll", "wb")
-        f:write("stub")
-        f:close()
-
-        local path = native_lib.resolve("opus")
-
-        os.remove(tmp_dir .. "/opus-x64.dll")
+        local path = native_lib.resolve("libsodium")
 
         assert.is_not_nil(path)
-        assert.is_not_nil(path:match("opus%-x64%.dll$"))
+        assert.is_not_nil(path:match("libsodium%-x64%.dll$"))
     end)
 
     it("maps LuaJIT arch names to the MSVC-style dll suffixes", function()
@@ -74,20 +64,51 @@ describe("native_lib", function()
         for _, case in ipairs(cases) do
             package.loaded["ffi"] = { os = "Windows", arch = case.arch }
             local native_lib = reload_native_lib()
-
-            local tmp_dir = "lib/dlls"
-            os.execute("mkdir -p " .. tmp_dir)
             local filename = "libsodium-" .. case.suffix .. ".dll"
-            local f = io.open(tmp_dir .. "/" .. filename, "wb")
-            f:write("stub")
-            f:close()
-
             local path = native_lib.resolve("libsodium")
 
-            os.remove(tmp_dir .. "/" .. filename)
-
             assert.is_not_nil(path, "expected a resolved path for arch " .. case.arch)
-            assert.equals(tmp_dir .. "/" .. filename, path)
+            assert.equals("lib/bundle/windows-x64/dll/" .. filename, path)
         end
+    end)
+
+    it("returns a PATH override for bundled Windows executables", function()
+        package.loaded["ffi"] = { os = "Windows", arch = "x64" }
+
+        local native_lib = reload_native_lib()
+        local env = native_lib.windows_dll_env()
+
+        assert.is_not_nil(env)
+        assert.is_not_nil(env[1]:match("^PATH=lib/bundle/windows%-x64/dll;"))
+    end)
+
+    it("resolves the bundled libsodium path on Linux/x64", function()
+        package.loaded["ffi"] = { os = "Linux", arch = "x64" }
+
+        local native_lib = reload_native_lib()
+        local path = native_lib.resolve("libsodium")
+
+        assert.is_not_nil(path)
+        assert.is_not_nil(path:match("lib/bundle/linux%-x64/lib/libsodium%.so$"))
+    end)
+
+    it("resolves the bundled libopus path on Linux/x64", function()
+        package.loaded["ffi"] = { os = "Linux", arch = "x64" }
+
+        local native_lib = reload_native_lib()
+        local path = native_lib.resolve_opus()
+
+        assert.is_not_nil(path)
+        assert.is_not_nil(path:match("lib/bundle/linux%-x64/lib/libopus%.so$"))
+    end)
+
+    it("resolves the bundled libdave path on Linux/x64", function()
+        package.loaded["ffi"] = { os = "Linux", arch = "x64" }
+
+        local native_lib = reload_native_lib()
+        local path = native_lib.resolve_any_platform("libdave")
+
+        assert.is_not_nil(path)
+        assert.is_not_nil(path:match("lib/bundle/linux%-x64/lib/libdave%.so$"))
     end)
 end)
