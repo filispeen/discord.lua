@@ -6,7 +6,7 @@
 -- recommended shard count from GET /gateway/bot. There is nothing to
 -- configure here beyond listening to the lifecycle events below.
 
-local discord = require("../init")
+local discord = require("discord.lua")
 
 -- bot:command("ping", ...) below is a prefix command, so it needs
 -- GUILD_MESSAGES to see the message and MESSAGE_CONTENT (privileged,

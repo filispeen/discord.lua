@@ -3,7 +3,7 @@
 -- real user present, to check whether the 4020 close after MLS_WELCOME
 -- + key ratchet switch happens even without a second committing member.
 
-local discord = require("../init")
+local discord = require("discord.lua")
 
 local CHANNEL_ID = "1432435826473701530"
 

@@ -36,8 +36,8 @@
 --      or noise, confirming decode actually ran (see the log line this
 --      prints noting whether libopus/FFI was detected).
 
-local discord = require("../init")
-local WaveSink = require("../lib/voice/sinks/wave_sink")
+local discord = require("discord.lua")
+local WaveSink = require("discord.lua/lib/voice/sinks/wave_sink")
 
 local intents = discord.enums.combine_intents(
     discord.enums.INTENTS.GUILDS,

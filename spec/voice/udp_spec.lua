@@ -92,6 +92,9 @@ describe("UDP", function()
             sent_packets = {}
             local client = udp.UDPClient.new("192.168.1.1:12345", "token123")
             client:connect()
+            -- IP discovery reports the address this client has from the
+            -- server's perspective. RTP must still be sent to the voice
+            -- endpoint configured by connect(), not back to this address.
             client._state.ip = "1.2.3.4"
             client._state.port = 5555
 
@@ -104,8 +107,8 @@ describe("UDP", function()
             assert.equals(1, #sent_packets)
             assert.is_string(sent_packets[1].data)
             assert.equals(12 + #payload, #sent_packets[1].data)
-            assert.equals("1.2.3.4", sent_packets[1].ip)
-            assert.equals(5555, sent_packets[1].port)
+            assert.equals("192.168.1.1", sent_packets[1].ip)
+            assert.equals(12345, sent_packets[1].port)
         end)
 
         it("should construct RTP header as a 12 byte string", function()
