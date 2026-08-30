@@ -201,8 +201,8 @@ bot:slash_command("volume", {
     end,
 })
 
-bot:slash_command("leave", {
-    description = "Leaves the voice channel",
+bot:slash_command("stop", {
+    description = "Stops playback and stays in the voice channel",
     callback = function(ctx)
         if not ctx.guild then
             ctx:respond("This command only works inside a server.")

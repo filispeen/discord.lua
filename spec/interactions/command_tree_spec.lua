@@ -35,6 +35,29 @@ describe("CommandTree", function()
         assert.is_nil(tree:get("missing"))
     end)
 
+    it("rejects commands with the same name and type in one scope", function()
+        local tree = CommandTree.new(make_http({}))
+        tree:add(ApplicationCommand.new("ping", "Replies with pong"))
+
+        assert.has_error(function()
+            tree:add(ApplicationCommand.new("ping", "Another ping"))
+        end, 'Duplicate application command "ping" (type 1) in the global scope')
+    end)
+
+    it("allows equal names in distinct command types or scopes", function()
+        local tree = CommandTree.new(make_http({}))
+        local user_command = ApplicationCommand.new("info", "Shows user info")
+        user_command.type = ApplicationCommand.TYPE_USER
+        local guild_command = ApplicationCommand.new("info", "Shows guild info")
+        guild_command.guild_ids = { "123" }
+
+        tree:add(ApplicationCommand.new("info", "Shows info"))
+        tree:add(user_command)
+        tree:add(guild_command)
+
+        assert.equals(3, #tree.commands)
+    end)
+
     it("scopes a command lookup to its guild_ids", function()
         local tree = CommandTree.new(make_http({}))
         local cmd = ApplicationCommand.new("ping", "Replies with pong")

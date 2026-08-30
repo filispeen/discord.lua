@@ -33,7 +33,32 @@ function CommandTree.new(http)
     return self
 end
 
+local function shared_scope(first, second)
+    if first.guild_ids == nil or second.guild_ids == nil then
+        if first.guild_ids == nil and second.guild_ids == nil then
+            return "global"
+        end
+        return nil
+    end
+
+    for _, first_guild_id in ipairs(first.guild_ids) do
+        for _, second_guild_id in ipairs(second.guild_ids) do
+            if first_guild_id == second_guild_id then
+                return "guild " .. tostring(first_guild_id)
+            end
+        end
+    end
+end
+
 function CommandTree:add(command)
+    local command_type = command.type or 1
+    for _, existing in ipairs(self.commands) do
+        local scope = shared_scope(existing, command)
+        if scope and existing.name == command.name and (existing.type or 1) == command_type then
+            error(("Duplicate application command %q (type %d) in the %s scope")
+                :format(command.name, command_type, scope), 0)
+        end
+    end
     table.insert(self.commands, command)
     return self
 end
