@@ -724,18 +724,18 @@ function VoiceClient:send_audio_packet(data, encode)
         local dave_session = self.gateway and self.gateway.state and self.gateway.state.dave_session
         local dave_ready = dave_session and dave_session:ready()
 
-        if self.__debug_pkt_count == nil then
-            self.__debug_pkt_count = 0
-        end
-        self.__debug_pkt_count = self.__debug_pkt_count + 1
-        if self.__debug_pkt_count <= 3 then
-            print(
-                "send_audio_packet", self.__debug_pkt_count,
-                "ssrc:", state.ssrc,
-                "opus_bytes:", #opus_packet,
-                "dave_ready:", dave_ready
-            )
-        end
+        -- if self.__debug_pkt_count == nil then
+        --     self.__debug_pkt_count = 0
+        -- end
+        -- self.__debug_pkt_count = self.__debug_pkt_count + 1
+        -- if self.__debug_pkt_count <= 3 then
+        --     print(
+        --         "send_audio_packet", self.__debug_pkt_count,
+        --         "ssrc:", state.ssrc,
+        --         "opus_bytes:", #opus_packet,
+        --         "dave_ready:", dave_ready
+        --     )
+        -- end
 
         -- After the first 3 packets confirmed DAVE was ready, if it
         -- ever flips to false during an otherwise-active playback
@@ -777,16 +777,16 @@ function VoiceClient:send_audio_packet(data, encode)
         -- opus_packet, whether DAVE-encrypted or not) whenever it is
         -- unusually large, to check whether such spikes exist at all
         -- and whether they line up with when glitches are heard.
-        local wire_bytes = 12 + #opus_packet
-        if self.__max_wire_bytes == nil or wire_bytes > self.__max_wire_bytes then
-            self.__max_wire_bytes = wire_bytes
-            if wire_bytes > 300 then
-                print(string.format(
-                    "AUDIO PACKET SIZE new max: wire_bytes=%d (opus=%d) packet#=%d at %s",
-                    wire_bytes, #opus_packet, self.__debug_pkt_count, os.date("%H:%M:%S")
-                ))
-            end
-        end
+        -- local wire_bytes = 12 + #opus_packet
+        -- if self.__max_wire_bytes == nil or wire_bytes > self.__max_wire_bytes then
+        --     self.__max_wire_bytes = wire_bytes
+        --     if wire_bytes > 300 then
+        --         print(string.format(
+        --             "AUDIO PACKET SIZE new max: wire_bytes=%d (opus=%d) packet#=%d at %s",
+        --             wire_bytes, #opus_packet, self.__debug_pkt_count, os.date("%H:%M:%S")
+        --         ))
+        --     end
+        -- end
 
         -- Send via UDP
         if not self.udp then
