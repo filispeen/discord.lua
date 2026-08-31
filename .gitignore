@@ -18,6 +18,7 @@ examples/*debug*.lua
 
 # Scripts
 *.sh
+!scripts/*
 
 # Generated and temporary files
 !*.dll

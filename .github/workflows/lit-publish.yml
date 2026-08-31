@@ -51,6 +51,9 @@ jobs:
           git clone --depth 1 --branch "${OPUS_TAG}" https://github.com/xiph/opus.git opus-src
           mkdir -p ./lib/bundle/windows-x64/dll
 
+      - name: Build minimal static FFmpeg bundle
+        run: bash scripts/build-minimal-ffmpeg.sh
+
           declare -A targets=( [x64]=x86_64-w64-mingw32 [x86]=i686-w64-mingw32 )
           for arch in "${!targets[@]}"; do
               host="${targets[$arch]}"

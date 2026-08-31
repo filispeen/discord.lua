@@ -27,6 +27,7 @@ return {
     "lib/**.lua",
     "lib/bundle/**",
     "README.md",
+    "deps/coro-channel.lua",
     "package.lua",
     "discord/**.lua",
   },
