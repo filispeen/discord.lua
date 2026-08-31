@@ -14,6 +14,15 @@
 --     INTENTS, combine_intents, default_intents, all_intents, OPTION_TYPE.
 --     Exposed here so bots don't need a separate require("./core/enums").
 
+-- coro-net requires "coro-channel" internally cause go daym it work so bad. Keep the implementation
+-- inside this package so installed copies do not depend on a bundled deps/
+-- directory.
+local utils = require("./lib/utils")
+package.preload["coro-channel"] = function()
+    return utils
+end
+package.loaded["coro-channel"] = utils
+
 local Bot = require("./lib/commands/bot")
 local enums = require("./lib/core/enums")
 
