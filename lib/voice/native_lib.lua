@@ -169,7 +169,7 @@ local function windows_dll_env()
     end
 
     local dll_dir = windows_dll_dir()
-    if not dll_dir or not file_exists(dll_dir .. "/avutil-61.dll") then
+    if not dll_dir or not file_exists(dll_dir .. "/libopus-0.x64.dll") then
         return nil
     end
 

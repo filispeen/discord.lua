@@ -1,0 +1,13 @@
+*.lua text eol=lf
+*.yml text eol=lf
+*.sh text eol=lf
+*.txt text eol=lf
+lib/bundle/COPYING text eol=lf
+lib/bundle/LICENSE* text eol=lf
+lib/bundle/linux-x64/bin/ffmpeg text eol=lf
+lib/bundle/linux-x64/bin/ffprobe text eol=lf
+lib/bundle/linux-x64/bin/* -text
+lib/bundle/linux-x64/lib/*.so -text
+lib/bundle/linux-x64/lib/*.so.* -text
+lib/bundle/windows-x64/bin/*.exe -text
+lib/bundle/windows-x64/dll/*.dll -text

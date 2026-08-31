@@ -35,6 +35,7 @@ examples/*debug*.lua
 # Hidden files and directories (keep repository configuration)
 .*
 !.gitignore
+!.gitattributes
 !.github/
 !.luacheckrc
 !.luacheckrc-local
