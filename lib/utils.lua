@@ -79,7 +79,7 @@ local function makeRead(socket, closer)
   local queue = {}
   local tindex = 0
   local dindex = 0
-  local unpack = unpack or table.unpack
+  local unpack = rawget(table, "unpack") or unpack
 
   local function dispatch(data)
     if tindex > dindex then
