@@ -177,7 +177,8 @@ end
 
 -- Registers all pending commands with Discord: global commands via a single
 -- bulk overwrite, and each guild's commands via their own bulk overwrite.
--- Skips the PUT call entirely for a scope whose commands already match.
+-- Every scope is cleared first so commands removed from the local tree do not
+-- remain registered remotely.
 function CommandTree:sync(application_id)
     local global_commands, guild_commands = self:_partition()
 
@@ -186,14 +187,18 @@ function CommandTree:sync(application_id)
         guilds = {},
     }
 
+    local global_endpoint = "/applications/" .. application_id .. "/commands"
+    self.http:put(global_endpoint, {})
     result.global = self:_register(
-        "/applications/" .. application_id .. "/commands",
+        global_endpoint,
         global_commands
     )
 
     for guild_id, commands in pairs(guild_commands) do
+        local guild_endpoint = "/applications/" .. application_id .. "/guilds/" .. guild_id .. "/commands"
+        self.http:put(guild_endpoint, {})
         result.guilds[guild_id] = self:_register(
-            "/applications/" .. application_id .. "/guilds/" .. guild_id .. "/commands",
+            guild_endpoint,
             commands
         )
     end

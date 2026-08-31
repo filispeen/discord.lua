@@ -19,6 +19,7 @@ local function make_http(responses)
 
     function http:put(endpoint, body)
         table.insert(calls, { method = "PUT", endpoint = endpoint, body = body })
+        responses[endpoint] = body
         return body
     end
 
@@ -77,23 +78,20 @@ describe("CommandTree", function()
         assert.equals(cmd, tree:get("ping", "111"))
     end)
 
-    it("syncs global commands via PUT when none are registered remotely", function()
+    it("clears global commands before registering the local set", function()
         local http = make_http({ ["/applications/1/commands"] = {} })
         local tree = CommandTree.new(http)
         tree:add(ApplicationCommand.new("ping", "Replies with pong"))
 
         tree:sync("1")
 
-        local put_calls = 0
-        for _, call in ipairs(http.calls) do
-            if call.method == "PUT" then
-                put_calls = put_calls + 1
-            end
-        end
-        assert.equals(1, put_calls)
+        assert.equals("PUT", http.calls[1].method)
+        assert.same({}, http.calls[1].body)
+        assert.equals("PUT", http.calls[3].method)
+        assert.equals("ping", http.calls[3].body[1].name)
     end)
 
-    it("skips the PUT when the remote command set already matches", function()
+    it("re-registers commands even when the remote command set already matches", function()
         local remote = {
             { name = "ping", description = "Replies with pong", type = 1 },
         }
@@ -103,9 +101,9 @@ describe("CommandTree", function()
 
         tree:sync("1")
 
-        for _, call in ipairs(http.calls) do
-            assert.are_not.equals("PUT", call.method)
-        end
+        assert.equals("PUT", http.calls[1].method)
+        assert.same({}, http.calls[1].body)
+        assert.equals("PUT", http.calls[3].method)
     end)
 
     it("syncs a command when an option description changes", function()
@@ -127,7 +125,7 @@ describe("CommandTree", function()
 
         tree:sync("1")
 
-        assert.equals("PUT", http.calls[2].method)
+        assert.equals("PUT", http.calls[3].method)
     end)
 
     it("syncs each guild's commands to their own endpoint", function()

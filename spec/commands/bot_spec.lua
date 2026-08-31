@@ -995,4 +995,36 @@ describe("Bot", function()
             assert.equals("success: done", received_ctx:success("done"))
         end)
     end)
+
+    describe("Bot:sync_commands", function()
+        it("clears global and guild slash commands before registering them", function()
+            local requests = {}
+            local http = {
+                get = function() return {} end,
+                put = function(_, endpoint, payload)
+                    table.insert(requests, { endpoint = endpoint, payload = payload })
+                    return payload
+                end,
+            }
+            local bot = Bot.new("token")
+            bot.client = {
+                get_application_id = function() return "application-id" end,
+            }
+            bot.http = http
+            bot:register_application_command("global", { description = "Global" })
+            bot:register_application_command("guild", {
+                description = "Guild",
+                guild_ids = { "guild-id" },
+            })
+
+            bot:sync_commands()
+
+            assert.same({}, requests[1].payload)
+            assert.equals("/applications/application-id/commands", requests[1].endpoint)
+            assert.equals("global", requests[2].payload[1].name)
+            assert.same({}, requests[3].payload)
+            assert.equals("/applications/application-id/guilds/guild-id/commands", requests[3].endpoint)
+            assert.equals("guild", requests[4].payload[1].name)
+        end)
+    end)
 end)
