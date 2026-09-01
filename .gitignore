@@ -28,9 +28,12 @@ examples/*debug*.lua
 *test*.lua
 *debug*.lua
 
-# Documentation (keep the main README)
+# Documentation (keep the main README and MkDocs source)
 *.md
 !README.md
+!docs/
+!docs/**/*.md
+site/
 
 # Hidden files and directories (keep repository configuration)
 .*

@@ -1,0 +1,83 @@
+site_name: discord.lua
+site_description: Documentation for the Lua/Luvit Discord library.
+site_url: https://filispeen.github.io/discord.lua/
+repo_url: https://github.com/filispeen/discord.lua
+repo_name: filispeen/discord.lua
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.code.annotate
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Installation: getting-started/installation.md
+      - First bot: getting-started/first-bot.md
+      - Configuration: getting-started/configuration.md
+  - Guides:
+      - Events: guides/events.md
+      - Prefix commands: guides/prefix-commands.md
+      - Slash commands: guides/slash-commands.md
+      - Command groups and context menus: guides/command-groups-and-menus.md
+      - Hybrid commands: guides/hybrid-commands.md
+      - Interactions and responses: guides/interactions-and-responses.md
+      - Components and views: guides/components-and-views.md
+      - Embeds and files: guides/embeds-and-files.md
+      - Voice: guides/voice.md
+      - Sharding: guides/sharding.md
+      - Errors, checks, and cooldowns: guides/errors-checks-and-cooldowns.md
+      - Extensions, cogs, and tasks: guides/extensions-cogs-and-tasks.md
+  - API reference:
+      - Bot: api/bot.md
+      - Client and gateway: api/client-and-gateway.md
+      - Command API: api/command-api.md
+      - Interaction contexts: api/interaction-contexts.md
+      - UI components: api/ui-components.md
+      - Messages and channels: api/messages-and-channels.md
+      - Guilds, members, users, and roles: api/guilds-members-users-roles.md
+      - Embeds, assets, and mentions: api/embeds-assets-and-mentions.md
+      - Additional models: api/additional-models.md
+      - Voice: api/voice.md
+      - Enums, errors, and utilities: api/enums-errors-and-utilities.md
+      - Rate limits: api/rate-limits.md
+  - Examples:
+      - Basic bot: examples/basic-bot.md
+      - Commands: examples/commands.md
+      - Interactions: examples/interactions.md
+      - Voice: examples/voice.md
