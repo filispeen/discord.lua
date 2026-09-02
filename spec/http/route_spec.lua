@@ -15,6 +15,23 @@ describe("Route parity endpoints", function()
         return http, calls
     end
 
+    it("uses the dedicated unauthenticated transport for interaction callbacks", function()
+        local calls = {}
+        local http = {
+            post_interaction_callback = function(_self, id, token, payload, files)
+                calls[#calls + 1] = { id = id, token = token, payload = payload, files = files }
+                return "ok"
+            end,
+        }
+        local route = Route.new(http)
+
+        assert.equals("ok", route:create_interaction_response("i1", "token1", { type = 8 }))
+        assert.equals(1, #calls)
+        assert.equals("i1", calls[1].id)
+        assert.equals("token1", calls[1].token)
+        assert.equals(8, calls[1].payload.type)
+    end)
+
     it("builds message, thread and webhook parity endpoints", function()
         local http, calls = fake_http()
         local route = Route.new(http)

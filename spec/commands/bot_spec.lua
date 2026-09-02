@@ -27,6 +27,19 @@ local function table_count(t)
 end
 
 describe("Bot", function()
+    it("dispatches interaction_create through the public client event API", function()
+        local bot = Bot.new("token")
+        local received = nil
+        bot.dispatch_interaction = function(_self, interaction)
+            received = interaction
+        end
+
+        bot:connect()
+        bot.client:emit("interaction_create", { id = "interaction1" })
+
+        assert.equals("interaction1", received.id)
+    end)
+
     it("creates a new bot", function()
         local bot = Bot.new("token", {})
 

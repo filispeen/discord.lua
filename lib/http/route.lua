@@ -382,11 +382,7 @@ end
 -- Interaction responses
 
 function Route:create_interaction_response(interaction_id, interaction_token, payload, files)
-    local endpoint = "/interactions/" .. interaction_id .. "/" .. interaction_token .. "/callback"
-    if files and #files > 0 then
-        return self.http:post_multipart(endpoint, payload, files)
-    end
-    return self.http:post(endpoint, payload)
+    return self.http:post_interaction_callback(interaction_id, interaction_token, payload, files)
 end
 
 function Route:edit_interaction_response(application_id, interaction_token, payload, files)

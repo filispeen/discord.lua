@@ -120,6 +120,19 @@ describe("Client channel cache dispatch wiring", function()
 
         assert.is_nil(client.channels:get("channel3"))
     end)
+
+    it("forwards INTERACTION_CREATE payloads through the public event API unchanged", function()
+        local client, handlers = make_client_with_fake_gateway()
+        local received = nil
+        local interaction = { id = "interaction1", type = 2 }
+        client:on("interaction_create", function(payload)
+            received = payload
+        end)
+
+        handlers["INTERACTION_CREATE"](interaction)
+
+        assert.equals(interaction, received)
+    end)
 end)
 
 describe("Client:fetch_template", function()

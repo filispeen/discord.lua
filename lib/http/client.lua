@@ -167,6 +167,51 @@ function Client:post(endpoint, body, options)
     return self:request("POST", endpoint, options)
 end
 
+-- Sends an initial interaction response.  Discord authenticates this endpoint
+-- with the interaction token embedded in its URL, so it must not go through
+-- :request(), which deliberately adds the bot Authorization header used by
+-- ordinary Discord REST endpoints.
+function Client:post_interaction_callback(interaction_id, interaction_token, payload, files)
+    local endpoint = "/interactions/" .. interaction_id .. "/" .. interaction_token .. "/callback"
+    local headers = {
+        ["Content-Type"] = "application/json",
+        ["User-Agent"] = self.headers["User-Agent"],
+    }
+
+    local request_body
+    if files and #files > 0 then
+        local Multipart = require("./multipart")
+        request_body, headers["Content-Type"] = Multipart.build(payload or {}, files)
+    else
+        request_body = json.encode(payload or {})
+    end
+
+    local header_list = {}
+    for key, value in pairs(headers) do
+        header_list[#header_list + 1] = { key, value }
+    end
+
+    local http = require("coro-http")
+    local ok, res, response_body = pcall(
+        http.request,
+        "POST",
+        self.base_url .. endpoint,
+        header_list,
+        request_body
+    )
+    if not ok then
+        error("Interaction callback request failed: " .. tostring(res), 0)
+    end
+
+    local status = res.code
+    if status >= 400 then
+        return self:throw_error(status, response_body)
+    end
+
+    local success, parsed = pcall(json.decode, response_body)
+    return success and parsed or response_body
+end
+
 -- PUT wrapper
 function Client:put(endpoint, body, options)
     options = options or {}

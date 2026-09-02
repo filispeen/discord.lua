@@ -34,7 +34,19 @@ jobs:
           curl -L https://github.com/luvit/lit/raw/master/get-lit.sh | sh
           echo "$PWD" >> $GITHUB_PATH
 
+      - name: Restore native bundle cache
+        id: native-bundle-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            lib/bundle/linux-x64/bin
+            lib/bundle/linux-x64/lib
+            lib/bundle/windows-x64/bin
+            lib/bundle/windows-x64/dll
+          key: native-bundle-${{ runner.os }}-ffmpeg-${{ env.FFMPEG_TAG }}-opus-${{ env.OPUS_TAG }}-libsodium-${{ env.LIBSODIUM_TAG }}-${{ hashFiles('scripts/build-minimal-ffmpeg.sh') }}
+
       - name: Build native bundle
+        if: steps.native-bundle-cache.outputs.cache-hit != 'true'
         run: bash scripts/build-minimal-ffmpeg.sh
 
       - name: Write a version into package.lua
