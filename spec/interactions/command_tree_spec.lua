@@ -17,10 +17,18 @@ local function make_http(responses)
         return responses[endpoint] or {}
     end
 
-    function http:put(endpoint, body)
-        table.insert(calls, { method = "PUT", endpoint = endpoint, body = body })
-        responses[endpoint] = body
+    function http:post(endpoint, body)
+        table.insert(calls, { method = "POST", endpoint = endpoint, body = body })
         return body
+    end
+
+    function http:patch(endpoint, body)
+        table.insert(calls, { method = "PATCH", endpoint = endpoint, body = body })
+        return body
+    end
+
+    function http:delete(endpoint)
+        table.insert(calls, { method = "DELETE", endpoint = endpoint })
     end
 
     return http
@@ -78,20 +86,19 @@ describe("CommandTree", function()
         assert.equals(cmd, tree:get("ping", "111"))
     end)
 
-    it("clears global commands before registering the local set", function()
+    it("registers a changed global command set without clearing it first", function()
         local http = make_http({ ["/applications/1/commands"] = {} })
         local tree = CommandTree.new(http)
         tree:add(ApplicationCommand.new("ping", "Replies with pong"))
 
         tree:sync("1")
 
-        assert.equals("PUT", http.calls[1].method)
-        assert.same({}, http.calls[1].body)
-        assert.equals("PUT", http.calls[3].method)
-        assert.equals("ping", http.calls[3].body[1].name)
+        assert.equals("GET", http.calls[1].method)
+        assert.equals("POST", http.calls[2].method)
+        assert.equals("ping", http.calls[2].body.name)
     end)
 
-    it("re-registers commands even when the remote command set already matches", function()
+    it("does not update commands when the remote command set already matches", function()
         local remote = {
             { name = "ping", description = "Replies with pong", type = 1 },
         }
@@ -101,14 +108,29 @@ describe("CommandTree", function()
 
         tree:sync("1")
 
-        assert.equals("PUT", http.calls[1].method)
-        assert.same({}, http.calls[1].body)
-        assert.equals("PUT", http.calls[3].method)
+        assert.equals(1, #http.calls)
+        assert.equals("GET", http.calls[1].method)
+    end)
+
+    it("removes commands that are no longer registered locally", function()
+        local remote = {
+            { id = "1", name = "ping", description = "Replies with pong", type = 1 },
+            { id = "2", name = "old", description = "Old command", type = 1 },
+        }
+        local http = make_http({ ["/applications/1/commands"] = remote })
+        local tree = CommandTree.new(http)
+        tree:add(ApplicationCommand.new("ping", "Replies with pong"))
+
+        tree:sync("1")
+
+        assert.equals("DELETE", http.calls[2].method)
+        assert.equals("/applications/1/commands/2", http.calls[2].endpoint)
     end)
 
     it("syncs a command when an option description changes", function()
         local remote = {
             {
+                id = "1",
                 name = "volume",
                 description = "Sets volume",
                 type = 1,
@@ -125,7 +147,7 @@ describe("CommandTree", function()
 
         tree:sync("1")
 
-        assert.equals("PUT", http.calls[3].method)
+        assert.equals("PATCH", http.calls[2].method)
     end)
 
     it("syncs each guild's commands to their own endpoint", function()
@@ -139,7 +161,7 @@ describe("CommandTree", function()
 
         local hit_guild_endpoint = false
         for _, call in ipairs(http.calls) do
-            if call.endpoint == "/applications/1/guilds/111/commands" and call.method == "PUT" then
+            if call.endpoint == "/applications/1/guilds/111/commands" and call.method == "POST" then
                 hit_guild_endpoint = true
             end
         end

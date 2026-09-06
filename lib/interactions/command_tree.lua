@@ -135,50 +135,50 @@ local function commands_equal(local_dict, remote_dict)
     return true
 end
 
--- Returns true if the local set of commands differs from what Discord has,
--- either in count, names present, or any field on a matching command.
-local function needs_update(local_dicts, remote_dicts)
-    if #local_dicts ~= #remote_dicts then
-        return true
-    end
-
-    local remote_by_name = {}
-    for _, remote_dict in ipairs(remote_dicts) do
-        remote_by_name[remote_dict.name] = remote_dict
-    end
-
-    for _, local_dict in ipairs(local_dicts) do
-        local remote_dict = remote_by_name[local_dict.name]
-        if not remote_dict or not commands_equal(local_dict, remote_dict) then
-            return true
-        end
-    end
-
-    return false
+local function command_key(command)
+    return tostring(command.type or 1) .. ":" .. command.name
 end
 
--- Registers a set of commands at the given endpoint, but only issues the
--- PUT if the local set differs from what Discord already has, since a bulk
--- overwrite PUT replaces the entire command set on that scope.
+-- Synchronizes one scope without replacing its entire command set. Existing
+-- command IDs are retained; only missing, changed, and stale commands are
+-- created, updated, and deleted respectively.
 function CommandTree:_register(endpoint, commands)
     local local_dicts = {}
+    local local_by_key = {}
     for i, cmd in ipairs(commands) do
         local_dicts[i] = cmd:to_dict()
+        local_by_key[command_key(local_dicts[i])] = local_dicts[i]
     end
 
     local remote_dicts = self.http:get(endpoint) or {}
-
-    if not needs_update(local_dicts, remote_dicts) then
-        return remote_dicts
+    local remote_by_key = {}
+    for _, remote_dict in ipairs(remote_dicts) do
+        remote_by_key[command_key(remote_dict)] = remote_dict
     end
 
-    return self.http:put(endpoint, local_dicts)
+    for key, remote_dict in pairs(remote_by_key) do
+        if not local_by_key[key] then
+            self.http:delete(endpoint .. "/" .. remote_dict.id)
+        end
+    end
+
+    local result = {}
+    for i, local_dict in ipairs(local_dicts) do
+        local remote_dict = remote_by_key[command_key(local_dict)]
+        if not remote_dict then
+            result[i] = self.http:post(endpoint, local_dict)
+        elseif commands_equal(local_dict, remote_dict) then
+            result[i] = remote_dict
+        else
+            result[i] = self.http:patch(endpoint .. "/" .. remote_dict.id, local_dict)
+        end
+    end
+
+    return result
 end
 
--- Registers all pending commands with Discord: global commands via a single
--- bulk overwrite, and each guild's commands via their own bulk overwrite.
--- Every scope is cleared first so commands removed from the local tree do not
--- remain registered remotely.
+-- Registers all pending commands by diffing each scope against Discord.
+-- Commands no longer registered locally are deleted without clearing others.
 function CommandTree:sync(application_id)
     local global_commands, guild_commands = self:_partition()
 
@@ -188,7 +188,6 @@ function CommandTree:sync(application_id)
     }
 
     local global_endpoint = "/applications/" .. application_id .. "/commands"
-    self.http:put(global_endpoint, {})
     result.global = self:_register(
         global_endpoint,
         global_commands
@@ -196,7 +195,6 @@ function CommandTree:sync(application_id)
 
     for guild_id, commands in pairs(guild_commands) do
         local guild_endpoint = "/applications/" .. application_id .. "/guilds/" .. guild_id .. "/commands"
-        self.http:put(guild_endpoint, {})
         result.guilds[guild_id] = self:_register(
             guild_endpoint,
             commands
