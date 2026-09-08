@@ -47,4 +47,7 @@ site/
 *.wav
 *.mp3
 
-lib/bundle/**
+lib/bundle/*/bin/*
+lib/bundle/*/dll/*
+lib/bundle/*/lib/*
+!empty
