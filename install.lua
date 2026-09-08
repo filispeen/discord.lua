@@ -30,11 +30,11 @@ local function powershell_quote(value)
     return "'" .. value:gsub("'", "''") .. "'"
 end
 
-local function download(url, path)
+local function download(download_url, path)
     package.preload["coro-channel"] = package.preload["coro-channel"] or function()
         return require("./lib/utils")
     end
-    local response, body = require("coro-http").request("GET", url)
+    local response, body = require("coro-http").request("GET", download_url)
     if not response or response.code ~= 200 then error("native bundle download failed: HTTP " .. tostring(response and response.code), 0) end
     local file = assert(io.open(path, "wb"), "could not write native bundle")
     assert(file:write(body), "could not write native bundle")
