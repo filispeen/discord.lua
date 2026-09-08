@@ -30,15 +30,31 @@ local function powershell_quote(value)
     return "'" .. value:gsub("'", "''") .. "'"
 end
 
+local function download(url, path)
+    package.preload["coro-channel"] = package.preload["coro-channel"] or function()
+        return require("./lib/utils")
+    end
+    local response, body = require("coro-http").request("GET", url)
+    if not response or response.code ~= 200 then error("native bundle download failed: HTTP " .. tostring(response and response.code), 0) end
+    local file = assert(io.open(path, "wb"), "could not write native bundle")
+    assert(file:write(body), "could not write native bundle")
+    file:close()
+end
+
 local command
 if ffi.os == "Linux" then
-    command = "cd " .. shell_quote(root) .. " && mkdir -p lib/bundle && curl -fL " .. shell_quote(url)
-        .. " -o /tmp/" .. asset .. " && tar -xJf /tmp/" .. asset .. " -C lib/bundle && rm /tmp/" .. asset
+    local archive = os.tmpname()
+    download(url, archive)
+    command = "mkdir -p " .. shell_quote(root .. "/lib/bundle") .. " && tar -xJf " .. shell_quote(archive)
+        .. " -C " .. shell_quote(root .. "/lib/bundle") .. " && rm " .. shell_quote(archive)
 else
-    command = "powershell -NoProfile -Command \"$ErrorActionPreference = 'Stop'; Set-Location -LiteralPath "
-        .. powershell_quote(root) .. "; $archive = Join-Path $env:TEMP '" .. asset .. "'; Invoke-WebRequest -Uri "
-        .. powershell_quote(url) .. " -OutFile $archive; New-Item -ItemType Directory -Force -Path 'lib/bundle' | Out-Null; "
-        .. "Expand-Archive -LiteralPath $archive -DestinationPath 'lib/bundle' -Force; Remove-Item $archive\""
+    command = "powershell -NoProfile -Command \"$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; "
+        .. "Set-Location -LiteralPath " .. powershell_quote(root) .. "; "
+        .. "$archive = Join-Path $env:TEMP '" .. asset .. "'; "
+        .. "Invoke-WebRequest -Uri " .. powershell_quote(url) .. " -OutFile $archive; "
+        .. "New-Item -ItemType Directory -Force -Path \"lib\\bundle\" | Out-Null; "
+        .. "Expand-Archive -LiteralPath $archive -DestinationPath \"lib\\bundle\" -Force; "
+        .. "Remove-Item -LiteralPath $archive\""
 end
 
 local ok = os.execute(command)
