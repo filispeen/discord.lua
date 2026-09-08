@@ -42,6 +42,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Restore native bundle cache
+        id: native-bundle-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            lib/bundle/linux-x64/bin
+            lib/bundle/linux-x64/lib
+            lib/bundle/windows-x64/bin
+            lib/bundle/windows-x64/dll
+          key: native-bundle-${{ runner.os }}-${{ hashFiles('scripts/build-minimal-ffmpeg.sh') }}
+
+      - name: Build native bundle
+        if: steps.native-bundle-cache.outputs.cache-hit != 'true'
+        run: bash scripts/build-minimal-ffmpeg.sh
+
       - name: Install Lua/LuaRocks
         run: |
           sudo apt-get update
@@ -52,6 +67,11 @@ jobs:
           sudo install lit luvi luvit /usr/local/bin/
       - name: Install luvit dependencies
         run: lit install luvit/coro-http luvit/coro-websocket luvit/secure-socket luvit/json
+
+      - name: Validate native bundle installer
+        env:
+          BUNDLE_INSTALL_DRY_RUN: 1
+        run: luvit install.lua
 
       - name: Install busted
         run: sudo luarocks install busted
@@ -96,6 +116,47 @@ jobs:
           label: Validate rockspec
           message: ${{ job.status }}
           color: ${{ job.status == 'success' && 'green' || 'red' }}
+
+  native-bundle-cache:
+    name: Cache native bundle
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore native bundle cache
+        id: native-bundle-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            lib/bundle/linux-x64/bin
+            lib/bundle/linux-x64/lib
+            lib/bundle/windows-x64/bin
+            lib/bundle/windows-x64/dll
+          key: native-bundle-${{ runner.os }}-${{ hashFiles('scripts/build-minimal-ffmpeg.sh') }}
+
+      - name: Build native bundle
+        if: steps.native-bundle-cache.outputs.cache-hit != 'true'
+        run: bash scripts/build-minimal-ffmpeg.sh
+
+      - name: Restore library cache
+        id: library-cache
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: lit-deps-${{ runner.os }}-${{ hashFiles('package.lua') }}
+
+      - name: Install lit
+        if: steps.library-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -L https://github.com/luvit/lit/raw/master/get-lit.sh | sh
+          echo "$PWD" >> $GITHUB_PATH
+
+      - name: Install libraries
+        if: steps.library-cache.outputs.cache-hit != 'true'
+        run: |
+          ./lit up
+          ./lit install
 
   discord-notify:
     name: Discord nitification

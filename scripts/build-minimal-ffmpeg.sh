@@ -6,10 +6,11 @@ ROOT="${GITHUB_WORKSPACE:-$(pwd)}"
 FFMPEG_TAG="${FFMPEG_TAG:-n9.0.1}"
 OPUS_TAG="${OPUS_TAG:-v1.5.2}"
 LIBSODIUM_TAG="${LIBSODIUM_TAG:-1.0.22-RELEASE}"
+LIBDAVE_TAG="${LIBDAVE_TAG:-v1.1.1/cpp}"
 cd "$ROOT"
 
 install_dependencies() {
-  local packages=(build-essential cmake git libssl-dev nasm pkg-config gcc-mingw-w64-x86-64)
+  local packages=(build-essential cmake git libssl-dev nasm pkg-config gcc-mingw-w64-x86-64 unzip)
   if (( EUID == 0 )); then
     apt-get update
     apt-get install -y "${packages[@]}"
@@ -126,5 +127,13 @@ make -j"$(nproc)"
 make install
 popd
 copy_artifact sodium-windows-install 'libsodium*.dll' "$ROOT/lib/bundle/windows-x64/dll/libsodium-x64.dll"
+
+# libdave's official prebuilt artifacts include only the shared libraries needed at runtime.
+curl -fL "https://github.com/discord/libdave/releases/download/$LIBDAVE_TAG/libdave-Linux-X64-boringssl.zip" -o /tmp/libdave-linux.zip
+unzip -p /tmp/libdave-linux.zip lib/libdave.so > "$ROOT/lib/bundle/linux-x64/lib/libdave.so"
+curl -fL "https://github.com/discord/libdave/releases/download/$LIBDAVE_TAG/libdave-Windows-X64-boringssl.zip" -o /tmp/libdave-windows.zip
+unzip -p /tmp/libdave-windows.zip bin/libdave.dll > "$ROOT/lib/bundle/windows-x64/dll/libdave-x64.dll"
+rm /tmp/libdave-linux.zip /tmp/libdave-windows.zip
+chmod 755 "$ROOT/lib/bundle/linux-x64/lib/libdave.so" "$ROOT/lib/bundle/windows-x64/dll/libdave-x64.dll"
 
 find lib/bundle/linux-x64 lib/bundle/windows-x64 -maxdepth 2 -type f -printf '%p %s bytes\n' | sort

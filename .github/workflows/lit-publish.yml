@@ -5,10 +5,8 @@ on:
     workflows: ["CI"]
     types: [completed]
 
-env:
-  FFMPEG_TAG: n9.0.1
-  OPUS_TAG: v1.5.2
-  LIBSODIUM_TAG: 1.0.22-RELEASE
+permissions:
+  contents: write
 
 jobs:
   publish:
@@ -36,18 +34,25 @@ jobs:
 
       - name: Restore native bundle cache
         id: native-bundle-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             lib/bundle/linux-x64/bin
             lib/bundle/linux-x64/lib
             lib/bundle/windows-x64/bin
             lib/bundle/windows-x64/dll
-          key: native-bundle-${{ runner.os }}-ffmpeg-${{ env.FFMPEG_TAG }}-opus-${{ env.OPUS_TAG }}-libsodium-${{ env.LIBSODIUM_TAG }}-${{ hashFiles('scripts/build-minimal-ffmpeg.sh') }}
+          key: native-bundle-${{ runner.os }}-${{ hashFiles('scripts/build-minimal-ffmpeg.sh') }}
 
       - name: Build native bundle
         if: steps.native-bundle-cache.outputs.cache-hit != 'true'
         run: bash scripts/build-minimal-ffmpeg.sh
+
+      - name: Restore library cache
+        id: library-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: deps
+          key: lit-deps-${{ runner.os }}-${{ hashFiles('package.lua') }}
 
       - name: Write a version into package.lua
         run: |
@@ -63,6 +68,19 @@ jobs:
 
       - name: Publish package
         run: ./lit publish .
+
+      - name: Upload native bundles to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          tar -C lib/bundle -cJf discord-bundle-linux-x64.tar.xz linux-x64
+          (cd lib/bundle && zip -qr "$GITHUB_WORKSPACE/discord-bundle-windows-x64.zip" windows-x64)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" discord-bundle-linux-x64.tar.xz discord-bundle-windows-x64.zip --clobber
+          else
+            gh release create "$TAG" discord-bundle-linux-x64.tar.xz discord-bundle-windows-x64.zip --generate-notes
+          fi
 
       - name: Update lint badge
         uses: schneegans/dynamic-badges-action@v1.9.0

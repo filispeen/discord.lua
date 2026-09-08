@@ -14,6 +14,33 @@
 --     INTENTS, combine_intents, default_intents, all_intents, OPTION_TYPE.
 --     Exposed here so bots don't need a separate require("./core/enums").
 
+local function bundle_missing()
+    local ffi_ok, ffi = pcall(require, "ffi")
+    if not ffi_ok or ffi.arch ~= "x64" then return false end
+
+    local source = debug.getinfo(1, "S").source
+    local root = source:match("^@(.+)[/\\][^/\\]+$")
+    if not root then return false end
+
+    local required = ffi.os == "Linux" and {
+        "linux-x64/bin/ffmpeg", "linux-x64/bin/ffprobe", "linux-x64/lib/libsodium.so",
+        "linux-x64/lib/libopus.so", "linux-x64/lib/libdave.so",
+    } or ffi.os == "Windows" and {
+        "windows-x64/bin/ffmpeg.exe", "windows-x64/bin/ffprobe.exe", "windows-x64/dll/libopus-0.x64.dll",
+        "windows-x64/dll/libsodium-x64.dll", "windows-x64/dll/libdave-x64.dll", "windows-x64/dll/libssp-0.dll",
+    }
+    if not required then return false end
+
+    for _, path in ipairs(required) do
+        local file = io.open(root .. "/lib/bundle/" .. path, "rb")
+        if not file then return true end
+        file:close()
+    end
+    return false
+end
+
+if bundle_missing() then require("./install") end
+
 -- coro-net requires "coro-channel" internally cause go daym it work so bad. Keep the implementation
 -- inside this package so installed copies do not depend on a bundled deps/
 -- directory.

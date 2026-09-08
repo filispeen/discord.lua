@@ -10,16 +10,8 @@ if not ffi_ok then
     ffi = nil
 end
 
-local ARCH_SUFFIX = {
-    x86 = "Win32",
-    x64 = "x64",
-    arm64 = "ARM64",
-}
-
-local OPUS_ARCH_SUFFIX = {
-    x86 = "x86",
-    x64 = "x64",
-}
+local ARCH_SUFFIX = { x64 = "x64" }
+local OPUS_ARCH_SUFFIX = { x64 = "x64" }
 
 local PLATFORM_DIRS = {
     Windows = { x64 = "windows-x64" },

@@ -46,3 +46,5 @@ site/
 # Other files to ignore
 *.wav
 *.mp3
+
+lib/bundle/**

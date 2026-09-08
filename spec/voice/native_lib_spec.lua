@@ -54,22 +54,11 @@ describe("native_lib", function()
         assert.is_not_nil(path:match("libsodium%-x64%.dll$"))
     end)
 
-    it("maps LuaJIT arch names to the MSVC-style dll suffixes", function()
-        local cases = {
-            { arch = "x86", suffix = "Win32" },
-            { arch = "x64", suffix = "x64" },
-            { arch = "arm64", suffix = "ARM64" },
-        }
+    it("resolves the bundled Windows x64 library", function()
+        package.loaded["ffi"] = { os = "Windows", arch = "x64" }
 
-        for _, case in ipairs(cases) do
-            package.loaded["ffi"] = { os = "Windows", arch = case.arch }
-            local native_lib = reload_native_lib()
-            local filename = "libsodium-" .. case.suffix .. ".dll"
-            local path = native_lib.resolve("libsodium")
-
-            assert.is_not_nil(path, "expected a resolved path for arch " .. case.arch)
-            assert.equals("lib/bundle/windows-x64/dll/" .. filename, path)
-        end
+        local native_lib = reload_native_lib()
+        assert.equals("lib/bundle/windows-x64/dll/libsodium-x64.dll", native_lib.resolve("libsodium"))
     end)
 
     it("returns a PATH override for bundled Windows executables", function()
@@ -110,5 +99,13 @@ describe("native_lib", function()
 
         assert.is_not_nil(path)
         assert.is_not_nil(path:match("lib/bundle/linux%-x64/lib/libdave%.so$"))
+    end)
+
+    it("resolves bundled Linux executables", function()
+        package.loaded["ffi"] = { os = "Linux", arch = "x64" }
+
+        local native_lib = reload_native_lib()
+        assert.equals("lib/bundle/linux-x64/bin/ffmpeg", native_lib.resolve_executable("ffmpeg"))
+        assert.equals("lib/bundle/linux-x64/bin/ffprobe", native_lib.resolve_executable("ffprobe"))
     end)
 end)
