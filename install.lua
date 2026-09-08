@@ -2,11 +2,9 @@ local ffi = require("ffi")
 
 local source = debug.getinfo(1, "S").source
 local root = assert(source:match("^@(.+)[/\\][^/\\]+$"), "install.lua must be loaded from a file")
-local package_file = assert(io.open(root .. "/package.lua", "r"), "package version not found")
-local package_text = package_file:read("*a")
-package_file:close()
-
-local version = assert(package_text:match('version%s*=%s*"([^"]+)"'), "package version not found")
+local package_file = assert(loadfile(root .. "/package.lua"), "package.lua not found")
+local package_info = package_file()
+local version = assert(package_info.version, "package version not found")
 assert(version:match("^[%w._%-]+$"), "invalid package version")
 
 local assets = {
