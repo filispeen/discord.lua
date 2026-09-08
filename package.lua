@@ -27,6 +27,7 @@ return {
     "README.md",
     "install.lua",
     "package.lua",
-    "discord/**.lua"
+    "lib/bundle/**/empty",
+    "lib/bundle/**/LICENSE*",
   },
 }
