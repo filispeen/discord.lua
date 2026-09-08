@@ -12,7 +12,15 @@ Then load it by package name:
 local discord = require("discord.lua")
 ```
 
-The library creates WebSocket and HTTP clients through Luvit dependencies. Voice playback additionally uses FFmpeg, Opus, and libsodium; see [Voice limitations](../guides/voice.md#limitations-and-native-dependencies).
+The library creates WebSocket and HTTP clients through Luvit dependencies. Voice playback additionally uses FFmpeg, Opus, libsodium, and libdave; see [Voice limitations](../guides/voice.md#limitations-and-native-dependencies).
+
+## Native voice bundle
+
+The package does not include native binaries in the Lit download. On Linux x64 and Windows x64, the first `require("discord.lua")` automatically downloads the release asset matching the package version into `lib/bundle/`, providing FFmpeg, FFprobe, Opus, libsodium, and libdave.
+
+On Linux this requires `curl` and `tar`; on Windows it uses PowerShell's `Invoke-WebRequest` and `Expand-Archive`.
+
+Only Linux x64 and Windows x64 have automatic bundles. On other platforms, install compatible FFmpeg, Opus, libsodium, and libdave libraries through the system and make them available to the runtime.
 
 ## Repository checkout
 

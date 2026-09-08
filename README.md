@@ -36,6 +36,8 @@
 ```bash
 lit install filispeen/discord.lua
 ```
+
+On the first `require("discord.lua")`, Linux x64 and Windows x64 installations download the native voice bundle automatically. See the [installation guide](docs/getting-started/installation.md) for platform requirements.
 <!--
 ### luarocks
 ```bash

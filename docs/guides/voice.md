@@ -69,8 +69,8 @@ end)
 ## Limitations and native dependencies
 
 - `GUILD_VOICE_STATES` is required to find a user's voice channel through the cache.
-- Playback relies on FFmpeg. The repository bundles executables for `windows-x64` and `linux-x64`; other platforms need a compatible executable discoverable by the library.
-- Opus encoding/decoding and Discord voice encryption require native Opus and libsodium libraries. The bundled Windows and Linux x64 layouts are the supported bundled targets.
+- Playback relies on FFmpeg. On `windows-x64` and `linux-x64`, the native bundle downloads automatically the first time `discord.lua` is required; other platforms need a compatible executable discoverable by the library.
+- Opus encoding/decoding, Discord voice encryption, and DAVE require native Opus, libsodium, and libdave libraries. Automatic bundles support Windows and Linux x64; see [Installation](../getting-started/installation.md#native-voice-bundle) for requirements and supported platforms.
 - `VoiceClient:set_volume` cannot alter an Opus passthrough source. Use PCM/FFmpeg audio for adjustable volume.
 - Connection is asynchronous. `Channel:connect` returning a `VoiceClient` does not mean the voice gateway is ready for recording or packets yet.
 - DAVE support is implemented in the voice gateway through `dave_ffi`/`DaveSession`; its availability depends on the native runtime. The current code emits a `dave_unavailable` gateway event when it cannot use DAVE rather than exposing a configuration switch in `Bot`.
