@@ -29,5 +29,7 @@ return {
     "package.lua",
     "lib/bundle/**/empty",
     "lib/bundle/**/LICENSE*",
+    "lib/bundle/LICENSE*",
+    "lib/bundle/COPYING",
   },
 }
