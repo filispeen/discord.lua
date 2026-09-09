@@ -178,6 +178,18 @@ describe("Shard", function()
         assert.equals(0, shard._state.seq)
     end)
 
+    it("should reconnect after an unexpected gateway close", function()
+        local shard = Shard.new(MockHTTPClient.new("test_token"), 0, 3)
+        shard._state.connected = true
+        shard._state.session_id = "session1"
+
+        shard:_on_close(1006, "network lost")
+
+        assert.is_false(shard._state.connected)
+        assert.equals("session1", shard._state.session_id)
+        assert.is_not_nil(shard._state.reconnect_timer)
+    end)
+
     it("should assign self.ws on connect so send/close are not silent no-ops", function()
         -- Regression test: connect() previously only bound listeners to a local
         -- ws variable and never assigned self.ws, so Shard:send and Shard:close

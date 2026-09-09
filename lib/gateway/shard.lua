@@ -63,6 +63,7 @@ function Shard.new(client, shard_id, total_shards)
         ws = nil,
         listeners = {},
         _state = {},
+        _closing = false,
     }
     setmetatable(self, { __index = Shard })
     self:reset_state()
@@ -86,6 +87,8 @@ function Shard:connect()
     if self._state.connected then
         return self
     end
+
+    self._closing = false
 
     -- Get gateway URL
     local gateway_info = self.client:get("/gateway/bot")
@@ -129,7 +132,7 @@ function Shard:connect()
 
     -- Handle close event
     ws:on("close", function(_, code, reason)
-        self:close(code, reason)
+        self:_on_close(code, reason)
     end)
 
     -- Handle error event
@@ -226,17 +229,61 @@ function Shard:send(msg)
     return self
 end
 
--- Close the connection
-function Shard:close(code, reason)
-    if self._state.connected then
-        if self.ws then
-            self.ws:close()
-            self.ws = nil
+function Shard:_schedule_reconnect()
+    if self._closing or self._state.reconnect_timer then
+        return
+    end
+
+    local timer = uv.new_timer()
+    self._state.reconnect_timer = timer
+    timer:start(1000, 0, function()
+        self._state.reconnect_timer = nil
+        if self._closing or self._state.connected then
+            return
         end
+
+        local co = coroutine.create(function()
+            self:connect()
+        end)
+        local ok, err = coroutine.resume(co)
+        if not ok then
+            self:emit("error", errors.GatewayError.create("Reconnect failed: " .. tostring(err)))
+            self:_schedule_reconnect()
+        end
+    end)
+end
+
+function Shard:_on_close(code, reason)
+    if self.ws then
+        local ws = self.ws
+        self.ws = nil
+        ws:close()
+    end
+    self._state.connected = false
+    self._state.heartbeat_interval = nil
+    self._state.missed_acks = 0
+    self:clear_heartbeat()
+    self:emit("disconnect", { code = code or 1006, reason = reason or "Connection closed" })
+    self:_schedule_reconnect()
+end
+
+-- Close the connection intentionally.
+function Shard:close()
+    self._closing = true
+    if self._state.reconnect_timer then
+        self._state.reconnect_timer:stop()
+        self._state.reconnect_timer = nil
+    end
+    if self.ws then
+        self.ws:close()
+        self.ws = nil
+    end
+    if self._state.connected then
         self._state.connected = false
         self._state.heartbeat_interval = nil
         self._state.missed_acks = 0
-        self:emit("disconnect", { code = code or 1000, reason = reason or "Connection closed" })
+        self:clear_heartbeat()
+        self:emit("disconnect", { code = 1000, reason = "Connection closed" })
     end
     return self
 end
@@ -309,7 +356,7 @@ function Shard:dispatch(event)
     end
 
     if event.op == opcodes.RECONNECT then
-        self:close(4000, "Reconnect requested by gateway")
+        self:_on_close(4000, "Reconnect requested by gateway")
         return
     end
 
