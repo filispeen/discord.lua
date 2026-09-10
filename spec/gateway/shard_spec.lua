@@ -178,6 +178,22 @@ describe("Shard", function()
         assert.equals(0, shard._state.seq)
     end)
 
+    it("should reconnect when a heartbeat ACK is missing", function()
+        local shard = Shard.new(MockHTTPClient.new("test_token"), 0, 3)
+        shard._state.connected = true
+
+        shard:send_heartbeat()
+        assert.is_true(shard._state.awaiting_ack)
+        shard:dispatch({ op = 11 })
+        assert.is_false(shard._state.awaiting_ack)
+
+        shard:send_heartbeat()
+        shard:send_heartbeat()
+
+        assert.is_false(shard._state.connected)
+        assert.is_not_nil(shard._state.reconnect_timer)
+    end)
+
     it("should reconnect after an unexpected gateway close", function()
         local shard = Shard.new(MockHTTPClient.new("test_token"), 0, 3)
         shard._state.connected = true

@@ -77,6 +77,7 @@ function Shard:reset_state()
     self._state.last_heartbeat = 0
     self._state.last_ack = 0
     self._state.missed_acks = 0
+    self._state.awaiting_ack = false
     self._state.session_id = nil
     self._state.seq = 0
     return self
@@ -213,11 +214,17 @@ function Shard:change_presence(status, activity_payload, since)
     return self
 end
 
--- Send heartbeat
+-- Send heartbeat. Discord requires reconnecting when an earlier heartbeat
+-- has not been acknowledged before the next one is due.
 function Shard:send_heartbeat()
+    if self._state.connected and self._state.awaiting_ack then
+        self:_on_close(1006, "Heartbeat ACK not received")
+        return self
+    end
     local heartbeat = { op = opcodes.HEARTBEAT, d = { seq = self._state.seq } }
     self:send(heartbeat)
     self._state.last_heartbeat = os.time()
+    self._state.awaiting_ack = self._state.connected
     return self
 end
 
@@ -262,6 +269,7 @@ function Shard:_on_close(code, reason)
     self._state.connected = false
     self._state.heartbeat_interval = nil
     self._state.missed_acks = 0
+    self._state.awaiting_ack = false
     self:clear_heartbeat()
     self:emit("disconnect", { code = code or 1006, reason = reason or "Connection closed" })
     self:_schedule_reconnect()
@@ -282,6 +290,7 @@ function Shard:close()
         self._state.connected = false
         self._state.heartbeat_interval = nil
         self._state.missed_acks = 0
+        self._state.awaiting_ack = false
         self:clear_heartbeat()
         self:emit("disconnect", { code = 1000, reason = "Connection closed" })
     end
@@ -344,8 +353,9 @@ function Shard:dispatch(event)
     end
 
     if event.op == opcodes.HEARTBEAT_ACK then
-        self._state.last_ack = self._state.seq
+        self._state.last_ack = os.time()
         self._state.missed_acks = 0
+        self._state.awaiting_ack = false
         return
     end
 
