@@ -16,17 +16,30 @@
   {% if page %}
     {% set seo_title = page.meta.title if page.meta and page.meta.title else page.title %}
     {% set seo_description = page.meta.description if page.meta and page.meta.description else config.site_description %}
+    {% set seo_url = config.site_url ~ page.url %}
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="{{ config.site_name }}" />
     <meta property="og:title" content="{{ seo_title }} - {{ config.site_name }}" />
     <meta property="og:description" content="{{ seo_description }}" />
-    <meta property="og:url" content="{{ page.canonical_url }}" />
+    <meta property="og:url" content="{{ seo_url }}" />
     <meta property="og:locale" content="en_US" />
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="{{ seo_title }} - {{ config.site_name }}" />
     <meta name="twitter:description" content="{{ seo_description }}" />
-    {% if page.meta and page.meta.json_ld %}
-      <script type="application/ld+json">{{ page.meta.json_ld | safe }}</script>
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"WebPage","name":"{{ seo_title }}","description":"{{ seo_description }}","url":"{{ seo_url }}","inLanguage":"en"}
+    </script>
+    {% if page.url %}
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"discord.lua","item":"{{ config.site_url }}"},{"@type":"ListItem","position":2,"name":"{{ seo_title }}","item":"{{ seo_url }}"}]}
+    </script>
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"TechArticle","headline":"{{ seo_title }}","description":"{{ seo_description }}","url":"{{ seo_url }}","isPartOf":{"@id":"{{ config.site_url }}"},"inLanguage":"en"}
+    </script>
+    {% else %}
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"SoftwareSourceCode","name":"discord.lua","description":"{{ seo_description }}","url":"{{ config.site_url }}","codeRepository":"https://github.com/filispeen/discord.lua","programmingLanguage":"Lua","runtimePlatform":"Luvit","license":"https://github.com/filispeen/discord.lua/blob/master/LICENSE"}
+    </script>
     {% endif %}
   {% endif %}
 {% endblock %}
