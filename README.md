@@ -16,9 +16,6 @@
 ![Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/filispeen/b673d810ff3949b6298d705c5fad191a/raw/test-badge.json&style=for-the-badge)
 ![Rockspec](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/filispeen/b673d810ff3949b6298d705c5fad191a/raw/rockspec-badge.json&style=for-the-badge)
 <br>
----
-
-![Rockspec](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/filispeen/b673d810ff3949b6298d705c5fad191a/raw/lit-badge.json&style=for-the-badge)
 </div>
 </div>
 
@@ -38,11 +35,7 @@ lit install filispeen/discord.lua
 ```
 
 On the first `require("discord.lua")`, Linux x64 and Windows x64 installations download the native voice bundle automatically. See the [installation guide](docs/getting-started/installation.md) for platform requirements.
-<!--
-### luarocks
-```bash
-luarocks install discord.lua
-```-->
+
 
 ## Quick example
 Traditional bot

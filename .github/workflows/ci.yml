@@ -93,30 +93,6 @@ jobs:
           message: ${{ job.status }}
           color: ${{ job.status == 'success' && 'green' || 'red' }}
 
-  rockspec:
-    name: Validate rockspec
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Lua/LuaRocks
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y lua5.1 liblua5.1-0-dev luarocks libsodium-dev
-      - name: Validate rockspec
-        run: luarocks lint discord-lua-scm-0.rockspec
-
-      - name: Update rockspec badge
-        uses: schneegans/dynamic-badges-action@v1.9.0
-        if: always()
-        with:
-          auth: ${{ secrets.GIST_SECRET }}
-          gistID: ${{ secrets.GIST_ID}}
-          filename: rockspec-badge.json
-          label: Validate rockspec
-          message: ${{ job.status }}
-          color: ${{ job.status == 'success' && 'green' || 'red' }}
-
   native-bundle-cache:
     name: Cache native bundle
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
@@ -159,7 +135,7 @@ jobs:
           ./lit install
 
   discord-notify:
-    name: Discord nitification
+    name: Discord notification
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
