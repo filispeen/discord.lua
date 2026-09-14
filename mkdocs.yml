@@ -6,7 +6,7 @@ repo_name: filispeen/discord.lua
 
 theme:
   name: material
-  custom_dir: ../overrides
+  custom_dir: docs/overrides
   language: en
   features:
     - navigation.instant
