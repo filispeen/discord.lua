@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://filispeen.github.io/discord.lua/sitemap.xml
