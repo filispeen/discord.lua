@@ -14,7 +14,6 @@
 
 ![Lint](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/filispeen/b673d810ff3949b6298d705c5fad191a/raw/lint-badge.json&style=for-the-badge)
 ![Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/filispeen/b673d810ff3949b6298d705c5fad191a/raw/test-badge.json&style=for-the-badge)
-![Rockspec](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/filispeen/b673d810ff3949b6298d705c5fad191a/raw/rockspec-badge.json&style=for-the-badge)
 <br>
 </div>
 </div>
