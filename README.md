@@ -109,5 +109,39 @@ See more examples in <a href="/examples/">`examples/`</a> directory:
 - <a href="/examples/voice_play.lua">`voice_play.lua`</a> - Voice client usage
 - <a href="/examples/sharded_bot.lua">`sharded_bot.lua`</a> - Sharded bot with auto-sharding
 
+## Feature Comparison
+
+**For context:** ✅ Built in · ⚠️ Manual or limited support · ❌ No built-in high-level API
+<div align="center">
+
+| Feature                              | discord.lua | Discordia |
+| ------------------------------------ | :---------: | :-------: |
+| Gateway events                       |      ✅      |     ✅     |
+| REST API and Discord models          |      ✅      |     ✅     |
+| Cache-backed models                  |      ✅      |     ✅     |
+| Rate-limit handling                  |      ✅      |     ✅     |
+| Prefix command framework             |      ✅      | ⚠️ Manual |
+| Slash commands                       |      ✅      |     ❌     |
+| User and message context commands    |      ✅      |     ❌     |
+| Command groups and subcommands       |      ✅      |     ❌     |
+| Autocomplete                         |      ✅      |     ❌     |
+| Application command sync             |      ✅      |     ❌     |
+| Hybrid prefix + slash commands       |      ✅      |     ❌     |
+| Interaction responses and follow-ups |      ✅      |     ❌     |
+| Buttons and select menus             |      ✅      |     ❌     |
+| Views and timeouts                   |      ✅      |     ❌     |
+| Modals                               |      ✅      |     ❌     |
+| Discord Components V2                |      ✅      |     ❌     |
+| Scheduled events                     |      ✅      |     ❌     |
+| AutoMod                              |      ✅      |     ❌     |
+| Polls                                |      ✅      |     ❌     |
+| Monetization                         |      ✅      |     ❌     |
+| Application emojis                   |      ✅      |     ❌     |
+| Checks, cooldowns and error handlers |      ✅      |     ❌     |
+| Extensions, cogs and task helpers    |      ✅      |     ❌     |
+| Voice                                |      ✅      |     ✅     |
+| Automatic gateway sharding           |      ✅      |     ✅     |
+</div>
+
 ## Reference
 - <a href="https://github.com/Pycord-Development/pycord/">pycord</a>
