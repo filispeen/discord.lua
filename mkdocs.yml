@@ -1,8 +1,11 @@
 site_name: discord.lua
-site_description: Documentation for the Lua/Luvit Discord library.
+site_description: Modern Discord bot library and API wrapper for Lua on Luvit, with commands, interactions, components, voice, gateway sharding, and more.
 site_url: https://filispeen.github.io/discord.lua/
 repo_url: https://github.com/filispeen/discord.lua
 repo_name: filispeen/discord.lua
+
+hooks:
+  - hooks/seo.py
 
 theme:
   name: material
