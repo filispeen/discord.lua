@@ -94,6 +94,29 @@ local Poll = require("./poll").Poll
 -- Message class
 local Message = class("Message")
 
+local function snapshot(data, http)
+    local result = {}
+    for key, value in pairs(data or {}) do result[key] = value end
+    if result.message then result.message = Message.new(result.message, http) end
+    return result
+end
+
+local function apply_references(self, data, full)
+    if full or data.message_reference ~= nil then self.message_reference = data.message_reference end
+    if full or data.referenced_message ~= nil then
+        self.referenced_message = data.referenced_message and Message.new(data.referenced_message, self.http) or nil
+    end
+    if full or data.message_snapshots ~= nil then
+        self.message_snapshots = {}
+        for index, value in ipairs(data.message_snapshots or {}) do
+            self.message_snapshots[index] = snapshot(value, self.http)
+        end
+    end
+    if full or data.components ~= nil then self.components = data.components or {} end
+    if full or data.stickers ~= nil then self.stickers = data.stickers or {} end
+    if full or data.sticker_items ~= nil then self.sticker_items = data.sticker_items or {} end
+end
+
 function Message.new(data, http)
     local self = {}
     setmetatable(self, {
@@ -135,6 +158,7 @@ function Message.new(data, http)
     self.role_mentions = data.role_mentions or {}
 
     self.http = http
+    apply_references(self, data, true)
 
     return self
 end
@@ -167,7 +191,7 @@ function Message:_update(data)
         "id", "author", "content", "channel_id", "guild_id", "mention_everyone",
         "tts", "mention_roles", "mention_channels", "mentions", "attachments",
         "embeds", "webhook_id", "type", "flags", "timestamp", "edited_timestamp", "pinned",
-        "mention", "role_mentions",
+        "mention", "role_mentions", "components", "stickers", "sticker_items", "message_reference",
     }
     for _, field in ipairs(fields) do
         if data[field] ~= nil then
@@ -189,6 +213,10 @@ function Message:_update(data)
     end
     if data.poll ~= nil then
         self.poll = Poll.from_dict(data.poll, self)
+    end
+    if data.message_reference ~= nil or data.referenced_message ~= nil or data.message_snapshots ~= nil
+        or data.components ~= nil or data.stickers ~= nil or data.sticker_items ~= nil then
+        apply_references(self, data)
     end
     return self
 end
@@ -247,6 +275,30 @@ function Message:reply(content, opts)
         return self.http:post_multipart(endpoint, Multipart.with_attachments(payload, files), files)
     end
     return self.http:post(endpoint, payload)
+end
+
+-- Forwards this message to a channel. Discord creates the immutable snapshot;
+-- applications must be able to read the source message's content.
+function Message:forward(channel, opts)
+    if not self.http then error("Message has no http client attached, cannot forward", 0) end
+    local channel_id = type(channel) == "table" and channel.id or channel
+    if not channel_id then error("Message:forward() requires a target channel or id", 0) end
+    local payload, files = message_payload(opts or {})
+    payload.message_reference = {
+        type = 1,
+        message_id = self.id,
+        channel_id = self.channel_id,
+        guild_id = self.guild_id,
+    }
+    local endpoint = "/channels/" .. channel_id .. "/messages"
+    local data
+    if files and #files > 0 then
+        local Multipart = require("../http/multipart")
+        data = self.http:post_multipart(endpoint, Multipart.with_attachments(payload, files), files)
+    else
+        data = self.http:post(endpoint, payload)
+    end
+    return Message.new(data, self.http)
 end
 
 function Message:edit(content, opts)

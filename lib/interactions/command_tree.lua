@@ -100,38 +100,21 @@ function CommandTree:_partition()
     return global_commands, guild_commands
 end
 
--- Compares a locally built command dict against a remote one, ignoring
--- fields that Discord adds server side (id, application_id, version, etc).
+-- Compares local fields recursively, deliberately ignoring server-populated
+-- remote keys such as id, application_id and version.
 local function commands_equal(local_dict, remote_dict)
-    if local_dict.name ~= remote_dict.name then
-        return false
-    end
-    if (local_dict.description or "") ~= (remote_dict.description or "") then
-        return false
-    end
-    if (local_dict.type or 1) ~= (remote_dict.type or 1) then
-        return false
-    end
-
-    local local_options = local_dict.options or {}
-    local remote_options = remote_dict.options or {}
-    if #local_options ~= #remote_options then
-        return false
-    end
-
-    for i, opt in ipairs(local_options) do
-        local remote_opt = remote_options[i]
-        if not remote_opt
-            or opt.name ~= remote_opt.name
-            or (opt.description or "") ~= (remote_opt.description or "")
-            or opt.type ~= remote_opt.type
-            or (opt.required or false) ~= (remote_opt.required or false)
-            or (opt.autocomplete or false) ~= (remote_opt.autocomplete or false)
-        then
+    if (local_dict.options == nil) ~= (remote_dict.options == nil) then return false end
+    if local_dict.options and #local_dict.options ~= #remote_dict.options then return false end
+    for key, local_value in pairs(local_dict) do
+        local remote_value = remote_dict[key]
+        if type(local_value) == "table" then
+            if type(remote_value) ~= "table" or not commands_equal(local_value, remote_value) then
+                return false
+            end
+        elseif local_value ~= remote_value then
             return false
         end
     end
-
     return true
 end
 

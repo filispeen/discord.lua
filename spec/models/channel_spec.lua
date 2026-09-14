@@ -281,7 +281,7 @@ describe("Channel", function()
             local http = {
                 post = function(_self, endpoint, payload)
                     table.insert(calls, { endpoint = endpoint, payload = payload })
-                    return { id = "t1", type = 15, name = payload.name, parent_id = "channel1" }
+                    return { id = "t1", type = 12, name = payload.name, parent_id = "channel1" }
                 end,
             }
             local channel = Channel.new({ id = "channel1", type = 1 }, nil, http)
@@ -290,7 +290,7 @@ describe("Channel", function()
 
             assert.equals("/channels/channel1/threads", calls[1].endpoint)
             assert.equals("help", calls[1].payload.name)
-            assert.equals(15, calls[1].payload.type)
+            assert.equals(12, calls[1].payload.type)
             assert.equals("t1", thread.id)
         end)
 
@@ -299,7 +299,7 @@ describe("Channel", function()
             local http = {
                 post = function(_self, endpoint, payload)
                     table.insert(calls, { endpoint = endpoint, payload = payload })
-                    return { id = "t1", type = 14, name = payload.name, parent_id = "channel1" }
+                    return { id = "t1", type = 11, name = payload.name, parent_id = "channel1" }
                 end,
             }
             local channel = Channel.new({ id = "channel1", type = 1 }, nil, http)

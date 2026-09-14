@@ -63,7 +63,7 @@
 --     opts.name (required), opts.message_id (optional - starts the
 --     thread from that message via POST .../messages/{id}/threads,
 --     always a public thread), opts.type (only used without a message,
---     defaults to 15 = private_thread per this project's type mapping),
+--     defaults to 12 = private_thread per Discord API v10),
 --     opts.auto_archive_duration, opts.slowmode_delay, opts.invitable,
 --     opts.reason. Mirrors pycord's TextChannel.create_thread(), picks
 --     between start_thread_with_message/start_thread_without_message.
@@ -102,6 +102,14 @@ function Channel.new(data, guild, http)
     self.recipient_count = data.recipient_count or 0
     self.guild = guild
     self.http = http or (guild and guild.http)
+    self.available_tags = data.available_tags or {}
+    self.applied_tags = data.applied_tags or {}
+    self.default_reaction_emoji = data.default_reaction_emoji
+    self.default_thread_rate_limit_per_user = data.default_thread_rate_limit_per_user
+    self.default_sort_order = data.default_sort_order
+    self.default_forum_layout = data.default_forum_layout
+    self.default_auto_archive_duration = data.default_auto_archive_duration
+    self.flags = data.flags or 0
 
     -- Type-specific fields
     if data.topic then
@@ -126,16 +134,10 @@ end
 -- Get channel type name
 function Channel:get_type_name()
     local types = {
-        [1] = "text",
-        [2] = "private",
-        [4] = "voice",
-        [5] = "group",
-        [10] = "category",
-        [11] = "news",
-        [12] = "store",
-        [13] = "news_thread",
-        [14] = "public_thread",
-        [15] = "private_thread",
+        [0] = "text", [1] = "private", [2] = "voice", [3] = "group",
+        [4] = "category", [5] = "announcement", [10] = "announcement_thread",
+        [11] = "public_thread", [12] = "private_thread", [13] = "stage_voice",
+        [14] = "directory", [15] = "forum", [16] = "media",
     }
     return types[self.type] or "unknown"
 end
@@ -145,6 +147,14 @@ end
 -- get_type_name above (kept as-is to avoid disturbing existing behavior).
 function Channel:is_voice()
     return self.type == 2
+end
+
+function Channel:is_thread()
+    return self.type == 10 or self.type == 11 or self.type == 12
+end
+
+function Channel:is_forum()
+    return self.type == 15 or self.type == 16
 end
 
 -- Connects to this channel's voice gateway, mirrors pycord's
@@ -231,25 +241,69 @@ function Channel:create_thread(opts)
     end
 
     local Thread = require("./thread")
-    local endpoint
     local payload = {
         name = opts.name,
         auto_archive_duration = opts.auto_archive_duration or 1440,
         rate_limit_per_user = opts.slowmode_delay or 0,
     }
 
-    if opts.message_id then
-        endpoint = "/channels/" .. self.id .. "/messages/" .. opts.message_id .. "/threads"
-    else
-        endpoint = "/channels/" .. self.id .. "/threads"
-        payload.type = opts.type or 15
+    if not opts.message_id then
+        payload.type = opts.type or 12
         if opts.invitable ~= nil then
             payload.invitable = opts.invitable
         end
     end
 
-    local created = self.http:post(endpoint, payload)
+    local Route = require("../http/route")
+    local created
+    if opts.message_id then
+        created = Route.new(self.http):start_thread_from_message(self.id, opts.message_id, payload, opts.reason)
+    else
+        created = Route.new(self.http):start_thread(self.id, payload, opts.reason)
+    end
     return Thread.new(created, self.guild, self.http)
+end
+
+function Channel:edit(opts)
+    opts = opts or {}
+    if not self.http then error("Channel has no http client attached, cannot edit", 0) end
+    local payload = {}
+    local fields = {
+        "name", "topic", "nsfw", "rate_limit_per_user", "default_auto_archive_duration",
+        "default_thread_rate_limit_per_user", "default_sort_order", "default_forum_layout",
+        "default_reaction_emoji", "available_tags", "parent_id", "position",
+    }
+    for _, field in ipairs(fields) do if opts[field] ~= nil then payload[field] = opts[field] end end
+    if opts.slowmode_delay ~= nil then payload.rate_limit_per_user = opts.slowmode_delay end
+    local data = require("../http/route").new(self.http):edit_channel(self.id, payload, opts.reason)
+    return Channel.new(data, self.guild, self.http)
+end
+
+-- Creates a post in either a forum or media channel. opts.message follows
+-- Create Message; opts.content is a convenient shorthand.
+function Channel:create_forum_post(opts)
+    opts = opts or {}
+    if not self:is_forum() then error("Channel:create_forum_post() requires a forum or media channel", 0) end
+    if not self.http then error("Channel has no http client attached, cannot create forum post", 0) end
+    if not opts.name then error("Channel:create_forum_post() requires opts.name", 0) end
+    local message = opts.message or {}
+    if opts.content ~= nil then message.content = opts.content end
+    local payload = { name = opts.name, message = message, applied_tags = opts.applied_tags }
+    if opts.auto_archive_duration ~= nil then payload.auto_archive_duration = opts.auto_archive_duration end
+    if opts.slowmode_delay ~= nil then payload.rate_limit_per_user = opts.slowmode_delay end
+    local Route = require("../http/route")
+    local Thread = require("./thread")
+    local data
+    if opts.files and #opts.files > 0 then
+        local Multipart = require("../http/multipart")
+        if message.attachments == nil then message.attachments = Multipart.attachments(opts.files) end
+        data = Route.new(self.http):start_forum_thread(self.id, payload, opts.files, opts.reason)
+    else
+        data = Route.new(self.http):start_forum_thread(self.id, payload, nil, opts.reason)
+    end
+    local thread = Thread.new(data, self.guild, self.http)
+    thread.message = data.message and require("./message").new(data.message, self.http) or nil
+    return thread
 end
 
 function Channel:fetch_archived_threads(opts)

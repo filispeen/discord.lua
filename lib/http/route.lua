@@ -274,22 +274,39 @@ function Route:get_active_threads(guild_id)
 end
 
 function Route:get_archived_threads(channel_id, kind, params)
-    local suffix = kind == "private" and "/private" or "/public"
-    if kind == "joined_private" then
-        suffix = "/users/@me/threads/archived/private"
-        return self.http:get("/channels/" .. channel_id .. suffix)
-    end
     local query = ""
     if params then
         local parts = {}
         for key, value in pairs(params) do
-            parts[#parts + 1] = key .. "=" .. tostring(value)
+            if value ~= nil then parts[#parts + 1] = key .. "=" .. tostring(value) end
         end
-        if #parts > 0 then
-            query = "?" .. table.concat(parts, "&")
-        end
+        if #parts > 0 then query = "?" .. table.concat(parts, "&") end
+    end
+    local suffix = kind == "private" and "/private" or "/public"
+    if kind == "joined_private" then
+        suffix = "/users/@me/threads/archived/private"
+        return self.http:get("/channels/" .. channel_id .. suffix .. query)
     end
     return self.http:get("/channels/" .. channel_id .. "/threads/archived" .. suffix .. query)
+end
+
+function Route:get_thread_member(channel_id, user_id, with_member)
+    local suffix = with_member and "?with_member=true" or ""
+    return self.http:get("/channels/" .. channel_id .. "/thread-members/" .. user_id .. suffix)
+end
+
+function Route:start_thread_from_message(channel_id, message_id, payload, reason)
+    return self.http:post("/channels/" .. channel_id .. "/messages/" .. message_id .. "/threads", payload, opts_with_reason(reason))
+end
+
+function Route:start_thread(channel_id, payload, reason)
+    return self.http:post("/channels/" .. channel_id .. "/threads", payload, opts_with_reason(reason))
+end
+
+function Route:start_forum_thread(channel_id, payload, files, reason)
+    local endpoint = "/channels/" .. channel_id .. "/threads"
+    if files and #files > 0 then return self.http:post_multipart(endpoint, payload, files, opts_with_reason(reason)) end
+    return self.http:post(endpoint, payload, opts_with_reason(reason))
 end
 
 function Route:create_webhook(channel_id, payload, reason)

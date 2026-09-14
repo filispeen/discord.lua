@@ -1,70 +1,56 @@
 -- lib/interactions/application_command.lua
--- Application command interaction handler
---
--- Public Contract:
---   ApplicationCommand.new(name, description, options) -> ApplicationCommand
---
---   ApplicationCommand:options -> table
---     Command options (choices, autocomplete, etc.)
---
---   ApplicationCommand:execute(ctx) -> response
---     Execute the command and return response.
---
---   ApplicationCommand:to_dict() -> table
---     Serializes the command to the Discord API application command schema,
---     used by interactions.command_tree for registration and diffing.
+-- Application command model and Discord API v10 serializer.
 
 local class = require("../core/class")
 
--- ApplicationCommand class
 local ApplicationCommand = class("ApplicationCommand")
 
 local function validate_options(options)
-    if options == nil then
-        return {}
-    end
+    if options == nil then return {} end
     if type(options) ~= "table" then
         error("ApplicationCommand options must be an array of option tables", 0)
     end
-
     local count, max_index = 0, 0
     for key in pairs(options) do
         if type(key) ~= "number" or key < 1 or key ~= math.floor(key) then
             error("ApplicationCommand options must be an array: { { name = ..., type = ... } }", 0)
         end
-        count = count + 1
-        if key > max_index then
-            max_index = key
-        end
+        count, max_index = count + 1, math.max(max_index, key)
     end
-    if count ~= max_index then
-        error("ApplicationCommand options must not have gaps", 0)
-    end
-
+    if count ~= max_index then error("ApplicationCommand options must not have gaps", 0) end
     for index, option in ipairs(options) do
-        if type(option) ~= "table"
-            or type(option.name) ~= "string"
-            or option.name == ""
-            or type(option.type) ~= "number"
-        then
+        if type(option) ~= "table" or type(option.name) ~= "string" or option.name == ""
+            or type(option.type) ~= "number" then
             error("ApplicationCommand option #" .. index .. " requires string name and numeric type", 0)
         end
     end
-
     return options
 end
 
--- Discord application command types
+local option_fields = {
+    "type", "name", "name_localizations", "description", "description_localizations",
+    "required", "choices", "autocomplete", "channel_types", "min_value", "max_value",
+    "min_length", "max_length",
+}
+
+local function option_to_dict(option)
+    local result = {}
+    for _, field in ipairs(option_fields) do
+        if option[field] ~= nil then result[field] = option[field] end
+    end
+    if option.options then
+        result.options = {}
+        for index, child in ipairs(option.options) do result.options[index] = option_to_dict(child) end
+    end
+    return result
+end
+
 ApplicationCommand.TYPE_CHAT_INPUT = 1
 ApplicationCommand.TYPE_USER = 2
 ApplicationCommand.TYPE_MESSAGE = 3
 
 function ApplicationCommand.new(name, description, options)
-    local self = {}
-    setmetatable(self, {
-        __index = ApplicationCommand
-    })
-
+    local self = setmetatable({}, { __index = ApplicationCommand })
     self.id = ""
     self.name = name
     self.description = description
@@ -74,79 +60,74 @@ function ApplicationCommand.new(name, description, options)
     self.guild_ids = nil
     self.autocomplete_callbacks = {}
     self.callback = nil
-
     return self
 end
 
--- Registers an autocomplete callback for a specific option name.
+function ApplicationCommand.from_dict(data)
+    local self = ApplicationCommand.new(data.name, data.description, data.options)
+    for _, field in ipairs({
+        "id", "application_id", "guild_id", "type", "name_localizations",
+        "description_localizations", "default_member_permissions", "integration_types",
+        "contexts", "nsfw", "handler", "version",
+    }) do
+        self[field] = data[field]
+    end
+    if data.guild_id then self.guild_ids = { data.guild_id } end
+    return self
+end
+
 function ApplicationCommand:set_autocomplete(option_name, callback)
     self.autocomplete_callbacks[option_name] = callback
     return self
 end
 
--- Serializes to the Discord API application command schema.
 function ApplicationCommand:to_dict()
-    local dict = {
-        name = self.name,
-        description = self.description,
-        type = self.type,
-    }
-
+    local dict = { name = self.name, description = self.description, type = self.type }
     if self.type == ApplicationCommand.TYPE_CHAT_INPUT and self.options and #self.options > 0 then
-        local options = {}
-        for i, opt in ipairs(self.options) do
-            options[i] = {
-                type = opt.type,
-                name = opt.name,
-                description = opt.description,
-                required = opt.required or false,
-                choices = opt.choices,
-                autocomplete = self.autocomplete_callbacks[opt.name] ~= nil or opt.autocomplete or nil,
-            }
+        dict.options = {}
+        for index, option in ipairs(self.options) do
+            dict.options[index] = option_to_dict(option)
+            if self.autocomplete_callbacks[option.name] then dict.options[index].autocomplete = true end
         end
-        dict.options = options
     end
-
+    for _, field in ipairs({
+        "name_localizations", "description_localizations", "integration_types", "contexts",
+        "nsfw", "handler",
+    }) do
+        if self[field] ~= nil then dict[field] = self[field] end
+    end
+    if self.default_member_permissions ~= nil then
+        dict.default_member_permissions = tostring(self.default_member_permissions)
+    end
     return dict
 end
 
--- Add an alias
 function ApplicationCommand:add_alias(alias)
     table.insert(self.aliases, alias)
     return self
 end
 
--- Get all command names
 function ApplicationCommand:get_all_names()
     local names = { self.name }
-    for _, alias in ipairs(self.aliases) do
-        table.insert(names, alias)
-    end
+    for _, alias in ipairs(self.aliases) do table.insert(names, alias) end
     return names
 end
 
--- Check if input matches any command name
 function ApplicationCommand:matches(input)
     for _, name in ipairs(self:get_all_names()) do
-        if input:lower():find(name:lower(), 1, true) then
-            return true
-        end
+        if input:lower():find(name:lower(), 1, true) then return true end
     end
     return false
 end
 
--- Check if input exactly matches a command name
 function ApplicationCommand:exact_match(input)
     input = input:lower()
     for _, name in ipairs(self:get_all_names()) do
-        if name:lower() == input then
-            return true
-        end
+        if name:lower() == input then return true end
     end
     return false
 end
 
--- Get response type for this command
 function ApplicationCommand.get_response_type(_self)
     return "APPLICATION_COMMAND_RESPONSE"
 end

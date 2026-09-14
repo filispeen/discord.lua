@@ -13,6 +13,11 @@ Registers and returns an `ApplicationCommand`.
 | `guild_ids` | Optional array of guild IDs, limiting synchronization scope. |
 | `checks` | Optional array of check tables. |
 | `callback` | Called with `SlashCommandContext`. |
+| `default_member_permissions` | Permission bit set, serialized as Discord's required string. |
+| `integration_types` | Install surfaces: `0` guild install, `1` user install. |
+| `contexts` | Invocation surfaces: `0` guild, `1` bot DM, `2` private channel. |
+| `name_localizations` / `description_localizations` | Locale-to-string dictionaries. |
+| `nsfw` | Marks the command age-restricted. |
 
 ### `ApplicationCommand:set_autocomplete(option_name, callback)`
 
@@ -20,7 +25,9 @@ Associates an autocomplete callback with an option name and returns the command.
 
 ### `ApplicationCommand:to_dict()`
 
-Returns the Discord application-command representation. It is used by synchronization; do not mutate the generated table and expect it to update the command object.
+Returns the Discord application-command representation. It is used by synchronization; do not mutate the generated table and expect it to update the command object. `ApplicationCommand.from_dict(data)` preserves current Discord permission, install/context, and localization fields. Synchronization compares nested options and localized/context fields.
+
+Option, subcommand, and subgroup tables accept applicable `name_localizations` and `description_localizations`. Choice localization remains a direct choice-table field.
 
 ### `Bot:user_command(options)` / `Bot:message_command(options)`
 

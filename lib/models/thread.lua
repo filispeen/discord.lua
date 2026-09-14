@@ -1,6 +1,6 @@
 -- lib/models/thread.lua
 -- Thread model for Discord API. A thread is a specialized channel
--- (Channel:get_type_name() type 13/14/15: news_thread/public_thread/
+-- (Channel:get_type_name() type 10/11/12: announcement_thread/public_thread/
 -- private_thread), so this mirrors channel.lua's data-holding style
 -- rather than subclassing it, plus thread_metadata fields and the
 -- thread-only actions (join/leave/add_user/remove_user/archive).
@@ -76,6 +76,9 @@ local function apply(self, data)
     self.owner_id = data.owner_id
     self.last_message_id = data.last_message_id
     self.slowmode_delay = data.rate_limit_per_user or 0
+    self.applied_tags = data.applied_tags or {}
+    self.flags = data.flags or 0
+    self.member = data.member
     self.message_count = data.message_count
     self.member_count = data.member_count
 
@@ -106,7 +109,7 @@ function Thread.new(data, guild, http)
 end
 
 function Thread:is_thread()
-    return self.type == 13 or self.type == 14 or self.type == 15
+    return self.type == 10 or self.type == 11 or self.type == 12
 end
 
 function Thread:edit(opts)
@@ -134,8 +137,12 @@ function Thread:edit(opts)
     if opts.auto_archive_duration ~= nil then
         payload.auto_archive_duration = opts.auto_archive_duration
     end
+    if opts.applied_tags ~= nil then
+        payload.applied_tags = opts.applied_tags
+    end
 
-    local updated = self.http:patch("/channels/" .. self.id, payload)
+    local Route = require("../http/route")
+    local updated = Route.new(self.http):edit_channel(self.id, payload, opts.reason)
     if type(updated) == "table" then
         apply(self, updated)
     end
@@ -183,6 +190,11 @@ function Thread:fetch_members()
         error("Thread has no http client attached, cannot fetch_members", 0)
     end
     return self.http:get("/channels/" .. self.id .. "/thread-members")
+end
+
+function Thread:fetch_member(user_id, with_member)
+    if not self.http then error("Thread has no http client attached, cannot fetch_member", 0) end
+    return require("../http/route").new(self.http):get_thread_member(self.id, user_id, with_member)
 end
 
 function Thread:delete()

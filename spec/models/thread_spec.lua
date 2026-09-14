@@ -17,7 +17,7 @@ local function fake_http()
             table.insert(calls, { method = "PATCH", endpoint = endpoint, payload = payload })
             return {
                 id = "1",
-                type = 14,
+                type = 11,
                 name = payload.name or "thread",
                 parent_id = "c1",
                 thread_metadata = {
@@ -42,7 +42,7 @@ end
 local function thread_payload()
     return {
         id = "1",
-        type = 14,
+        type = 11,
         name = "help-thread",
         parent_id = "c1",
         guild_id = "g1",

@@ -121,6 +121,20 @@ describe("Client channel cache dispatch wiring", function()
         assert.is_nil(client.channels:get("channel3"))
     end)
 
+    it("caches THREAD gateway create, update and delete payloads", function()
+        local client, handlers = make_client_with_fake_gateway()
+        local received
+        client:on("thread_create", function(data) received = data end)
+
+        handlers["THREAD_CREATE"]({ id = "thread1", type = 11, name = "first", guild_id = "guild1", thread_metadata = {} })
+        assert.equals("thread1", received.id)
+        assert.equals("first", client.channels:get("thread1").name)
+        handlers["THREAD_UPDATE"]({ id = "thread1", type = 11, name = "renamed", guild_id = "guild1", thread_metadata = {} })
+        assert.equals("renamed", client.channels:get("thread1").name)
+        handlers["THREAD_DELETE"]({ id = "thread1", guild_id = "guild1" })
+        assert.is_nil(client.channels:get("thread1"))
+    end)
+
     it("forwards INTERACTION_CREATE payloads through the public event API unchanged", function()
         local client, handlers = make_client_with_fake_gateway()
         local received = nil

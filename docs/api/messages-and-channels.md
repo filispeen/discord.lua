@@ -47,3 +47,13 @@ Create REST resources for this channel. Their option tables are passed to the ro
 ## Threads
 
 Thread models and gateway events are exposed separately from ordinary channel dispatches. `thread_create`, `thread_update`, `thread_delete`, and synchronization events update the channel cache where supported.
+
+## Discord API v10 threads, forums, and media
+
+Channel IDs follow Discord v10: announcement/public/private threads are `10`/`11`/`12`; forum and media are `15`/`16`. `Channel:is_thread()` and `Thread:is_thread()` use these IDs. `Channel:create_thread(opts)` supports audit-log `reason`; `Guild:fetch_active_threads()` wraps active results as `Thread` models.
+
+Forum/media fields include `available_tags`, `default_reaction_emoji`, `default_sort_order`, `default_forum_layout`, and `default_thread_rate_limit_per_user`. Use `channel:create_forum_post({ name = "Topic", content = "First", applied_tags = { tag_id } })`; the returned thread has its first message at `.message`. Use `channel:edit(opts)` and `thread:edit({ applied_tags = ... })` to update forum metadata and post tags.
+
+## Message forwarding
+
+Forwarded messages expose `message_reference` and `message_snapshots`; each snapshot `.message` is a normal `Message` model with attachments, embeds, components, stickers, and mentions. Send with `source:forward(target_channel_or_id[, opts])`. Discord permits only eligible readable messages; polls, calls, and activities cannot be forwarded.

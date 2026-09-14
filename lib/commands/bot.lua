@@ -7,6 +7,15 @@ local CommandTree = require("../interactions/command_tree")
 
 local Bot = class('Bot')
 
+local function apply_command_options(command, options)
+    for _, field in ipairs({
+        "name_localizations", "description_localizations", "default_member_permissions",
+        "integration_types", "contexts", "nsfw", "handler",
+    }) do
+        if options[field] ~= nil then command[field] = options[field] end
+    end
+end
+
 -- Per-instance __index: falls through to Bot's methods for everything,
 -- except "user", which reads live from self.client.user (set once the
 -- READY payload arrives) so bot.user works the same way pycord's
@@ -99,6 +108,7 @@ function Bot:register_application_command(name, options)
     cmd.guild_ids = options.guild_ids
     cmd.callback = options.callback
     cmd.checks = options.checks or {}
+    apply_command_options(cmd, options)
 
     self.command_tree:add(cmd)
     return cmd
@@ -134,6 +144,12 @@ function Bot:bridge_command(name, options)
         options = options.options,
         guild_ids = options.guild_ids,
         checks = options.checks,
+        name_localizations = options.name_localizations,
+        description_localizations = options.description_localizations,
+        default_member_permissions = options.default_member_permissions,
+        integration_types = options.integration_types,
+        contexts = options.contexts,
+        nsfw = options.nsfw,
         callback = function(slash_ctx)
             local ctx = BridgeContext.new(slash_ctx, "app")
             callback(ctx)
@@ -163,10 +179,11 @@ function Bot:user_command(options)
         error("Bot:user_command requires options.name", 0)
     end
 
-    local cmd = ApplicationCommand.new(name, name)
+    local cmd = ApplicationCommand.new(name, "")
     cmd.type = ApplicationCommand.TYPE_USER
     cmd.guild_ids = options.guild_ids
     cmd.checks = options.checks or {}
+    apply_command_options(cmd, options)
 
     local user_callback = options.callback
     cmd.callback = function(ctx)
@@ -189,10 +206,11 @@ function Bot:message_command(options)
         error("Bot:message_command requires options.name", 0)
     end
 
-    local cmd = ApplicationCommand.new(name, name)
+    local cmd = ApplicationCommand.new(name, "")
     cmd.type = ApplicationCommand.TYPE_MESSAGE
     cmd.guild_ids = options.guild_ids
     cmd.checks = options.checks or {}
+    apply_command_options(cmd, options)
 
     local message_callback = options.callback
     cmd.callback = function(ctx)

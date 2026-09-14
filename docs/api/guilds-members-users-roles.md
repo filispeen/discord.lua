@@ -1,5 +1,9 @@
 # Guilds, members, users, and roles
 
+## Member timeouts
+
+`Member.communication_disabled_until` is Discord's ISO8601 timestamp, or `nil` when no timeout applies. `member:timeout(until[, reason])` accepts an ISO8601 string or Unix timestamp; `member:remove_timeout([reason])` clears it. Both use `PATCH /guilds/{guild.id}/members/{member.id}` with the audit-log reason. Discord caps timeouts at 28 days and rejects guild owners or administrators.
+
 ## `Guild`
 
 Guild models carry Discord guild data plus attached HTTP/client references where created from REST or caches.
