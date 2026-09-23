@@ -28,12 +28,13 @@ end
 
 describe("Bot", function()
     it("dispatches interaction_create through the public client event API", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local received = nil
         bot.dispatch_interaction = function(_self, interaction)
             received = interaction
         end
 
+        bot.token = "token"
         bot:connect()
         bot.client:emit("interaction_create", { id = "interaction1" })
 
@@ -41,17 +42,31 @@ describe("Bot", function()
     end)
 
     it("creates a new bot", function()
-        local bot = Bot.new("token", {})
+        local bot = Bot.new(513, {})
 
-        assert.equals("token", bot.token)
+        assert.is_nil(bot.token)
+        assert.equals(513, bot.intents)
         assert.same({}, bot.ratelimiter)
         assert.equals(0, table_count(bot.commands))
         assert.equals(0, table_count(bot.cogs))
         assert.equals("!", bot.prefix)
     end)
 
+    it("accepts the token only at run", function()
+        assert.has_error(function() Bot.new("token") end)
+        assert.has_error(function() Bot.new(nil, 513) end)
+        local bot = Bot.new(513)
+        assert.has_error(function() bot:run() end)
+        assert.is_nil(bot.token)
+        bot.connect = function(self)
+            assert.equals("token", self.token)
+            self.client = { start_gateway = function() end }
+        end
+        assert.equals(bot, bot:run("token"))
+    end)
+
     it("registers a command", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local handler = function(ctx, args) return "test" end
         bot:register_command("test", handler, "!")
 
@@ -60,7 +75,7 @@ describe("Bot", function()
     end)
 
     it("registers an application command", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         bot:register_application_command("test", {name = "test", description = "A test command"})
 
         assert.equals(1, table_count(bot.application_commands))
@@ -68,7 +83,7 @@ describe("Bot", function()
     end)
 
     it("unregisters a command", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         bot:register_command("test", function(ctx, args) return "test" end, "!")
         bot:unregister_command("test")
 
@@ -77,7 +92,7 @@ describe("Bot", function()
     end)
 
     it("subscribes to an event", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local callback_called = false
 
         bot:on("ready", function() callback_called = true end)
@@ -86,7 +101,7 @@ describe("Bot", function()
     end)
 
     it("emits an event", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local callback_called = false
 
         bot:on("ready", function() callback_called = true end)
@@ -96,7 +111,7 @@ describe("Bot", function()
     end)
 
     it("adds a cog", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local cog = { name = "test", commands = {}, listeners = {} }
 
         bot:add_cog(cog)
@@ -106,7 +121,7 @@ describe("Bot", function()
     end)
 
     it("removes a cog", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local cog = { name = "test", commands = {}, listeners = {} }
 
         bot:add_cog(cog)
@@ -116,7 +131,7 @@ describe("Bot", function()
     end)
 
     it("gets a command", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local handler = function(ctx, args) return "test" end
         bot:register_command("test", handler, "!")
 
@@ -128,7 +143,7 @@ describe("Bot", function()
     end)
 
     it("gets all commands", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         bot:register_command("test1", function(ctx, args) return "test1" end, "!")
         bot:register_command("test2", function(ctx, args) return "test2" end, "!")
 
@@ -138,7 +153,7 @@ describe("Bot", function()
     end)
 
     it("emits an event with multiple listeners", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local call_count = 0
 
         bot:on("test", function() call_count = call_count + 1 end)
@@ -151,7 +166,7 @@ describe("Bot", function()
     end)
 
     it("registers a command through the command shorthand", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local handler = function(msg) return "pong" end
 
         bot:command("ping", handler)
@@ -161,14 +176,14 @@ describe("Bot", function()
     end)
 
     it("builds an embed", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local embed = bot:embed({ title = "hello" })
 
         assert.equals("hello", embed.title)
     end)
 
     it("registers a view through component", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local view = { items = {} }
 
         bot:component(view)
@@ -179,7 +194,7 @@ describe("Bot", function()
 
     describe("Bot:clear_interactions", function()
         it("empties self.interactions and self.components", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             bot:interaction("confirm", function() end)
             bot:component({ items = {} })
 
@@ -190,7 +205,7 @@ describe("Bot", function()
         end)
 
         it("does not touch self.commands or command_tree", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             bot:command("ping", function() end)
             bot.command_tree:add({ name = "ping" })
 
@@ -201,12 +216,12 @@ describe("Bot", function()
         end)
 
         it("returns self for chaining", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             assert.equals(bot, bot:clear_interactions())
         end)
 
         it("stops a previously registered custom_id callback from firing after clearing", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             local received = nil
             bot:interaction("confirm", function(interaction) received = interaction.custom_id end)
 
@@ -218,10 +233,11 @@ describe("Bot", function()
         end)
 
         it("is called automatically by Bot:connect, clearing interactions registered beforehand", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             bot:interaction("confirm", function() end)
             bot:component({ items = {} })
 
+            bot.token = "token"
             bot:connect()
 
             assert.same({}, bot.interactions)
@@ -230,7 +246,7 @@ describe("Bot", function()
     end)
 
     it("registers and dispatches an interaction callback by custom_id", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local received = nil
 
         bot:interaction("confirm", function(interaction) received = interaction.custom_id end)
@@ -241,7 +257,7 @@ describe("Bot", function()
     end)
 
     it("returns false when dispatching an interaction with no matching callback", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
 
         local handled = bot:dispatch_interaction({ data = { custom_id = "unknown" } })
 
@@ -249,7 +265,7 @@ describe("Bot", function()
     end)
 
     it("dispatches a realistic type 3 MESSAGE_COMPONENT payload with custom_id nested under data", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local received = nil
 
         bot:interaction("vote_up", function(interaction) received = interaction.custom_id end)
@@ -266,7 +282,7 @@ describe("Bot", function()
     end)
 
     it("dispatches a prefix command from an incoming message", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local received_content = nil
 
         bot:command("ping", function(msg) received_content = msg.content end)
@@ -277,7 +293,7 @@ describe("Bot", function()
     end)
 
     it("does not dispatch a message without the command prefix", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         bot:command("ping", function(msg) end)
 
         local handled = bot:dispatch_message({ content = "ping" })
@@ -286,7 +302,7 @@ describe("Bot", function()
     end)
 
     it("does not dispatch a message with an unregistered command name", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         bot:command("ping", function(msg) end)
 
         local handled = bot:dispatch_message({ content = "!unknown" })
@@ -295,7 +311,7 @@ describe("Bot", function()
     end)
 
     it("runs registered checks before invoking a prefix command's callback", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local invoked = false
         local passing_check = { name = "always", func = function() return true end }
 
@@ -306,7 +322,7 @@ describe("Bot", function()
     end)
 
     it("blocks a prefix command's callback when a check fails", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local invoked = false
         local failing_check = { name = "blocked", func = function() return false end }
 
@@ -318,7 +334,7 @@ describe("Bot", function()
 
     it("enforces cooldown checks on a prefix command and emits command_error", function()
         local cooldown = require("./commands/cooldown")
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local invoke_count = 0
         local error_received = nil
 
@@ -340,7 +356,7 @@ describe("Bot", function()
         local View = require("./ui/view")
         local Button = require("./ui/button")
 
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local view = View.new()
         local clicked = false
         view:add(Button.new({
@@ -360,7 +376,7 @@ describe("Bot", function()
         local View = require("./ui/view")
         local Button = require("./ui/button")
 
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local view = View.new()
         local clicked = false
         view:add(Button.new({
@@ -381,7 +397,7 @@ describe("Bot", function()
         local View = require("./ui/view")
         local Button = require("./ui/button")
 
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local view = View.new()
         view:add(Button.new({ label = "Other", custom_id = "other" }))
         bot:component(view)
@@ -396,7 +412,7 @@ describe("Bot", function()
     end)
 
     it("dispatches an autocomplete interaction through the command tree", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local received_value = nil
 
         local cmd = bot:register_application_command("search", {
@@ -420,7 +436,7 @@ describe("Bot", function()
     end)
 
     it("gives the autocomplete callback access to other options via ctx.options", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local received_color = nil
 
         local cmd = bot:register_application_command("ac_example", {
@@ -450,7 +466,7 @@ describe("Bot", function()
     end)
 
     it("generate_help_text lists every registered command", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         bot:command("ping", function() end, "Replies with pong")
         bot:command("echo", function() end, "Echoes your message")
 
@@ -462,7 +478,7 @@ describe("Bot", function()
     end)
 
     it("generate_help_text describes a single command by name", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         bot:command("ping", function() end, "Replies with pong")
 
         local text = bot:generate_help_text("ping")
@@ -472,7 +488,7 @@ describe("Bot", function()
     end)
 
     it("generate_help_text reports an unknown command by name", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
 
         local text = bot:generate_help_text("missing")
 
@@ -480,7 +496,7 @@ describe("Bot", function()
     end)
 
     it("register_help_command is opt-in and does not run at Bot.new", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
 
         assert.is_nil(bot.commands["help"])
 
@@ -490,7 +506,8 @@ describe("Bot", function()
     end)
 
     it("forwards shard_ready from the client to bot's own listeners", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
+        bot.token = "token"
         bot:connect()
 
         local received = nil
@@ -503,7 +520,8 @@ describe("Bot", function()
     end)
 
     it("forwards shard_error and shard_disconnect from the client", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
+        bot.token = "token"
         bot:connect()
 
         local error_received, disconnect_received = false, false
@@ -518,14 +536,16 @@ describe("Bot", function()
     end)
 
     it("bot.user is nil before the client has received READY", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
+        bot.token = "token"
         bot:connect()
 
         assert.is_nil(bot.user)
     end)
 
     it("bot.user reads live from the client once populated, mirrors pycord's Bot.user", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
+        bot.token = "token"
         bot:connect()
 
         bot.client.user = { id = "1", username = "TestBot" }
@@ -534,13 +554,14 @@ describe("Bot", function()
     end)
 
     it("bot.user is nil when the bot has never connected", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
 
         assert.is_nil(bot.user)
     end)
 
     it("forwards voice_state_update from the client to bot's own listeners", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
+        bot.token = "token"
         bot:connect()
 
         local received = nil
@@ -553,7 +574,8 @@ describe("Bot", function()
     end)
 
     it("forwards voice_server_update from the client to bot's own listeners", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
+        bot.token = "token"
         bot:connect()
 
         local received = nil
@@ -566,12 +588,13 @@ describe("Bot", function()
     end)
 
     it("get_voice_channel_id returns nil before connect", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         assert.is_nil(bot:get_voice_channel_id("guild1", "user1"))
     end)
 
     it("get_voice_channel_id reads from the real VOICE_STATE_UPDATE dispatch path", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
+        bot.token = "token"
         bot:connect()
 
         -- Route through the client's real dispatch handler (registered in
@@ -587,7 +610,8 @@ describe("Bot", function()
     end)
 
     it("get_author_voice_channel_id resolves from a message's author and guild_id", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
+        bot.token = "token"
         bot:connect()
 
         bot.client.voice_states:update({
@@ -601,7 +625,8 @@ describe("Bot", function()
     end)
 
     it("get_author_voice_channel_id returns nil for a DM message (no guild_id)", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
+        bot.token = "token"
         bot:connect()
 
         local message = { guild_id = nil, author = { id = "user1" } }
@@ -609,7 +634,8 @@ describe("Bot", function()
     end)
 
     it("get_author_voice_channel_id returns nil when the author is not in voice", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
+        bot.token = "token"
         bot:connect()
 
         local message = { guild_id = "guild1", author = { id = "user_not_in_voice" } }
@@ -617,7 +643,7 @@ describe("Bot", function()
     end)
 
     it("bridge_command registers both a prefix command and a slash command", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         bot:bridge_command("ping", {
             description = "Replies with pong",
             callback = function(_ctx) end,
@@ -628,7 +654,7 @@ describe("Bot", function()
     end)
 
     it("bridge_command's callback receives a BridgeContext with is_app false on the prefix path", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local received_is_app = nil
 
         bot:bridge_command("ping", {
@@ -640,7 +666,7 @@ describe("Bot", function()
     end)
 
     it("bridge_command's callback receives a BridgeContext with is_app true on the slash path", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local received_is_app = nil
 
         bot:bridge_command("ping", {
@@ -657,7 +683,7 @@ describe("Bot", function()
 
     it("user_command registers a USER type application command dispatched with the resolved member", function()
         local ApplicationCommand = require("./interactions/application_command")
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local received_ctx, received_member = nil, nil
 
         local cmd = bot:user_command({
@@ -687,7 +713,7 @@ describe("Bot", function()
     end)
 
     it("user_command falls back to resolved.users when no member is present (DM context)", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local received_member = nil
 
         bot:user_command({
@@ -711,7 +737,7 @@ describe("Bot", function()
     end)
 
     it("user_command requires options.name", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         assert.has_error(function()
             bot:user_command({ callback = function() end })
         end)
@@ -719,7 +745,7 @@ describe("Bot", function()
 
     it("message_command registers a MESSAGE type application command dispatched with the resolved message", function()
         local ApplicationCommand = require("./interactions/application_command")
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local received_message = nil
 
         local cmd = bot:message_command({
@@ -745,21 +771,21 @@ describe("Bot", function()
     end)
 
     it("message_command requires options.name", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         assert.has_error(function()
             bot:message_command({ callback = function() end })
         end)
     end)
 
     it("fetch_default_sounds errors when the bot has no http client", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         assert.has_error(function()
             bot:fetch_default_sounds()
         end)
     end)
 
     it("fetch_default_sounds GETs soundboard-default-sounds and returns Sound instances", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         bot.http = {
             get = function(_self, endpoint)
                 assert.equals("/soundboard-default-sounds", endpoint)
@@ -776,7 +802,7 @@ describe("Bot", function()
 
     describe("Bot:wait_for", function()
         it("fires the callback with the event's arguments once check matches", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             local received = nil
 
             bot:wait_for("message", {
@@ -793,7 +819,7 @@ describe("Bot", function()
         end)
 
         it("does not fire the callback again after the first match", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             local call_count = 0
 
             bot:wait_for("message", {
@@ -808,7 +834,7 @@ describe("Bot", function()
         end)
 
         it("defaults check to always matching when not given", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             local received = false
 
             bot:wait_for("ready", { callback = function() received = true end })
@@ -818,7 +844,7 @@ describe("Bot", function()
         end)
 
         it("removes the listener from bot.listeners once matched", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             bot:wait_for("message", { callback = function() end })
 
             assert.equals(1, #bot.listeners["message"])
@@ -827,7 +853,7 @@ describe("Bot", function()
         end)
 
         it("the returned cancel function removes the listener early", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             local received = false
 
             local cancel = bot:wait_for("message", { callback = function() received = true end })
@@ -839,7 +865,7 @@ describe("Bot", function()
         end)
 
         it("does not register a timer when opts.timeout is not given", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             assert.has_no.errors(function()
                 bot:wait_for("message", { callback = function() end })
             end)
@@ -858,7 +884,7 @@ describe("Bot", function()
                 end,
             }
 
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             local received_err = nil
 
             bot:wait_for("message", {
@@ -891,7 +917,7 @@ describe("Bot", function()
                 end,
             }
 
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             local timeout_fired = false
 
             bot:wait_for("message", {
@@ -915,7 +941,7 @@ describe("Bot", function()
 
     describe("Bot:get_context", function()
         it("returns the raw message unchanged when no context_class is set", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             local message = { content = "!ping", author = { id = "1" } }
 
             local ctx = bot:get_context(message)
@@ -924,7 +950,7 @@ describe("Bot", function()
         end)
 
         it("applies self.context_class methods while still reading message fields", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             bot.context_class = {
                 tick = function(_self) return "ticked" end,
             }
@@ -938,7 +964,7 @@ describe("Bot", function()
         end)
 
         it("accepts a one-off cls argument overriding self.context_class", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             bot.context_class = { tick = function() return "default" end }
             local message = { content = "!ping" }
 
@@ -948,7 +974,7 @@ describe("Bot", function()
         end)
 
         it("dispatch_message passes the get_context result to the command callback", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             bot.context_class = {
                 tick = function(_self) return "ticked" end,
             }
@@ -965,7 +991,7 @@ describe("Bot", function()
 
     describe("Bot:get_application_context", function()
         it("returns a standard SlashCommandContext when no application_context_class is set", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             local interaction = { id = "int1", token = "tok1", data = { name = "ping", options = {} } }
 
             local ctx = bot:get_application_context(interaction)
@@ -975,7 +1001,7 @@ describe("Bot", function()
         end)
 
         it("applies self.application_context_class methods on top of SlashCommandContext", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             bot.application_context_class = {
                 success = function(_self, message) return "success: " .. message end,
             }
@@ -987,7 +1013,7 @@ describe("Bot", function()
         end)
 
         it("dispatch_interaction passes the get_application_context result to the command callback", function()
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             bot.application_context_class = {
                 success = function(_self, message) return "success: " .. message end,
             }
@@ -1019,7 +1045,7 @@ describe("Bot", function()
                     return payload
                 end,
             }
-            local bot = Bot.new("token")
+            local bot = Bot.new()
             bot.client = {
                 get_application_id = function() return "application-id" end,
             }

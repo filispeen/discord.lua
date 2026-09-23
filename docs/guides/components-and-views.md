@@ -4,7 +4,7 @@ Views collect interactive items and serialize them with `View:to_components()`. 
 
 ## Safe lifecycle for the current implementation
 
-`Bot:connect()` clears registered views and custom-ID callbacks. Therefore register them **after** `connect()` and before `client:start_gateway()`:
+`Bot:connect()` clears registered views and custom-ID callbacks. Register them on `ready`, after `run(token)` connects:
 
 ```lua
 local discord = require("discord.lua")
@@ -12,9 +12,7 @@ local View = require("discord.lua/lib/ui/view")
 local Button = require("discord.lua/lib/ui/button")
 
 local token = assert(os.getenv("DISCORD_TOKEN"), "DISCORD_TOKEN is required")
-local bot = discord.Bot.new(token, nil, discord.enums.INTENTS.GUILDS)
-
-bot:connect()
+local bot = discord.Bot(discord.enums.INTENTS.GUILDS)
 
 local view = View.new({ timeout = 30000 })
 view:add(Button.new({
@@ -23,10 +21,12 @@ view:add(Button.new({
     style = "primary",
 }))
 
-bot:interaction("hello", function(ctx)
-    ctx:update("Hello from a button")
+bot:on("ready", function()
+    bot:interaction("hello", function(ctx)
+        ctx:update("Hello from a button")
+    end)
+    bot:component(view)
 end)
-bot:component(view)
 
 bot:slash_command("button", {
     description = "Show a button",
@@ -35,11 +35,10 @@ bot:slash_command("button", {
     end,
 })
 
-bot.client:start_gateway()
+bot:run(token)
 ```
 
-!!! warning "Registration before `run()` is cleared"
-    `Bot:run()` calls `Bot:connect()`, and `connect()` invokes `clear_interactions()`. The repository's `examples/view_button.lua` registers its view before `run()`, so its component handlers are removed before the gateway starts. The explicit lifecycle above matches the current code.
+`Bot:run()` invokes `clear_interactions()` through `connect()`, so register component handlers after that step.
 
 ## View items
 

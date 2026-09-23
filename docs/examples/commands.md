@@ -11,7 +11,7 @@ local intents = discord.enums.combine_intents(
     discord.enums.INTENTS.GUILD_MESSAGES,
     discord.enums.INTENTS.MESSAGE_CONTENT
 )
-local bot = discord(nil, intents)
+local bot = discord(intents)
 
 bot:slash_command("roll", {
     description = "Roll a die",

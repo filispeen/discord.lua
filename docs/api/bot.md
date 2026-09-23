@@ -4,18 +4,18 @@
 
 ## Construction
 
-### `discord(ratelimiter, intents)`
+### `discord(intents, ratelimiter)`
 
-Creates `Bot.new(nil, ratelimiter, intents)`.
+Creates `Bot.new(intents, ratelimiter)`.
 
 | Parameter | Description |
 |---|---|
-| `ratelimiter` | Optional table/object passed to the client. |
 | `intents` | Optional numeric gateway intent bitfield. |
+| `ratelimiter` | Optional table/object passed to the client. |
 
-### `Bot.new(token, ratelimiter, intents)`
+### `Bot.new(intents, ratelimiter)`
 
-Creates a Bot directly. `token` may be supplied here or later to `run`.
+Creates a Bot directly. Pass the token to `run`.
 
 The new bot has prefix `!`, `auto_sync_commands = true`, empty command/listener tables, and no client until `connect` or `run`.
 
@@ -23,13 +23,13 @@ The new bot has prefix `!`, `auto_sync_commands = true`, empty command/listener 
 
 ### `Bot:connect()`
 
-Creates the underlying `Client`, HTTP client, and event wiring. Returns `self`. It does not start the gateway.
+Creates the underlying `Client`, HTTP client, and event wiring after `run(token)` has supplied a token. Returns `self`. It does not start the gateway.
 
 It clears `interactions` and `components` before creating the client. Register component callbacks only after this call.
 
-### `Bot:run([token])`
+### `Bot:run(token)`
 
-Stores optional `token`, calls `connect`, starts the gateway, and returns `self`. Errors raised while connecting or starting are re-raised.
+Requires and stores `token`, calls `connect`, starts the gateway, and returns `self`. Errors raised while connecting or starting are re-raised.
 
 ### `Bot:sync_commands()`
 

@@ -19,7 +19,7 @@ local intents = discord.enums.combine_intents(
     discord.enums.INTENTS.GUILD_VOICE_STATES
 )
 
-local bot = discord.Bot(nil, intents)
+local bot = discord.Bot(intents)
 
 -- Keyed by guild_id, holds the active VoiceClient returned by
 -- Channel:connect() so /play and /leave can reuse the same connection

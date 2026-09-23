@@ -1,6 +1,6 @@
 # Interactions
 
-This component example uses the explicit lifecycle required by the current Bot implementation.
+Register component handlers on `ready`, after the bot has connected.
 
 ```lua
 local discord = require("discord.lua")
@@ -8,9 +8,7 @@ local View = require("discord.lua/lib/ui/view")
 local Button = require("discord.lua/lib/ui/button")
 
 local token = assert(os.getenv("DISCORD_TOKEN"), "DISCORD_TOKEN is required")
-local bot = discord.Bot.new(token, nil, discord.enums.INTENTS.GUILDS)
-
-bot:connect()
+local bot = discord.Bot(discord.enums.INTENTS.GUILDS)
 
 local view = View.new({ timeout = 60000 })
 view:add(Button.new({
@@ -20,11 +18,13 @@ view:add(Button.new({
 }))
 
 local count = 0
-bot:interaction("counter_increment", function(ctx)
-    count = count + 1
-    ctx:update("Count: " .. count, { components = view:to_components() })
+bot:on("ready", function()
+    bot:interaction("counter_increment", function(ctx)
+        count = count + 1
+        ctx:update("Count: " .. count, { components = view:to_components() })
+    end)
+    bot:component(view)
 end)
-bot:component(view)
 
 bot:slash_command("counter", {
     description = "Show a counter button",
@@ -38,7 +38,5 @@ bot:on("application_command_error", function(ctx, err)
     ctx:respond("Could not process the interaction.", { ephemeral = true })
 end)
 
-bot.client:start_gateway()
+bot:run(token)
 ```
-
-Do not replace `connect()`/`client:start_gateway()` with `run()` in this example: `run()` reconnects and clears the registered component handlers.

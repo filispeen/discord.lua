@@ -10,7 +10,7 @@ local discord = require("discord.lua")
 -- Interactions arrive over the same gateway connection, but reading them
 -- does not need a privileged intent. GUILDS is enough to cache the guild
 -- the interaction came from.
-local bot = discord.Bot(nil, discord.enums.INTENTS.GUILDS)
+local bot = discord.Bot(discord.enums.INTENTS.GUILDS)
 
 bot:on("ready", function()
     print("Bot is ready!")

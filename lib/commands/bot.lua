@@ -28,9 +28,14 @@ local function bot_index(instance, key)
     return Bot[key]
 end
 
-function Bot.new(token, ratelimiter, intents)
+function Bot.new(intents, ratelimiter)
+    if intents ~= nil and type(intents) ~= "number" then
+        error("Bot.new(intents, ratelimiter) expects a numeric intents bitfield; pass the token to run(token)", 0)
+    end
+    if ratelimiter ~= nil and type(ratelimiter) ~= "table" then
+        error("Bot.new(intents, ratelimiter) expects a ratelimiter table", 0)
+    end
     local self = setmetatable({}, { __index = bot_index })
-    self.token = token
     self.ratelimiter = ratelimiter or {}
     self.intents = intents
     self.commands = {}
@@ -704,6 +709,9 @@ end
 
 -- Connects the underlying gateway/http client without blocking, useful in tests.
 function Bot:connect()
+    if not self.token then
+        error("Bot:connect() requires a token from Bot:run(token)", 0)
+    end
     -- Runs once per Bot:connect() call, unlike the "ready" handler below
     -- which fires again on every gateway reconnect. Clears any
     -- interaction/component callbacks left over from a previous
@@ -843,9 +851,10 @@ end
 
 -- Connects and starts the gateway loop, mirrors client:run(token) in README/examples.
 function Bot:run(token)
-    if token then
-        self.token = token
+    if type(token) ~= "string" or token == "" then
+        error("Bot:run(token) requires a bot token", 0)
     end
+    self.token = token
     local ok, err = pcall(function()
         self:connect()
         self.client:start_gateway()

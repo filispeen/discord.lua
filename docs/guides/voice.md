@@ -7,7 +7,7 @@ local intents = discord.enums.combine_intents(
     discord.enums.INTENTS.GUILDS,
     discord.enums.INTENTS.GUILD_VOICE_STATES
 )
-local bot = discord(nil, intents)
+local bot = discord(intents)
 local clients = {}
 
 bot:slash_command("join", {

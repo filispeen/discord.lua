@@ -17,7 +17,7 @@ local intents = discord.enums.combine_intents(
     discord.enums.INTENTS.MESSAGE_CONTENT
 )
 
-local bot = discord.Bot(nil, intents)
+local bot = discord.Bot(intents)
 
 -- Fires once every shard has reported READY.
 bot:on("ready", function()

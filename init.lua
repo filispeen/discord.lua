@@ -2,13 +2,13 @@
 -- Package entrypoint for discord.lua, resolved by require("./discord/lua").
 --
 -- Public Contract:
---   Bot(ratelimiter, intents) -> Bot
+--   Bot(intents, ratelimiter) -> Bot
 --     Calling the module directly constructs a Bot instance, matching the
 --     README/examples convention: local client = Bot()
 --     The token is not passed here; it is passed to client:run(token).
 --
 --   discord.Bot -> Bot class
---     The underlying Bot class, for cases that need Bot.new(token) directly.
+--     The underlying Bot class; pass the token only to Bot:run(token).
 --
 --   discord.enums -> core.enums module
 --     INTENTS, combine_intents, default_intents, all_intents, OPTION_TYPE.
@@ -77,8 +77,8 @@ local M = {
 }
 
 setmetatable(M, {
-    __call = function(_, ratelimiter, intents)
-        return Bot.new(nil, ratelimiter, intents)
+    __call = function(_, intents, ratelimiter)
+        return Bot.new(intents, ratelimiter)
     end,
 })
 

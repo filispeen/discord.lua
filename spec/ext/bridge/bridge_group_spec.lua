@@ -7,14 +7,14 @@ local Bot = require("./commands/bot")
 
 describe("BridgeGroup", function()
     it("registers a slash command group on the bot", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local group = bot:bridge_group("math", { description = "Math commands" })
 
         assert.equals(group.slash_group, bot.command_tree:get("math"))
     end)
 
     it("command registers both a prefix command and a slash subcommand", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local group = bot:bridge_group("math")
         local invoked_prefix, invoked_app = false, false
 
@@ -44,7 +44,7 @@ describe("BridgeGroup", function()
     end)
 
     it("map_to exposes the group's bare callback as a named slash subcommand", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local invoked = false
         local group = bot:bridge_group("specialcmd", {
             callback = function(_ctx) invoked = true end,
@@ -64,7 +64,7 @@ describe("BridgeGroup", function()
     end)
 
     it("map_to errors when the group has no bare callback", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local group = bot:bridge_group("specialcmd")
         assert.has_error(function()
             group:map_to("help")
@@ -72,7 +72,7 @@ describe("BridgeGroup", function()
     end)
 
     it("invoke_without_command registers the bare group name as a prefix command", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         local invoked = false
         bot:bridge_group("specialcmd", {
             invoke_without_command = true,
@@ -84,7 +84,7 @@ describe("BridgeGroup", function()
     end)
 
     it("does not register the bare prefix command when invoke_without_command is false", function()
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         bot:bridge_group("specialcmd", {
             callback = function(_ctx) end,
         })

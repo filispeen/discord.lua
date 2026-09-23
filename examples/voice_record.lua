@@ -44,7 +44,7 @@ local intents = discord.enums.combine_intents(
     discord.enums.INTENTS.GUILD_VOICE_STATES
 )
 
-local bot = discord.Bot(nil, intents)
+local bot = discord.Bot(intents)
 
 -- guild_id -> voice_client, tracks the one active recording per guild
 -- this manual test cares about.

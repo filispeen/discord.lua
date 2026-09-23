@@ -20,7 +20,7 @@ local intents = discord.enums.combine_intents(
     discord.enums.INTENTS.MESSAGE_CONTENT
 )
 
-local bot = discord.Bot(nil, intents)
+local bot = discord.Bot(intents)
 
 bot:on("ready", function()
     print("Bot is ready!")

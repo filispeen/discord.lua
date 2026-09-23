@@ -10,7 +10,7 @@ local Button = require("./ui/button")
 
 -- Only slash commands and component interactions here, no prefix
 -- commands reading message content, so GUILDS alone is enough.
-local bot = discord.Bot(nil, discord.enums.INTENTS.GUILDS)
+local bot = discord.Bot(discord.enums.INTENTS.GUILDS)
 
 local votes = { up = 0, down = 0 }
 
@@ -28,18 +28,6 @@ vote_view:add(Button.new({
     custom_id = "vote_down",
 }))
 
-bot:interaction("vote_up", function(ctx)
-    votes.up = votes.up + 1
-    ctx:update("Votes: +" .. votes.up .. " / -" .. votes.down)
-end)
-
-bot:interaction("vote_down", function(ctx)
-    votes.down = votes.down + 1
-    ctx:update("Votes: +" .. votes.up .. " / -" .. votes.down)
-end)
-
-bot:component(vote_view)
-
 bot:slash_command("poll", {
     description = "Starts a simple upvote/downvote poll",
     callback = function(ctx)
@@ -48,6 +36,15 @@ bot:slash_command("poll", {
 })
 
 bot:on("ready", function()
+    bot:interaction("vote_up", function(ctx)
+        votes.up = votes.up + 1
+        ctx:update("Votes: +" .. votes.up .. " / -" .. votes.down)
+    end)
+    bot:interaction("vote_down", function(ctx)
+        votes.down = votes.down + 1
+        ctx:update("Votes: +" .. votes.up .. " / -" .. votes.down)
+    end)
+    bot:component(vote_view)
     print("Bot is ready!")
 end)
 

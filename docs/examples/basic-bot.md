@@ -11,7 +11,7 @@ local intents = discord.enums.combine_intents(
     discord.enums.INTENTS.MESSAGE_CONTENT
 )
 
-local bot = discord(nil, intents)
+local bot = discord(intents)
 
 bot:on("ready", function()
     print("Logged in as " .. bot.user.username)

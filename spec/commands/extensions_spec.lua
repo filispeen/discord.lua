@@ -23,7 +23,7 @@ describe("Bot extensions", function()
                 end,
             }
         end
-        local bot = Bot.new("token")
+        local bot = Bot.new()
         bot:command("original", function() end)
 
         local extension = bot:load_extension("test_extension")
@@ -51,7 +51,7 @@ describe("Bot extensions", function()
                 end,
             }
         end
-        local bot = Bot.new("token")
+        local bot = Bot.new()
 
         assert.has_error(function()
             bot:load_extension("failing_extension")

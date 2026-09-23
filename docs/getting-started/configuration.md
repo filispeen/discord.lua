@@ -2,22 +2,21 @@
 
 ## Constructing a bot
 
-The package module and the class constructor take different argument layouts:
+The package module and the class constructor use the same argument layout:
 
 ```lua
 local discord = require("discord.lua")
 
--- Recommended package-call form: (ratelimiter, intents)
-local bot = discord(nil, intents)
+-- Package-call form
+local bot = discord(intents)
 
--- Equivalent explicit form: (token, ratelimiter, intents)
-local bot2 = discord.Bot.new(nil, nil, intents)
+-- Equivalent class form
+local bot2 = discord.Bot(intents)
+
+bot:run(assert(os.getenv("DISCORD_TOKEN"), "DISCORD_TOKEN is required"))
 ```
 
-`Bot:run(token)` stores the token when one is supplied and starts the HTTP and gateway clients. `Bot:connect()` only constructs and wires them; it does not start the gateway.
-
-!!! warning "README/example constructor mismatch"
-    Some repository examples use `discord.Bot(nil, intents)`. The actual `Bot.new` signature is `(token, ratelimiter, intents)`, so that form puts the intent bitfield in `ratelimiter` and leaves `intents` unset. Use one of the forms above.
+`Bot:run(token)` requires the token and starts the HTTP and gateway clients.
 
 ## Intents
 
@@ -30,7 +29,7 @@ local intents = discord.enums.combine_intents(
     discord.enums.INTENTS.MESSAGE_CONTENT
 )
 
-local bot = discord(nil, intents)
+local bot = discord(intents)
 ```
 
 `default_intents()` excludes the privileged `GUILD_MEMBERS`, `GUILD_PRESENCES`, and `MESSAGE_CONTENT` flags. `all_intents()` includes every defined flag.
