@@ -62,6 +62,12 @@ describe("ratelimiter", function()
             local bucket = ratelimiter.Bucket.new()
             assert.equals(0, bucket:getRetryAfter())
         end)
+
+        it("releases an exhausted bucket when its reset time passes", function()
+            local bucket = ratelimiter.Bucket.new()
+            bucket:update({ ["x-ratelimit-remaining"] = "0", ["x-ratelimit-reset-after"] = "0" })
+            assert.is_true(bucket:isAvailable())
+        end)
     end)
 
     describe("Manager", function()
@@ -71,6 +77,18 @@ describe("ratelimiter", function()
 
             assert.is_not_nil(bucket)
             assert.equals(bucket, manager:get_bucket("/channels/1/messages"))
+        end)
+
+        it("initializes global remaining time and updates from lowercase headers", function()
+            local manager = ratelimiter.Manager.new()
+            assert.equals(0, manager.global_time_remaining)
+            local bucket = manager:get_bucket("GET:/channels/:major/messages")
+            manager:update_bucket("GET:/channels/:major/messages", {
+                ["x-ratelimit-remaining"] = "0",
+                ["x-ratelimit-reset-after"] = "4",
+            })
+            assert.equals(0, bucket.remaining)
+            assert.is_true(manager:is_rate_limited("GET:/channels/:major/messages"))
         end)
 
         it("is_rate_limited reflects the underlying bucket state", function()

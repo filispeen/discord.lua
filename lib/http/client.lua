@@ -36,9 +36,42 @@
 local class = require("../core/class")
 local errors = require("../core/errors")
 local json = require("../core/json_compat")
+local uv = require("../core/luv_compat")
 
 -- HTTP client class
 local Client = class("Client")
+
+local function normalized_headers(response_headers)
+    local headers = {}
+    for key, value in pairs(response_headers or {}) do
+        if type(key) == "number" and type(value) == "table" then
+            headers[tostring(value[1]):lower()] = value[2]
+        elseif type(key) == "string" then
+            headers[key:lower()] = value
+        end
+    end
+    return headers
+end
+
+local function bucket_key(method, endpoint)
+    local route = endpoint:gsub("/channels/[^/]+", "/channels/:major")
+        :gsub("/guilds/[^/]+", "/guilds/:major")
+        :gsub("/webhooks/[^/]+", "/webhooks/:major")
+        :gsub("/%d+", "/:id")
+    return method:upper() .. ":" .. route
+end
+
+local function sleep(seconds)
+    if seconds <= 0 then return end
+    local thread = coroutine.running()
+    if not thread then error("Rate limit wait requires a coroutine", 0) end
+    local timer = uv.new_timer()
+    timer:start(math.ceil(seconds * 1000), 0, function()
+        timer:close()
+        if coroutine.status(thread) == "suspended" then coroutine.resume(thread) end
+    end)
+    coroutine.yield()
+end
 
 -- Create a new HTTP client
 function Client.new(token, ratelimiter)
@@ -126,33 +159,44 @@ function Client:request(method, endpoint, options)
         header_list[#header_list + 1] = { k, v }
     end
 
-    -- Make request using coro-http
+    local rate_key = bucket_key(method, endpoint)
     local http = require("coro-http")
-    local ok, res, response_body = pcall(http.request, method, url, header_list, request_body)
-
-    if not ok then
-        error("Request failed: " .. tostring(res), 0)
+    local attempts = 0
+    while true do
+        if self.ratelimiter and self.ratelimiter.is_rate_limited then
+            local wait = math.max(
+                self.ratelimiter.get_retry_after and self.ratelimiter:get_retry_after(rate_key) or 0,
+                self.ratelimiter.get_global_retry_after and self.ratelimiter:get_global_retry_after() or 0
+            )
+            if wait > 0 then sleep(wait) end
+            if self.ratelimiter.consume then self.ratelimiter:consume(rate_key) end
+            if self.ratelimiter.consume_global then self.ratelimiter:consume_global() end
+        end
+        local ok, res, response_body = pcall(http.request, method, url, header_list, request_body)
+        if not ok then error("Request failed: " .. tostring(res), 0) end
+        local response_headers = normalized_headers(res.headers)
+        if self.ratelimiter then
+            if self.ratelimiter.update_bucket then self.ratelimiter:update_bucket(rate_key, response_headers) end
+            if self.ratelimiter.update_global then self.ratelimiter:update_global(response_headers) end
+        end
+        if res.code == 429 then
+            local _, data = pcall(json.decode, response_body or "")
+            data = type(data) == "table" and data or {}
+            local retry_after = tonumber(data.retry_after or response_headers["retry-after"] or 0)
+            if data.global and self.ratelimiter and self.ratelimiter.set_global_remaining then
+                self.ratelimiter:set_global_remaining(0, nil, retry_after)
+            end
+            attempts = attempts + 1
+            if attempts <= 3 then sleep(retry_after) else error(errors.RateLimited.new("Rate limited by Discord", retry_after), 0) end
+        else
+            if res.code >= 400 then
+                local _, data = pcall(json.decode, response_body or "")
+                return self:throw_error(res.code, type(data) == "table" and data or response_body)
+            end
+            local success, result = pcall(json.decode, response_body or "")
+            return success and result or response_body
+        end
     end
-
-    -- Check status code
-    local status = res.code
-    local body = response_body
-
-    if status >= 400 then
-        return self:throw_error(status, body)
-    end
-
-    -- Parse JSON response
-    local parsed
-    local success, result = pcall(json.decode, body)
-    if not success then
-        -- Not JSON, return as string
-        parsed = body
-    else
-        parsed = result
-    end
-
-    return parsed
 end
 
 -- GET wrapper

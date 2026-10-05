@@ -58,12 +58,18 @@ function M.Bucket.new()
     self.reset_after = M.DEFAULTS.reset_after
     self.remaining = M.DEFAULTS.rate_limit
     self.limit = M.DEFAULTS.rate_limit
+    self.reset_at = 0
+    self.expires_at = os.time() + 300
 
     return self
 end
 
 -- Check if a request can be made
 function M.Bucket:isAvailable()
+    if self.remaining == 0 and os.time() >= self.reset_at then
+        self.remaining = self.limit
+        self.time_remaining = 0
+    end
     return self.remaining > 0
 end
 
@@ -71,6 +77,9 @@ end
 function M.Bucket:consume()
     if self.remaining > 0 then
         self.remaining = self.remaining - 1
+        if self.remaining == 0 and self.reset_at == 0 then
+            self.reset_at = os.time() + math.ceil(self.reset_after)
+        end
         return true
     end
     return false
@@ -78,11 +87,11 @@ end
 
 -- Update bucket state from HTTP response headers
 function M.Bucket:update(headers)
-    self.remaining = tonumber(headers["X-RateLimit-Remaining"] or self.remaining)
-    self.limit = tonumber(headers["X-RateLimit-Limit"] or self.limit)
+    self.remaining = tonumber(headers["x-ratelimit-remaining"] or headers["X-RateLimit-Remaining"] or self.remaining)
+    self.limit = tonumber(headers["x-ratelimit-limit"] or headers["X-RateLimit-Limit"] or self.limit)
 
     -- Calculate reset time
-    local reset = tonumber(headers["X-RateLimit-Reset-After"] or 0)
+    local reset = tonumber(headers["x-ratelimit-reset-after"] or headers["X-RateLimit-Reset-After"] or 0)
     if reset then
         self.reset_after = reset
     else
@@ -97,11 +106,17 @@ function M.Bucket:update(headers)
     -- Update time_remaining based on reset_after
     if self.remaining == 0 then
         self.time_remaining = self.reset_after
+        self.reset_at = os.time() + math.ceil(self.reset_after)
+    else
+        self.time_remaining = 0
+        self.reset_at = 0
     end
+    self.expires_at = os.time() + 300
 end
 
 -- Check if we're rate limited (remaining == 0 and time_remaining > 0)
 function M.Bucket:isRateLimited()
+    self:isAvailable()
     return self.remaining == 0 and self.time_remaining > 0
 end
 
@@ -124,6 +139,7 @@ function M.Manager.new()
         global_remaining = 10,  -- Discord has a global rate limit of ~10 req/sec
         global_limit = 10,
         global_reset = 0,
+        global_time_remaining = 0,
     }, M.Manager)
 
     return self
@@ -131,6 +147,10 @@ end
 
 -- Get or create a bucket for a specific path
 function M.Manager:get_bucket(path)
+    local now = os.time()
+    for key, bucket in pairs(self.buckets) do
+        if bucket.expires_at and bucket.expires_at < now then self.buckets[key] = nil end
+    end
     if not self.buckets[path] then
         self.buckets[path] = M.Bucket.new()
     end
@@ -139,9 +159,7 @@ end
 
 -- Update a bucket with new rate limit headers
 function M.Manager:update_bucket(path, headers)
-    if self.buckets[path] then
-        self.buckets[path]:update(headers)
-    end
+    self:get_bucket(path):update(headers)
 end
 
 -- Check if a path is rate limited
@@ -150,8 +168,20 @@ function M.Manager:is_rate_limited(path)
     return bucket:isRateLimited()
 end
 
+function M.Manager:get_retry_after(path)
+    return self:get_bucket(path):getRetryAfter()
+end
+
+function M.Manager:consume(path)
+    return self:get_bucket(path):consume()
+end
+
 -- Check if globally rate limited
 function M.Manager:is_global_rate_limited()
+    if self.global_remaining == 0 and os.time() >= self.global_reset then
+        self.global_remaining = self.global_limit
+        self.global_time_remaining = 0
+    end
     return self.global_remaining == 0 and self.global_time_remaining > 0
 end
 
@@ -174,9 +204,10 @@ end
 
 -- Update global rate limit from headers
 function M.Manager:update_global(headers)
-    self.global_remaining = tonumber(headers["X-RateLimit-Global-Remaining"] or 10)
-    self.global_limit = tonumber(headers["X-RateLimit-Global-Limit"] or 10)
-    self.global_time_remaining = tonumber(headers["Retry-After"] or 0)
+    self.global_remaining = tonumber(headers["x-ratelimit-global-remaining"] or headers["X-RateLimit-Global-Remaining"] or self.global_remaining)
+    self.global_limit = tonumber(headers["x-ratelimit-global-limit"] or headers["X-RateLimit-Global-Limit"] or self.global_limit)
+    self.global_time_remaining = tonumber(headers["retry-after"] or headers["Retry-After"] or 0)
+    self.global_reset = os.time() + math.ceil(self.global_time_remaining)
 end
 
 -- Get all buckets
