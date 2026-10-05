@@ -19,6 +19,16 @@ describe("Client:emit error isolation", function()
         assert.equals("sample", event_name)
         assert.is_true(called)
     end)
+
+    it("removes once listeners after their first call and returns self from off", function()
+        local client = Client.new("token")
+        local calls = 0
+        client:once("sample", function() calls = calls + 1 end)
+        client:emit("sample")
+        client:emit("sample")
+        assert.equals(1, calls)
+        assert.equals(client, client:off("missing", function() end))
+    end)
 end)
 
 describe("Client:get_channel", function()

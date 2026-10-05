@@ -1002,9 +1002,9 @@ function Client:on(event, callback)
 end
 
 function Client:once(event, callback)
-    local once_fn = function(...)
+    local once_fn
+    once_fn = function(...)
         callback(...)
-        -- luacheck: ignore unused once_fn
         self:off(event, once_fn)
     end
     self:on(event, once_fn)
@@ -1046,7 +1046,7 @@ function Client:off(event, callback)
         for i, cb in ipairs(self.events[event]) do
             if cb == callback then
                 table.remove(self.events[event], i)
-                return
+                break
             end
         end
     end

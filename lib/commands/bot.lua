@@ -381,7 +381,9 @@ function Bot:wait_for(event_name, opts)
 
     local function cleanup()
         done = true
-        for i, l in ipairs(self.listeners[event_name]) do
+        local listeners = {}
+        for i, l in ipairs(self.listeners[event_name]) do listeners[i] = l end
+        for i, l in ipairs(listeners) do
             if l == listener then
                 table.remove(self.listeners[event_name], i)
                 break
