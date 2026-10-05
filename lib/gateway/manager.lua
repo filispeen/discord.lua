@@ -277,8 +277,21 @@ function ShardManager:_forward_dispatch(payload)
     if not subs then
         return
     end
-    for _, cb in ipairs(subs) do
-        cb(payload.d)
+    local callbacks = {}
+    for i, cb in ipairs(subs) do callbacks[i] = cb end
+    for _, cb in ipairs(callbacks) do
+        local ok, err = pcall(function() coroutine.wrap(cb)(payload.d) end)
+        if not ok then
+            local handlers = self.listeners.error or self.listeners.event_error
+            if handlers and #handlers > 0 then
+                for _, handler in ipairs(handlers) do
+                    local handled, handler_err = pcall(handler, payload.t, err)
+                    if not handled and io and io.stderr then io.stderr:write(debug.traceback(tostring(handler_err), 2), "\n") end
+                end
+            elseif io and io.stderr then
+                io.stderr:write(debug.traceback(tostring(err), 2), "\n")
+            end
+        end
     end
 end
 

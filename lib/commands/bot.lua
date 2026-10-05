@@ -335,8 +335,22 @@ end
 
 function Bot:emit(event, ...)
     if self.listeners[event] then
-        for _, callback in ipairs(self.listeners[event]) do
-            callback(...)
+        local callbacks = {}
+        for i, callback in ipairs(self.listeners[event]) do callbacks[i] = callback end
+        local args = { ... }
+        for _, callback in ipairs(callbacks) do
+            local ok, err = pcall(function() coroutine.wrap(callback)(unpack(args)) end)
+            if not ok then
+                local error_handlers = self.listeners.event_error or self.listeners.error
+                if event ~= "error" and event ~= "event_error" and error_handlers and #error_handlers > 0 then
+                    for _, handler in ipairs(error_handlers) do
+                        local handled, handler_err = pcall(handler, event, err)
+                        if not handled and io and io.stderr then io.stderr:write(debug.traceback(tostring(handler_err), 2), "\n") end
+                    end
+                elseif io and io.stderr then
+                    io.stderr:write(debug.traceback(tostring(err), 2), "\n")
+                end
+            end
         end
     end
     return self
@@ -675,14 +689,16 @@ function Bot:dispatch_interaction(interaction)
             if not view.stopped then
                 local item = view:find_item(custom_id)
                 if item and item.callback then
-                    item.callback(ctx)
+                    local ok, err = pcall(function() coroutine.wrap(item.callback)(ctx) end)
+                    if not ok then self:emit("event_error", "component_interaction", err) end
                     return true
                 end
             end
         end
 
         if self.interactions[custom_id] then
-            self.interactions[custom_id](ctx)
+            local ok, err = pcall(function() coroutine.wrap(self.interactions[custom_id])(ctx) end)
+            if not ok then self:emit("event_error", "interaction", err) end
             return true
         end
     end

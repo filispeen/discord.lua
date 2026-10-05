@@ -7,6 +7,20 @@ require("spec_helper")
 
 local Client = require("./models/client")
 
+describe("Client:emit error isolation", function()
+    it("reports a failing listener and continues", function()
+        local client = Client.new("token")
+        local event_name
+        local called = false
+        client:on("error", function(event) event_name = event end)
+        client:on("sample", function() error("failed") end)
+        client:on("sample", function() called = true end)
+        client:emit("sample")
+        assert.equals("sample", event_name)
+        assert.is_true(called)
+    end)
+end)
+
 describe("Client:get_channel", function()
     it("returns nil when the channel is not cached and there is no rest/http", function()
         local client = Client.new("token")

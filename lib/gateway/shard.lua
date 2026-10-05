@@ -260,7 +260,11 @@ function Shard:_schedule_reconnect()
         end
 
         local co = coroutine.create(function()
-            self:connect()
+            local ok, err = pcall(function() self:connect() end)
+            if not ok then
+                self:emit("error", errors.GatewayError.create("Reconnect failed: " .. tostring(err)))
+                self:_schedule_reconnect()
+            end
         end)
         local ok, err = coroutine.resume(co)
         if not ok then
@@ -483,8 +487,23 @@ end
 -- Emit event to listeners
 function Shard:emit(event, ...)
     if self.listeners[event] then
-        for _, callback in ipairs(self.listeners[event]) do
-            callback(...)
+        local listeners = {}
+        for i, callback in ipairs(self.listeners[event]) do listeners[i] = callback end
+        local args = { ... }
+        local unpack_args = unpack
+        for _, callback in ipairs(listeners) do
+            local ok, err = pcall(function() coroutine.wrap(callback)(unpack_args(args)) end)
+            if not ok then
+                local error_listeners = self.listeners.error
+                if event ~= "error" and error_listeners and #error_listeners > 0 then
+                    for _, handler in ipairs(error_listeners) do
+                        local handled, handler_err = pcall(handler, errors.GatewayError.create("Listener failed for " .. tostring(event) .. ": " .. tostring(err)))
+                        if not handled and io and io.stderr then io.stderr:write(debug.traceback(tostring(handler_err), 2), "\n") end
+                    end
+                elseif io and io.stderr then
+                    io.stderr:write(debug.traceback(tostring(err), 2), "\n")
+                end
+            end
         end
     end
     return self

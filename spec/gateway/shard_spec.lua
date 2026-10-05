@@ -156,6 +156,16 @@ describe("Shard", function()
         assert.equals("hello", received.content)
     end)
 
+    it("reports listener failures without stopping later listeners", function()
+        local shard = Shard.new(MockHTTPClient.new("test_token"), 0, 3)
+        local received
+        shard:on_event("MESSAGE_CREATE", function() error("listener failed") end)
+        shard:on_error(function(err) received = err end)
+        shard:dispatch({ op = 0, t = "MESSAGE_CREATE", s = 2, d = {} })
+        assert.is_not_nil(received)
+        assert.is_truthy(tostring(received):find("MESSAGE_CREATE", 1, true))
+    end)
+
     it("should call on_ready listeners when READY dispatches", function()
         local mock_client = MockHTTPClient.new("test_token")
         local shard = Shard.new(mock_client, 0, 3)

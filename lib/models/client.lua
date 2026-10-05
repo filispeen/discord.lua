@@ -1013,8 +1013,22 @@ end
 
 function Client:emit(event, ...)
     if self.events[event] then
-        for _, callback in ipairs(self.events[event]) do
-            callback(...)
+        local callbacks = {}
+        for i, callback in ipairs(self.events[event]) do callbacks[i] = callback end
+        local args = { ... }
+        for _, callback in ipairs(callbacks) do
+            local ok, err = pcall(function() coroutine.wrap(callback)(unpack(args)) end)
+            if not ok then
+                local error_callbacks = self.events.error
+                if event ~= "error" and error_callbacks and #error_callbacks > 0 then
+                    for _, handler in ipairs(error_callbacks) do
+                        local handled, handler_err = pcall(handler, event, err)
+                        if not handled and io and io.stderr then io.stderr:write(debug.traceback(tostring(handler_err), 2), "\n") end
+                    end
+                elseif io and io.stderr then
+                    io.stderr:write(debug.traceback(tostring(err), 2), "\n")
+                end
+            end
         end
     end
     return self

@@ -27,6 +27,20 @@ local function table_count(t)
 end
 
 describe("Bot", function()
+    it("isolates errors raised by event listeners", function()
+        local bot = Bot.new()
+        local received
+        local later_called = false
+        bot:on("event_error", function(event, err)
+            received = { event = event, err = err }
+        end)
+        bot:on("sample", function() error("listener failed") end)
+        bot:on("sample", function() later_called = true end)
+        bot:emit("sample")
+        assert.equals("sample", received.event)
+        assert.is_truthy(tostring(received.err):find("listener failed", 1, true))
+        assert.is_true(later_called)
+    end)
     it("dispatches interaction_create through the public client event API", function()
         local bot = Bot.new()
         local received = nil
