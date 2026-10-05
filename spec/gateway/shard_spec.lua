@@ -291,6 +291,20 @@ describe("Shard", function()
         assert.equals(0, shard._state.seq)
     end)
 
+    it("keeps the initial presence when reidentifying an invalid session", function()
+        local client = MockHTTPClient.new("test_token")
+        client._initial_status = "idle"
+        client._initial_activity = { to_dict = function() return { name = "game", type = 0 } end }
+        local shard = Shard.new(client, 0, 3)
+        local sent
+        shard.ws = { send = function(_, payload) sent = payload end }
+        shard:dispatch({ op = 9, d = false })
+        timer_callbacks[#timer_callbacks]()
+        local decoded = require("./core/json_compat").decode(sent)
+        assert.equals("idle", decoded.d.presence.status)
+        assert.equals("game", decoded.d.presence.activities[1].name)
+    end)
+
     it("should assign self.ws on connect so send/close are not silent no-ops", function()
         -- Regression test: connect() previously only bound listeners to a local
         -- ws variable and never assigned self.ws, so Shard:send and Shard:close

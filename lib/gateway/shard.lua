@@ -344,6 +344,28 @@ function Shard:close()
     return self
 end
 
+function Shard:_build_identify()
+    local enums = require("../core/enums")
+    local identify_data = {
+        token = self.client.token,
+        intents = self.client.intents or enums.default_intents(),
+        properties = { os = "linux", browser = "discord.lua", device = "discord.lua" },
+    }
+    if self.total_shards and self.total_shards > 1 then
+        identify_data.shard = { self.shard_id, self.total_shards }
+    end
+    if self.client._initial_status or self.client._initial_activity then
+        local activity_payload = self.client._initial_activity and self.client._initial_activity:to_dict()
+        identify_data.presence = {
+            status = self.client._initial_status or "online",
+            activities = activity_payload and { activity_payload } or {},
+            since = 0,
+            afk = false,
+        }
+    end
+    return identify_data
+end
+
 -- Dispatch an incoming gateway payload to listeners.
 -- Every payload has the shape { op, d, s (sequence, dispatch only), t (event name, dispatch only) }.
 function Shard:dispatch(event)
@@ -357,44 +379,7 @@ function Shard:dispatch(event)
         if self._state.session_id then
             self:resume(self._state.session_id, self._state.seq)
         else
-            local enums = require("../core/enums")
-            local intents = self.client.intents or enums.default_intents()
-
-            local identify_data = {
-                token = self.client.token,
-                intents = intents,
-                properties = {
-                    os = "linux",
-                    browser = "discord.lua",
-                    device = "discord.lua",
-                },
-            }
-
-            if self.total_shards and self.total_shards > 1 then
-                identify_data.shard = { self.shard_id, self.total_shards }
-            end
-
-            -- Initial presence set via Client.new's opts.status/opts.activity
-            -- (see Client:change_presence for the live-update equivalent
-            -- after the gateway is already connected). Uses "activities"
-            -- (a list), matching Discord's current Update Presence gateway
-            -- doc shape used by change_presence below, rather than
-            -- pycord's older singular "game" key in its own IDENTIFY
-            -- presence block.
-            if self.client._initial_status or self.client._initial_activity then
-                local activity_payload = nil
-                if self.client._initial_activity then
-                    activity_payload = self.client._initial_activity:to_dict()
-                end
-                identify_data.presence = {
-                    status = self.client._initial_status or "online",
-                    activities = activity_payload and { activity_payload } or {},
-                    since = 0,
-                    afk = false,
-                }
-            end
-
-            self:identify(identify_data)
+            self:identify(self:_build_identify())
         end
         return
     end
@@ -437,16 +422,7 @@ function Shard:dispatch(event)
             end
             self._state.session_id = nil
             self._state.seq = 0
-            local enums = require("../core/enums")
-            local identify_data = {
-                token = self.client.token,
-                intents = self.client.intents or enums.default_intents(),
-                properties = { os = "linux", browser = "discord.lua", device = "discord.lua" },
-            }
-            if self.total_shards and self.total_shards > 1 then
-                identify_data.shard = { self.shard_id, self.total_shards }
-            end
-            self:identify(identify_data)
+            self:identify(self:_build_identify())
         end)
         return
     end
