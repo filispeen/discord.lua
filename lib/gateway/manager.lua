@@ -47,6 +47,23 @@ local event_dispatch = require("../core/event_dispatch")
 -- ShardManager class
 local ShardManager = class("ShardManager")
 
+local function remove_timer(state, timer)
+    for index, current in ipairs(state.timers or {}) do
+        if current == timer then
+            table.remove(state.timers, index)
+            return
+        end
+    end
+end
+
+local function close_timer(state, timer)
+    remove_timer(state, timer)
+    if not timer then return end
+    if uv.is_closing and uv.is_closing(timer) then return end
+    timer:stop()
+    timer:close()
+end
+
 -- Internal state
 ShardManager._state = {
     shards = {},
@@ -138,21 +155,21 @@ function ShardManager:start()
             local delay = uv.new_timer()
             table.insert(self._state.timers, delay)
             delay:start(5000, 0, function()
-                delay:close()
+                close_timer(self._state, delay)
                 start_bucket(bucket)
             end)
         end
         local function launch_next()
             if completed then return end
             completed = true
-            if timeout then timeout:stop(); timeout:close() end
+            close_timer(self._state, timeout)
             self._state.ready_count = self._state.ready_count + 1
             schedule_next()
         end
         local function failed(err)
             if completed then return end
             completed = true
-            if timeout then timeout:stop(); timeout:close() end
+            close_timer(self._state, timeout)
             shard:emit("error", err)
             schedule_next()
         end
@@ -185,11 +202,12 @@ end
 
 -- Stop all shards
 function ShardManager:stop()
-    for _, timer in ipairs(self._state and self._state.timers or {}) do
-        timer:stop()
-        timer:close()
+    local timers = self._state and self._state.timers or {}
+    while #timers > 0 do
+        local timer = timers[#timers]
+        local ok = pcall(close_timer, self._state, timer)
+        if not ok then table.remove(timers, #timers) end
     end
-    if self._state then self._state.timers = {} end
     for _, shard in pairs(self._shards) do
         shard:close()
     end

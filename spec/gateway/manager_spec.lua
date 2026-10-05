@@ -10,11 +10,17 @@ local timer_callbacks = {}
 -- Mock luv for testing
 local uv = {
     new_timer = function()
-        return {
+        local timer
+        timer = {
+            closing = false,
             start = function(_, _, _, callback) timer_callbacks[#timer_callbacks + 1] = callback end,
             stop = function() end,
-            close = function() end,
+            close = function(self)
+                if self.closing then error("handle is already closing") end
+                self.closing = true
+            end,
         }
+        return timer
     end,
     timer = {
         new = function()
@@ -26,7 +32,8 @@ local uv = {
             return timer
         end
     },
-    now = function() return 0 end
+    now = function() return 0 end,
+    is_closing = function(timer) return timer.closing end,
 }
 package.loaded["luv"] = uv
 
@@ -348,6 +355,19 @@ describe("ShardManager", function()
         shard._state.connected = true
         timer_callbacks[#timer_callbacks]()
         assert.is_true(result)
+    end)
+
+    it("stops shards when its timer list contains a closed handle", function()
+        local manager = ShardManager.new(MockHTTPClient.new("test_token"), 1)
+        local closed = uv.new_timer()
+        closed:close()
+        local live = uv.new_timer()
+        local shard_closed = false
+        manager._state = { timers = { closed, live } }
+        manager._shards = { { close = function() shard_closed = true end } }
+        manager:stop()
+        assert.is_true(live.closing)
+        assert.is_true(shard_closed)
     end)
 
     it("guild_shard_id returns 0 for a single shard", function()
