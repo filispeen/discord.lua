@@ -197,6 +197,10 @@ end
 function M.Manager:consume_global()
     if self.global_remaining > 0 then
         self.global_remaining = self.global_remaining - 1
+        if self.global_remaining == 0 then
+            self.global_time_remaining = 1
+            self.global_reset = os.time() + 1
+        end
         return true
     end
     return false
@@ -204,10 +208,18 @@ end
 
 -- Update global rate limit from headers
 function M.Manager:update_global(headers)
-    self.global_remaining = tonumber(headers["x-ratelimit-global-remaining"] or headers["X-RateLimit-Global-Remaining"] or self.global_remaining)
-    self.global_limit = tonumber(headers["x-ratelimit-global-limit"] or headers["X-RateLimit-Global-Limit"] or self.global_limit)
-    self.global_time_remaining = tonumber(headers["retry-after"] or headers["Retry-After"] or 0)
-    self.global_reset = os.time() + math.ceil(self.global_time_remaining)
+    local remaining = headers["x-ratelimit-global-remaining"] or headers["X-RateLimit-Global-Remaining"]
+    local limit = headers["x-ratelimit-global-limit"] or headers["X-RateLimit-Global-Limit"]
+    local retry_after = headers["retry-after"] or headers["Retry-After"]
+    if remaining then self.global_remaining = tonumber(remaining) end
+    if limit then self.global_limit = tonumber(limit) end
+    if retry_after then
+        self.global_time_remaining = tonumber(retry_after) or 0
+        self.global_reset = os.time() + math.ceil(self.global_time_remaining)
+    elseif remaining then
+        self.global_time_remaining = 0
+        self.global_reset = 0
+    end
 end
 
 -- Get all buckets
@@ -220,6 +232,7 @@ function M.Manager:set_global_remaining(remaining, limit, reset)
     self.global_remaining = remaining or self.global_remaining
     self.global_limit = limit or self.global_limit
     self.global_time_remaining = reset or 0
+    self.global_reset = os.time() + math.ceil(self.global_time_remaining)
 end
 
 return {

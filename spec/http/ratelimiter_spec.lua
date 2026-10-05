@@ -107,6 +107,14 @@ describe("ratelimiter", function()
             assert.equals(9, manager.global_remaining)
         end)
 
+        it("refills the global bucket after its cooldown", function()
+            local manager = ratelimiter.Manager.new()
+            manager:set_global_remaining(0, 10, 1)
+            manager.global_reset = os.time() - 1
+            assert.is_false(manager:is_global_rate_limited())
+            assert.equals(10, manager.global_remaining)
+        end)
+
         it("update_global sets remaining, limit, and retry-after", function()
             local manager = ratelimiter.Manager.new()
             manager:update_global({
