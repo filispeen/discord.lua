@@ -5,13 +5,15 @@
 require("spec_helper")
 
 local class = require("./core/class")
+local timer_callbacks = {}
 
 -- Mock luv for testing
 local uv = {
     new_timer = function()
         local timer = {
-            start = function() end,
+            start = function(_, _, callback) timer_callbacks[#timer_callbacks + 1] = callback end,
             stop = function() end,
+            close = function() end,
         }
         return timer
     end
@@ -204,6 +206,35 @@ describe("Shard", function()
         assert.is_false(shard._state.connected)
         assert.equals("session1", shard._state.session_id)
         assert.is_not_nil(shard._state.reconnect_timer)
+    end)
+
+    it("retries resumable invalid sessions after its delay", function()
+        local shard = Shard.new(MockHTTPClient.new("test_token"), 0, 3)
+        local sent
+        shard.ws = { send = function(_, payload) sent = payload end }
+        shard._state.session_id = "session1"
+        shard._state.seq = 12
+        shard:dispatch({ op = 9, d = true })
+        assert.is_not_nil(shard._state.invalid_session_timer)
+        timer_callbacks[#timer_callbacks]()
+        local decoded = require("./core/json_compat").decode(sent)
+        assert.equals(6, decoded.op)
+        assert.equals("session1", decoded.d.session_id)
+        assert.equals(12, decoded.d.seq)
+    end)
+
+    it("identifies after a non-resumable invalid session", function()
+        local shard = Shard.new(MockHTTPClient.new("test_token"), 0, 3)
+        local sent
+        shard.ws = { send = function(_, payload) sent = payload end }
+        shard._state.session_id = "old-session"
+        shard._state.seq = 12
+        shard:dispatch({ op = 9, d = false })
+        timer_callbacks[#timer_callbacks]()
+        local decoded = require("./core/json_compat").decode(sent)
+        assert.equals(2, decoded.op)
+        assert.is_nil(shard._state.session_id)
+        assert.equals(0, shard._state.seq)
     end)
 
     it("should assign self.ws on connect so send/close are not silent no-ops", function()

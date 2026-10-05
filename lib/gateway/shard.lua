@@ -80,6 +80,7 @@ function Shard:reset_state()
     self._state.awaiting_ack = false
     self._state.session_id = nil
     self._state.seq = 0
+    self._state.invalid_session_timer = nil
     return self
 end
 
@@ -261,6 +262,11 @@ function Shard:_schedule_reconnect()
 end
 
 function Shard:_on_close(code, reason)
+    if self._state.invalid_session_timer then
+        self._state.invalid_session_timer:stop()
+        self._state.invalid_session_timer:close()
+        self._state.invalid_session_timer = nil
+    end
     if self.ws then
         local ws = self.ws
         self.ws = nil
@@ -280,7 +286,13 @@ function Shard:close()
     self._closing = true
     if self._state.reconnect_timer then
         self._state.reconnect_timer:stop()
+        self._state.reconnect_timer:close()
         self._state.reconnect_timer = nil
+    end
+    if self._state.invalid_session_timer then
+        self._state.invalid_session_timer:stop()
+        self._state.invalid_session_timer:close()
+        self._state.invalid_session_timer = nil
     end
     if self.ws then
         self.ws:close()
@@ -371,9 +383,36 @@ function Shard:dispatch(event)
     end
 
     if event.op == opcodes.INVALID_SESSION then
-        self._state.session_id = nil
-        self._state.seq = 0
+        if self._state.invalid_session_timer then
+            self._state.invalid_session_timer:stop()
+            self._state.invalid_session_timer:close()
+        end
         self:emit("invalid_session", { resumable = event.d == true })
+        local timer = uv.new_timer()
+        self._state.invalid_session_timer = timer
+        timer:start(math.random(1000, 5000), 0, function()
+            if self._state.invalid_session_timer ~= timer or self._closing then
+                return
+            end
+            self._state.invalid_session_timer = nil
+            timer:close()
+            if event.d == true and self._state.session_id then
+                self:resume(self._state.session_id, self._state.seq)
+                return
+            end
+            self._state.session_id = nil
+            self._state.seq = 0
+            local enums = require("../core/enums")
+            local identify_data = {
+                token = self.client.token,
+                intents = self.client.intents or enums.default_intents(),
+                properties = { os = "linux", browser = "discord.lua", device = "discord.lua" },
+            }
+            if self.total_shards and self.total_shards > 1 then
+                identify_data.shard = { self.shard_id, self.total_shards }
+            end
+            self:identify(identify_data)
+        end)
         return
     end
 
