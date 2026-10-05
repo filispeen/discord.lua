@@ -27,6 +27,14 @@ local function table_count(t)
 end
 
 describe("Bot", function()
+    it("rethrows the original error object from run", function()
+        local bot = Bot.new()
+        local original = { message = "original" }
+        bot.connect = function() error(original, 0) end
+        local ok, err = pcall(function() bot:run("token") end)
+        assert.is_false(ok)
+        assert.equals(original, err)
+    end)
     it("isolates errors raised by event listeners", function()
         local bot = Bot.new()
         local received

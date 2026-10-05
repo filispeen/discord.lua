@@ -43,9 +43,13 @@ function Multipart.build(payload, files)
 
     add({ ["Content-Disposition"] = "form-data; name=\"payload_json\"", ["Content-Type"] = "application/json" }, json.encode(payload or {}))
     for index, file in ipairs(files or {}) do
+        local filename = tostring(file.filename or "file"):gsub('["\r\n]', function(char)
+            if char == '"' then return '\\"' end
+            return ""
+        end)
         add({
-            ["Content-Disposition"] = "form-data; name=\"files[" .. (index - 1) .. "]\"; filename=\"" .. file.filename .. "\"",
-            ["Content-Type"] = file.content_type,
+            ["Content-Disposition"] = "form-data; name=\"files[" .. (index - 1) .. "]\"; filename=\"" .. filename .. "\"",
+            ["Content-Type"] = file.content_type or "application/octet-stream",
         }, file.data)
     end
     parts[#parts + 1] = "--" .. token .. "--\r\n"

@@ -57,7 +57,7 @@ function HTTPException.new(message, status_code, data)
 end
 
 function HTTPException:__tostring()
-    return "HTTPException: " .. self.message .. " (status: " .. self.status_code .. ")"
+    return "HTTPException: " .. self.message .. " (status: " .. tostring(self.status_code) .. ")"
 end
 
 -- RateLimited: rate limit errors
@@ -91,28 +91,34 @@ end
 -- NotFound: resource not found
 local NotFound = class("NotFound", DiscordException)
 
-function NotFound.new(message, id)
+function NotFound.new(message, id, data)
     local self = setmetatable({}, NotFound)
     self.message = message
     self.id = id
+    self.data = data
+    self.code = data and data.code
+    if data and data.message then self.message = data.message end
     return self
 end
 
 function NotFound:__tostring()
-    return "NotFound: " .. self.message .. " (id: " .. tostring(self.id) .. ")"
+    return "NotFound: " .. self.message .. " (code: " .. tostring(self.code) .. ", id: " .. tostring(self.id) .. ")"
 end
 
 -- Forbidden: permission denied
 local Forbidden = class("Forbidden", DiscordException)
 
-function Forbidden.new(message)
+function Forbidden.new(message, data)
     local self = setmetatable({}, Forbidden)
     self.message = message
+    self.data = data
+    self.code = data and data.code
+    if data and data.message then self.message = data.message end
     return self
 end
 
 function Forbidden:__tostring()
-    return "Forbidden: " .. self.message
+    return "Forbidden: " .. self.message .. " (code: " .. tostring(self.code) .. ")"
 end
 
 -- TimeoutError: raised by Bot:wait_for when no matching event arrives
@@ -146,12 +152,12 @@ function GatewayError.create(message, code)
     return GatewayError.new(message, code)
 end
 
-function NotFound.create(message, id)
-    return NotFound.new(message, id)
+function NotFound.create(message, id, data)
+    return NotFound.new(message, id, data)
 end
 
-function Forbidden.create(message)
-    return Forbidden.new(message)
+function Forbidden.create(message, data)
+    return Forbidden.new(message, data)
 end
 
 function TimeoutError.create(message)

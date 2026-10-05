@@ -878,7 +878,7 @@ function Bot:run(token)
         self.client:start_gateway()
     end)
     if not ok then
-        error(tostring(err), 0)
+        error(err, 0)
     end
     return self
 end

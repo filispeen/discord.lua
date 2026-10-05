@@ -144,9 +144,9 @@ function Client.throw_error(_self, status, data)
         local retry_after = data and data.retry_after or 0
         error(errors.RateLimited.new("Rate limited by Discord", retry_after), 0)
     elseif status == 404 then
-        error(errors.NotFound.new("Resource not found", data and data.id), 0)
+        error(errors.NotFound.new(data and data.message or "Resource not found", data and data.id, data), 0)
     elseif status == 403 then
-        error(errors.Forbidden.new("Permission denied"), 0)
+        error(errors.Forbidden.new(data and data.message or "Permission denied", data), 0)
     elseif status >= 500 then
         error(errors.HTTPException.new("Internal server error", status, data), 0)
     else
