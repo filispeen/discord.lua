@@ -25,7 +25,9 @@ function M.class(name, parent)
         __index = parent,
         __call = function(cls, ...)
             if cls.new then
-                return cls.new(...)
+                local instance = cls.new(...)
+                if type(instance) == "table" then setmetatable(instance, cls) end
+                return instance
             end
             local instance = {}
             setmetatable(instance, cls)
@@ -56,9 +58,6 @@ function M.isInstanceOf(instance, Class)
     local current = getmetatable(instance)
     while current do
         if current == Class then
-            return true
-        end
-        if current._name == Class._name then
             return true
         end
         current = current._parent

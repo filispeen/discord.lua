@@ -9,8 +9,23 @@ local Permission = require("./models/permission")
 local Message = require("./models/message")
 local Embed = require("./models/embed")
 local User = require("./models/user")
+local class = require("./core/class")
 
 describe("core utility models", function()
+    it("uses class identity and creates callable subclass instances", function()
+        local Parent = class("SameName")
+        Parent.new = function()
+            local instance = {}
+            setmetatable(instance, Parent)
+            return instance
+        end
+        local Child = class("Child", Parent)
+        local Other = class("SameName")
+        local instance = Child()
+        assert.equals(Child, getmetatable(instance))
+        assert.is_true(class.isInstanceOf(instance, Parent))
+        assert.is_false(class.isInstanceOf(instance, Other))
+    end)
     it("builds and transforms CDN assets", function()
         local asset = Asset.from_avatar("u1", "a_hash")
         local resized = asset:with_size(128)
