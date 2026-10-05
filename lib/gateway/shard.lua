@@ -40,6 +40,15 @@ local opcodes = require("./opcodes")
 local json = require("../core/json_compat")
 local uv = require("../core/luv_compat")
 
+local function require_dependency(name)
+    if package.loaded["coro-channel"] then return require(name) end
+    package.loaded["coro-channel"] = require("../utils")
+    local ok, dependency = pcall(require, name)
+    package.loaded["coro-channel"] = nil
+    if not ok then error(dependency, 0) end
+    return dependency
+end
+
 -- Shard class
 local Shard = class("Shard")
 
@@ -104,7 +113,7 @@ function Shard:connect()
     end
 
     -- Create WebSocket connection
-    local websocket = require("coro-websocket")
+    local websocket = require_dependency("coro-websocket")
     local utils = require("../utils")
     local ws_adapter = require("./ws_adapter")
     gateway_url = gateway_url:gsub("/+$", "")

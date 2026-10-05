@@ -73,6 +73,15 @@ local function sleep(seconds)
     coroutine.yield()
 end
 
+local function require_dependency(name)
+    if package.loaded["coro-channel"] then return require(name) end
+    package.loaded["coro-channel"] = require("../utils")
+    local ok, dependency = pcall(require, name)
+    package.loaded["coro-channel"] = nil
+    if not ok then error(dependency, 0) end
+    return dependency
+end
+
 -- Create a new HTTP client
 function Client.new(token, ratelimiter)
     local self = {
@@ -160,7 +169,7 @@ function Client:request(method, endpoint, options)
     end
 
     local rate_key = bucket_key(method, endpoint)
-    local http = require("coro-http")
+    local http = require_dependency("coro-http")
     local attempts = 0
     while true do
         if self.ratelimiter and self.ratelimiter.is_rate_limited then
@@ -235,7 +244,7 @@ function Client:post_interaction_callback(interaction_id, interaction_token, pay
         header_list[#header_list + 1] = { key, value }
     end
 
-    local http = require("coro-http")
+    local http = require_dependency("coro-http")
     local ok, res, response_body = pcall(
         http.request,
         "POST",

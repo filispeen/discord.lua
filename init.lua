@@ -39,19 +39,10 @@ local function bundle_missing()
     return false
 end
 
-if bundle_missing() then
+if os.getenv("DISCORD_LUA_AUTO_INSTALL") == "1" and bundle_missing() then
     local installed, err = pcall(require, "./install")
     if not installed then io.stderr:write("discord.lua: native bundle unavailable: " .. err .. "\n") end
 end
-
--- coro-net requires "coro-channel" internally cause go daym it work so bad. Keep the implementation
--- inside this package so installed copies do not depend on a bundled deps/
--- directory.
-local utils = require("./lib/utils")
-package.preload["coro-channel"] = function()
-    return utils
-end
-package.loaded["coro-channel"] = utils
 
 local Bot = require("./lib/commands/bot")
 local enums = require("./lib/core/enums")
