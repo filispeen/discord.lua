@@ -95,60 +95,59 @@ function ShardManager:start()
         self._shards[shard_id] = shard
     end
 
-    -- Start shards respecting max_concurrency
-    local ready_count = 0
-    local started_count = 0
-
-    local start_next
-    local on_shard_ready
+    self._state = { timers = {}, queues = {}, ready_count = 0 }
+    for bucket = 0, self.max_concurrency - 1 do
+        self._state.queues[bucket] = {}
+    end
+    for shard_id = 0, shards - 1 do
+        table.insert(self._state.queues[shard_id % self.max_concurrency], shard_id)
+    end
 
     local function fire_ready_listeners_once_all_up(ready_payload)
-        if ready_count >= shards and self.listeners.ready then
+        if self._state.ready_count >= shards and self.listeners.ready then
             for _, callback in ipairs(self.listeners.ready) do
                 callback(ready_payload)
             end
         end
     end
 
-    on_shard_ready = function(shard_id, shard)
-        return function(ready_payload)
-            ready_count = ready_count + 1
-
+    local start_bucket
+    start_bucket = function(bucket)
+        local queue = self._state.queues[bucket]
+        local shard_id = table.remove(queue, 1)
+        if shard_id == nil then return end
+        local shard = self._shards[shard_id]
+        local completed = false
+        local timeout
+        local function launch_next()
+            if completed then return end
+            completed = true
+            if timeout then timeout:stop(); timeout:close() end
+            self._state.ready_count = self._state.ready_count + 1
+            local delay = uv.new_timer()
+            table.insert(self._state.timers, delay)
+            delay:start(5000, 0, function()
+                delay:close()
+                start_bucket(bucket)
+            end)
+        end
+        shard:on_ready(function(ready_payload)
             if self.listeners["shard_ready"] then
                 for _, callback in ipairs(self.listeners["shard_ready"]) do
                     callback(shard_id, shard, ready_payload)
                 end
             end
-
+            launch_next()
             fire_ready_listeners_once_all_up(ready_payload)
-            if ready_count < self.max_concurrency then
-                start_next()
-            end
-        end
+        end)
+        timeout = uv.new_timer()
+        table.insert(self._state.timers, timeout)
+        timeout:start(30000, 0, launch_next)
+        shard:connect()
     end
 
-    start_next = function()
-        if ready_count >= self.max_concurrency and started_count < shards then
-            for i = started_count, shards - 1 do
-                local shard = self._shards[i]
-                if shard and not shard._state.connected then
-                    shard:connect()
-                    shard:on_ready(on_shard_ready(i, shard))
-                    started_count = started_count + 1
-                    break
-                end
-            end
-        end
-    end
-
-    -- Start initial batch respecting max_concurrency
-    for i = 0, math.min(shards - 1, self.max_concurrency - 1) do
-        local shard = self._shards[i]
-        if shard and not shard._state.connected then
-            shard:connect()
-            shard:on_ready(on_shard_ready(i, shard))
-            started_count = started_count + 1
-        end
+    for bucket = 0, self.max_concurrency - 1 do
+        start_bucket(bucket)
     end
 
     return self
@@ -156,6 +155,11 @@ end
 
 -- Stop all shards
 function ShardManager:stop()
+    for _, timer in ipairs(self._state and self._state.timers or {}) do
+        timer:stop()
+        timer:close()
+    end
+    if self._state then self._state.timers = {} end
     for _, shard in pairs(self._shards) do
         shard:close()
     end

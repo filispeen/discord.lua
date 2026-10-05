@@ -13,6 +13,7 @@ local uv = {
             local timer = {
                 start = function() end,
                 stop = function() end,
+                close = function() end,
             }
             return timer
         end
@@ -145,6 +146,32 @@ describe("ShardManager", function()
         manager:start()
 
         assert.equals(1, manager.max_concurrency)
+    end)
+
+    it("queues five shards by identify bucket at concurrency one and two", function()
+        local Shard = require("./gateway/shard")
+        local original_connect = Shard.connect
+        local starts = {}
+        Shard.connect = function(shard)
+            starts[#starts + 1] = shard.shard_id
+            shard._state.connected = true
+            return shard
+        end
+        local function check(concurrency, expected)
+            starts = {}
+            local client = MockHTTPClient.new("test_token")
+            client.get = function()
+                return { shards = 5, session_start_limit = { max_concurrency = concurrency } }
+            end
+            local manager = ShardManager.new(client, concurrency)
+            manager:start()
+            assert.same(expected, starts)
+            assert.equals(5, #manager._state.queues[0] + (manager._state.queues[1] and #manager._state.queues[1] or 0))
+            manager:stop()
+        end
+        check(1, { 0 })
+        check(2, { 0, 1 })
+        Shard.connect = original_connect
     end)
 
     it("should forward a dispatch payload to on_dispatch listeners by event name", function()
