@@ -92,6 +92,20 @@ function ShardManager:start()
         shard:on_event("event", function(payload)
             self:_forward_dispatch(payload)
         end)
+        shard:on_error(function(err)
+            for _, entry in ipairs(self.listeners.shard_error or {}) do
+                if entry.shard_id == nil or entry.shard_id == shard_id then
+                    entry.callback(shard_id, shard, err)
+                end
+            end
+        end)
+        shard:on_disconnect(function(payload)
+            for _, entry in ipairs(self.listeners.shard_disconnect or {}) do
+                if entry.shard_id == nil or entry.shard_id == shard_id then
+                    entry.callback(shard_id, shard, payload)
+                end
+            end
+        end)
         self._shards[shard_id] = shard
     end
 
@@ -133,8 +147,10 @@ function ShardManager:start()
         end
         shard:on_ready(function(ready_payload)
             if self.listeners["shard_ready"] then
-                for _, callback in ipairs(self.listeners["shard_ready"]) do
-                    callback(shard_id, shard, ready_payload)
+                for _, entry in ipairs(self.listeners["shard_ready"]) do
+                    if entry.shard_id == nil or entry.shard_id == shard_id then
+                        entry.callback(shard_id, shard, ready_payload)
+                    end
                 end
             end
             launch_next()
@@ -305,29 +321,29 @@ function ShardManager:on_ready(callback)
 end
 
 -- On shard ready
-function ShardManager:on_shard_ready(_shard_id, callback)
+function ShardManager:on_shard_ready(shard_id, callback)
     if not self.listeners["shard_ready"] then
         self.listeners["shard_ready"] = {}
     end
-    table.insert(self.listeners["shard_ready"], callback)
+    table.insert(self.listeners["shard_ready"], { shard_id = shard_id, callback = callback })
     return self
 end
 
 -- On shard error
-function ShardManager:on_shard_error(_shard_id, callback)
+function ShardManager:on_shard_error(shard_id, callback)
     if not self.listeners["shard_error"] then
         self.listeners["shard_error"] = {}
     end
-    table.insert(self.listeners["shard_error"], callback)
+    table.insert(self.listeners["shard_error"], { shard_id = shard_id, callback = callback })
     return self
 end
 
 -- On shard disconnect
-function ShardManager:on_shard_disconnect(_shard_id, callback)
+function ShardManager:on_shard_disconnect(shard_id, callback)
     if not self.listeners["shard_disconnect"] then
         self.listeners["shard_disconnect"] = {}
     end
-    table.insert(self.listeners["shard_disconnect"], callback)
+    table.insert(self.listeners["shard_disconnect"], { shard_id = shard_id, callback = callback })
     return self
 end
 

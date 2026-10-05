@@ -529,13 +529,8 @@ end
 
 -- On disconnect
 function Shard:on_disconnect(callback)
-    local orig_disconnect = self.listeners.disconnect or {}
-    self.listeners.disconnect = function(...)
-        for _, cb in ipairs(orig_disconnect) do
-            cb(...)
-        end
-        callback(...)
-    end
+    if not self.listeners.disconnect then self.listeners.disconnect = {} end
+    table.insert(self.listeners.disconnect, callback)
     return self
 end
 

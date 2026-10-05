@@ -425,15 +425,18 @@ function Client:start_gateway()
 
     -- Listen for gateway events
     self.gateway:on_shard_ready(function(shard_id, shard)
-        self:emit("shard_ready", { shard_id = shard_id, shard = shard })
+        self:dispatch_shard_ready(shard_id, shard)
+        self:emit("shard_ready", shard_id, shard)
     end)
 
     self.gateway:on_shard_error(function(shard_id, shard, error)
-        self:emit("shard_error", { shard_id = shard_id, shard = shard, error = error })
+        self:dispatch_shard_error(shard_id, shard, error)
+        self:emit("shard_error", shard_id, shard, error)
     end)
 
     self.gateway:on_shard_disconnect(function(shard_id, shard, event)
-        self:emit("shard_disconnect", { shard_id = shard_id, shard = shard, event = event })
+        self:dispatch_shard_disconnect(shard_id, shard, event)
+        self:emit("shard_disconnect", shard_id, shard, event)
     end)
 
     self.gateway:on_ready(function(ready_payload)

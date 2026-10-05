@@ -274,6 +274,29 @@ describe("ShardManager", function()
         assert.equals(0, received_shard_id)
     end)
 
+    it("forwards shard error and disconnect arguments", function()
+        local client = MockHTTPClient.new("test_token")
+        client.get = function()
+            return { shards = 1, session_start_limit = { max_concurrency = 1 } }
+        end
+        local manager = ShardManager.new(client, 1)
+        local error_args
+        local disconnect_args
+        manager:on_shard_error(0, function(...) error_args = { ... } end)
+        manager:on_shard_disconnect(0, function(...) disconnect_args = { ... } end)
+        manager:start()
+        local shard = manager:get_shard(0)
+        local err = { message = "failure" }
+        local event = { code = 1006 }
+        shard:emit("error", err)
+        shard:emit("disconnect", event)
+        assert.equals(0, error_args[1])
+        assert.equals(shard, error_args[2])
+        assert.equals(err, error_args[3])
+        assert.equals(event, disconnect_args[3])
+        manager:stop()
+    end)
+
     it("guild_shard_id returns 0 for a single shard", function()
         local mock_client = MockHTTPClient.new("test_token")
         local manager = ShardManager.new(mock_client, 1)
