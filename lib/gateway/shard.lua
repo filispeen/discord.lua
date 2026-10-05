@@ -39,6 +39,7 @@ local errors = require("../core/errors")
 local opcodes = require("./opcodes")
 local json = require("../core/json_compat")
 local uv = require("../core/luv_compat")
+local event_dispatch = require("../core/event_dispatch")
 
 local function require_dependency(name)
     if package.loaded["coro-channel"] then return require(name) end
@@ -506,11 +507,9 @@ function Shard:emit(event, ...)
     if self.listeners[event] then
         local listeners = {}
         for i, callback in ipairs(self.listeners[event]) do listeners[i] = callback end
-        local args = { ... }
-        local unpack_args = unpack
+        local args = { n = select("#", ...), ... }
         for _, callback in ipairs(listeners) do
-            local ok, err = pcall(function() coroutine.wrap(callback)(unpack_args(args)) end)
-            if not ok then
+            event_dispatch.run(callback, args, function(err)
                 local error_listeners = self.listeners.error
                 if event ~= "error" and error_listeners and #error_listeners > 0 then
                     for _, handler in ipairs(error_listeners) do
@@ -520,7 +519,7 @@ function Shard:emit(event, ...)
                 elseif io and io.stderr then
                     io.stderr:write(debug.traceback(tostring(err), 2), "\n")
                 end
-            end
+            end)
         end
     end
     return self

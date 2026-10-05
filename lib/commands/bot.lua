@@ -5,6 +5,7 @@ local class = require("../core/class")
 local Embed = require("../models/embed")
 local CommandTree = require("../interactions/command_tree")
 local uv = require("../core/luv_compat")
+local event_dispatch = require("../core/event_dispatch")
 
 local Bot = class('Bot')
 
@@ -338,10 +339,9 @@ function Bot:emit(event, ...)
     if self.listeners[event] then
         local callbacks = {}
         for i, callback in ipairs(self.listeners[event]) do callbacks[i] = callback end
-        local args = { ... }
+        local args = { n = select("#", ...), ... }
         for _, callback in ipairs(callbacks) do
-            local ok, err = pcall(function() coroutine.wrap(callback)(unpack(args)) end)
-            if not ok then
+            event_dispatch.run(callback, args, function(err)
                 local error_handlers = self.listeners.event_error or self.listeners.error
                 if event ~= "error" and event ~= "event_error" and error_handlers and #error_handlers > 0 then
                     for _, handler in ipairs(error_handlers) do
@@ -351,7 +351,7 @@ function Bot:emit(event, ...)
                 elseif io and io.stderr then
                     io.stderr:write(debug.traceback(tostring(err), 2), "\n")
                 end
-            end
+            end)
         end
     end
     return self
@@ -691,16 +691,18 @@ function Bot:dispatch_interaction(interaction)
             if not view.stopped then
                 local item = view:find_item(custom_id)
                 if item and item.callback then
-                    local ok, err = pcall(function() coroutine.wrap(item.callback)(ctx) end)
-                    if not ok then self:emit("event_error", "component_interaction", err) end
+                    event_dispatch.run(item.callback, { n = 1, ctx }, function(err)
+                        self:emit("event_error", "component_interaction", err)
+                    end)
                     return true
                 end
             end
         end
 
         if self.interactions[custom_id] then
-            local ok, err = pcall(function() coroutine.wrap(self.interactions[custom_id])(ctx) end)
-            if not ok then self:emit("event_error", "interaction", err) end
+            event_dispatch.run(self.interactions[custom_id], { n = 1, ctx }, function(err)
+                self:emit("event_error", "interaction", err)
+            end)
             return true
         end
     end

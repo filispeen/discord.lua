@@ -166,6 +166,22 @@ describe("Shard", function()
         assert.is_truthy(tostring(received):find("MESSAGE_CREATE", 1, true))
     end)
 
+    it("reports a listener failure raised after yielding", function()
+        local shard = Shard.new(MockHTTPClient.new("test_token"), 0, 3)
+        local listener_thread
+        local received
+        shard:on_event("MESSAGE_CREATE", function()
+            listener_thread = coroutine.running()
+            coroutine.yield()
+            error("late listener failure")
+        end)
+        shard:on_error(function(err) received = err end)
+        shard:dispatch({ op = 0, t = "MESSAGE_CREATE", s = 2, d = {} })
+        assert.is_not_nil(listener_thread)
+        assert.is_true(coroutine.resume(listener_thread))
+        assert.is_truthy(tostring(received):find("late listener failure", 1, true))
+    end)
+
     it("should call on_ready listeners when READY dispatches", function()
         local mock_client = MockHTTPClient.new("test_token")
         local shard = Shard.new(mock_client, 0, 3)

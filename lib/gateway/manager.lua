@@ -42,6 +42,7 @@
 local class = require("../core/class")
 local Shard = require("./shard")
 local uv = require("../core/luv_compat")
+local event_dispatch = require("../core/event_dispatch")
 
 -- ShardManager class
 local ShardManager = class("ShardManager")
@@ -309,8 +310,7 @@ function ShardManager:_forward_dispatch(payload)
     local callbacks = {}
     for i, cb in ipairs(subs) do callbacks[i] = cb end
     for _, cb in ipairs(callbacks) do
-        local ok, err = pcall(function() coroutine.wrap(cb)(payload.d) end)
-        if not ok then
+        event_dispatch.run(cb, { n = 1, payload.d }, function(err)
             local handlers = self.listeners.error or self.listeners.event_error
             if handlers and #handlers > 0 then
                 for _, handler in ipairs(handlers) do
@@ -320,7 +320,7 @@ function ShardManager:_forward_dispatch(payload)
             elseif io and io.stderr then
                 io.stderr:write(debug.traceback(tostring(err), 2), "\n")
             end
-        end
+        end)
     end
 end
 

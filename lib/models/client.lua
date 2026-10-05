@@ -56,6 +56,7 @@ local class = require("../core/class")
 
 -- Client class
 local Client = class("Client")
+local event_dispatch = require("../core/event_dispatch")
 
 function Client.new(token, ratelimiter, intents, opts)
     local enums = require("../core/enums")
@@ -1018,10 +1019,9 @@ function Client:emit(event, ...)
     if self.events[event] then
         local callbacks = {}
         for i, callback in ipairs(self.events[event]) do callbacks[i] = callback end
-        local args = { ... }
+        local args = { n = select("#", ...), ... }
         for _, callback in ipairs(callbacks) do
-            local ok, err = pcall(function() coroutine.wrap(callback)(unpack(args)) end)
-            if not ok then
+            event_dispatch.run(callback, args, function(err)
                 local error_callbacks = self.events.error
                 if event ~= "error" and error_callbacks and #error_callbacks > 0 then
                     for _, handler in ipairs(error_callbacks) do
@@ -1031,7 +1031,7 @@ function Client:emit(event, ...)
                 elseif io and io.stderr then
                     io.stderr:write(debug.traceback(tostring(err), 2), "\n")
                 end
-            end
+            end)
         end
     end
     return self
