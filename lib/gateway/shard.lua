@@ -240,7 +240,9 @@ function Shard:send_heartbeat()
         self:_on_close(1006, "Heartbeat ACK not received")
         return self
     end
-    local heartbeat = { op = opcodes.HEARTBEAT, d = { seq = self._state.seq } }
+    local sequence = self._state.seq
+    if sequence == 0 then sequence = json.null end
+    local heartbeat = { op = opcodes.HEARTBEAT, d = sequence }
     self:send(heartbeat)
     self._state.last_heartbeat = os.time()
     self._state.awaiting_ack = self._state.connected

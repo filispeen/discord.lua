@@ -187,6 +187,15 @@ describe("Shard", function()
         assert.is_true(shard._state.last_heartbeat > 0)
     end)
 
+    it("sends a JSON null heartbeat sequence before the first dispatch", function()
+        local shard = Shard.new(MockHTTPClient.new("test_token"), 0, 3)
+        local sent
+        shard.ws = { send = function(_, payload) sent = payload end }
+        shard:send_heartbeat()
+        local decoded = require("./core/json_compat").decode(sent)
+        assert.equals(require("./core/json_compat").null, decoded.d)
+    end)
+
     it("should reset state", function()
         local mock_client = MockHTTPClient.new("test_token")
         local shard = Shard.new(mock_client, 0, 3)
