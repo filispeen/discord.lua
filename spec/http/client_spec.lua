@@ -42,6 +42,24 @@ describe("HTTP Client interaction callbacks", function()
         assert.equals("1.5", received_headers["x-ratelimit-reset-after"])
         assert.equals("1", received_headers["retry-after"])
     end)
+
+    it("keeps major route ids while grouping nested resource ids", function()
+        local previous_http = package.loaded["coro-http"]
+        package.loaded["coro-http"] = { request = function() return { code = 200 }, "{}" end }
+        local keys = {}
+        local limiter = {
+            is_rate_limited = function() return false end,
+            update_bucket = function(_, key) keys[#keys + 1] = key end,
+            update_global = function() end,
+        }
+        local client = Client.new("token", limiter)
+        client:get("/channels/10/messages/20")
+        client:get("/channels/11/messages/20")
+        client:get("/channels/10/messages/21")
+        package.loaded["coro-http"] = previous_http
+        assert.not_equals(keys[1], keys[2])
+        assert.equals(keys[1], keys[3])
+    end)
     it("sends an unauthenticated JSON callback request with its configured user agent", function()
         local previous_http = package.loaded["coro-http"]
         local received = nil

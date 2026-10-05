@@ -54,10 +54,15 @@ local function normalized_headers(response_headers)
 end
 
 local function bucket_key(method, endpoint)
-    local route = endpoint:gsub("/channels/[^/]+", "/channels/:major")
-        :gsub("/guilds/[^/]+", "/guilds/:major")
-        :gsub("/webhooks/[^/]+", "/webhooks/:major")
-        :gsub("/%d+", "/:id")
+    local majors = {}
+    local route = endpoint:gsub("/(channels|guilds|webhooks)/([^/]+)", function(kind, id)
+        majors[#majors + 1] = id
+        return "/" .. kind .. "/:major" .. #majors
+    end)
+    route = route:gsub("/%d+", "/:id")
+    route = route:gsub(":major(%d+)", function(index)
+        return majors[tonumber(index)]
+    end)
     return method:upper() .. ":" .. route
 end
 
