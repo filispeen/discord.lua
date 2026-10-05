@@ -123,6 +123,16 @@ describe("Shard", function()
         assert.equals("sess1", shard._state.session_id)
     end)
 
+    it("stores the resume gateway URL and resets reconnect backoff on READY", function()
+        local shard = Shard.new(MockHTTPClient.new("test_token"), 0, 3)
+        shard._state.reconnect_attempt = 4
+        shard:dispatch({ op = 0, t = "READY", s = 1, d = {
+            session_id = "sess1", resume_gateway_url = "wss://resume.example",
+        } })
+        assert.equals("wss://resume.example", shard._state.resume_gateway_url)
+        assert.equals(0, shard._state.reconnect_attempt)
+    end)
+
     it("should start heartbeating after HELLO", function()
         local mock_client = MockHTTPClient.new("test_token")
         local shard = Shard.new(mock_client, 0, 3)
@@ -206,6 +216,15 @@ describe("Shard", function()
         assert.is_false(shard._state.connected)
         assert.equals("session1", shard._state.session_id)
         assert.is_not_nil(shard._state.reconnect_timer)
+    end)
+
+    it("does not reconnect after a terminal gateway close code", function()
+        local shard = Shard.new(MockHTTPClient.new("test_token"), 0, 3)
+        local received
+        shard:on_error(function(err) received = err end)
+        shard:_on_close(4004, "bad token")
+        assert.is_nil(shard._state.reconnect_timer)
+        assert.equals(4004, received.code)
     end)
 
     it("retries resumable invalid sessions after its delay", function()

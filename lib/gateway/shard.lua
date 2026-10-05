@@ -81,6 +81,8 @@ function Shard:reset_state()
     self._state.session_id = nil
     self._state.seq = 0
     self._state.invalid_session_timer = nil
+    self._state.reconnect_attempt = 0
+    self._state.resume_gateway_url = nil
     return self
 end
 
@@ -92,17 +94,21 @@ function Shard:connect()
 
     self._closing = false
 
-    -- Get gateway URL
-    local gateway_info = self.client:get("/gateway/bot")
-    if not gateway_info or not gateway_info.url then
-        error("Failed to get gateway URL")
+    local gateway_url = self._state.session_id and self._state.resume_gateway_url
+    if not gateway_url then
+        local gateway_info = self.client:get("/gateway/bot")
+        if not gateway_info or not gateway_info.url then
+            error("Failed to get gateway URL")
+        end
+        gateway_url = gateway_info.url
     end
 
     -- Create WebSocket connection
     local websocket = require("coro-websocket")
     local utils = require("../utils")
     local ws_adapter = require("./ws_adapter")
-    local options, parse_err = utils.parseUrl(gateway_info.url .. "/?v=10&encoding=json")
+    gateway_url = gateway_url:gsub("/+$", "")
+    local options, parse_err = utils.parseUrl(gateway_url .. "/?v=10&encoding=json")
     if not options then
         error("Failed to parse gateway URL: " .. tostring(parse_err))
     end
@@ -244,7 +250,10 @@ function Shard:_schedule_reconnect()
 
     local timer = uv.new_timer()
     self._state.reconnect_timer = timer
-    timer:start(1000, 0, function()
+    local base = math.min(60000, 1000 * (2 ^ self._state.reconnect_attempt))
+    self._state.reconnect_attempt = self._state.reconnect_attempt + 1
+    local delay = math.floor(base * (0.8 + math.random() * 0.4))
+    timer:start(delay, 0, function()
         self._state.reconnect_timer = nil
         if self._closing or self._state.connected then
             return
@@ -278,6 +287,11 @@ function Shard:_on_close(code, reason)
     self._state.awaiting_ack = false
     self:clear_heartbeat()
     self:emit("disconnect", { code = code or 1006, reason = reason or "Connection closed" })
+    local terminal = { [4004] = true, [4010] = true, [4011] = true, [4012] = true, [4013] = true, [4014] = true }
+    if terminal[code] then
+        self:emit("error", errors.GatewayError.create("Gateway closed with non-recoverable code", code))
+        return
+    end
     self:_schedule_reconnect()
 end
 
@@ -419,8 +433,13 @@ function Shard:dispatch(event)
     if event.op == opcodes.DISPATCH then
         if event.t == "READY" then
             self._state.session_id = event.d and event.d.session_id
+            self._state.resume_gateway_url = event.d and event.d.resume_gateway_url
             self._state.connected = true
+            self._state.reconnect_attempt = 0
             self:emit("ready", event.d)
+        elseif event.t == "RESUMED" then
+            self._state.connected = true
+            self._state.reconnect_attempt = 0
         end
 
         -- Forward every dispatch event, including READY, to general listeners
