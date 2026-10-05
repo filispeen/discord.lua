@@ -3,6 +3,20 @@ require("spec_helper")
 local Client = require("./http/client")
 
 describe("HTTP Client interaction callbacks", function()
+    it("encodes path and query values and sorts query keys", function()
+        local previous_http = package.loaded["coro-http"]
+        local received_url
+        package.loaded["coro-http"] = {
+            request = function(_, url)
+                received_url = url
+                return { code = 200, headers = {} }, "{}"
+            end,
+        }
+        local client = Client.new("token")
+        client:get("/invites/a b?z=hello world&a=é")
+        package.loaded["coro-http"] = previous_http
+        assert.equals("https://discord.com/api/v10/invites/a%20b?a=%C3%A9&z=hello%20world", received_url)
+    end)
     it("sends an unauthenticated JSON callback request with its configured user agent", function()
         local previous_http = package.loaded["coro-http"]
         local received = nil

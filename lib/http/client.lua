@@ -61,6 +61,33 @@ local function bucket_key(method, endpoint)
     return method:upper() .. ":" .. route
 end
 
+local function encode_component(value, path)
+    local safe = path and "[^%w%-%._~%%:@]" or "[^%w%-%._~%%]"
+    return (tostring(value):gsub(safe, function(char)
+        return string.format("%%%02X", string.byte(char))
+    end))
+end
+
+local function encode_endpoint(endpoint)
+    local path, query = endpoint:match("^([^?]*)%??(.*)$")
+    local encoded_path = {}
+    for segment in (path .. "/"):gmatch("(.-)/") do
+        encoded_path[#encoded_path + 1] = encode_component(segment, true)
+    end
+    if query == "" then return table.concat(encoded_path, "/") end
+    local pairs_list = {}
+    for pair in query:gmatch("[^&]+") do
+        local key, value = pair:match("^([^=]*)=?(.*)$")
+        pairs_list[#pairs_list + 1] = { key = key, value = value }
+    end
+    table.sort(pairs_list, function(a, b) return a.key < b.key end)
+    local encoded_query = {}
+    for _, pair in ipairs(pairs_list) do
+        encoded_query[#encoded_query + 1] = encode_component(pair.key) .. "=" .. encode_component(pair.value)
+    end
+    return table.concat(encoded_path, "/") .. "?" .. table.concat(encoded_query, "&")
+end
+
 local function sleep(seconds)
     if seconds <= 0 then return end
     local thread = coroutine.running()
@@ -160,6 +187,7 @@ function Client:request(method, endpoint, options)
     end
 
     -- Build URL
+    endpoint = encode_endpoint(endpoint)
     local url = self.base_url .. endpoint
 
     -- Convert header map to coro-http's array-of-pairs format
