@@ -128,6 +128,7 @@ function Shard:connect()
     -- core.emitter passes the emitter instance itself as the first callback
     -- argument, so the actual payload is the second argument here.
     ws:on("message", function(_, msg)
+        if self.ws ~= ws then return end
         local ok, parsed = pcall(function()
             return json.decode(msg)
         end)
@@ -140,11 +141,13 @@ function Shard:connect()
 
     -- Handle close event
     ws:on("close", function(_, code, reason)
+        if self.ws ~= ws then return end
         self:_on_close(code, reason)
     end)
 
     -- Handle error event
     ws:on("error", function(_, err)
+        if self.ws ~= ws then return end
         self:emit("error", errors.GatewayError.create("WebSocket error: " .. tostring(err)))
     end)
 
@@ -254,6 +257,7 @@ function Shard:_schedule_reconnect()
     self._state.reconnect_attempt = self._state.reconnect_attempt + 1
     local delay = math.floor(base * (0.8 + math.random() * 0.4))
     timer:start(delay, 0, function()
+        timer:close()
         self._state.reconnect_timer = nil
         if self._closing or self._state.connected then
             return
@@ -313,8 +317,9 @@ function Shard:close()
         self._state.invalid_session_timer = nil
     end
     if self.ws then
-        self.ws:close()
+        local ws = self.ws
         self.ws = nil
+        ws:close()
     end
     if self._state.connected then
         self._state.connected = false
@@ -480,6 +485,7 @@ end
 function Shard:clear_heartbeat()
     if self._state.heartbeat_timer then
         self._state.heartbeat_timer:stop()
+        self._state.heartbeat_timer:close()
         self._state.heartbeat_timer = nil
     end
 end

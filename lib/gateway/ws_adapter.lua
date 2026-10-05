@@ -95,6 +95,8 @@ function M.wrap(_res, read, write)
                         code = payload:byte(1) * 256 + payload:byte(2)
                         reason = payload:sub(3)
                     end
+                    local close_thread = coroutine.create(function() self._write() end)
+                    coroutine.resume(close_thread)
                     self:emit("close", code, reason)
                     return
                 end

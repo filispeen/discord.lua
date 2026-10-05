@@ -86,4 +86,17 @@ describe("ws_adapter", function()
 
         assert.are.equal(calls_after_close, write_calls)
     end)
+
+    it("closes the underlying connection after a received close frame", function()
+        local writes = 0
+        local function fake_write()
+            writes = writes + 1
+        end
+        local ws = ws_adapter.wrap({}, function()
+            return { opcode = 8, payload = "" }
+        end, fake_write)
+        ws:start_reading()
+        assert.is_true(ws._closed)
+        assert.equals(1, writes)
+    end)
 end)
