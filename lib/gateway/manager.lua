@@ -350,24 +350,25 @@ end
 -- Helper to wait for shard to be ready
 function ShardManager:wait_for_shard(shard_id, timeout)
     timeout = timeout or 10000
-    local start_time = uv.now()
-
-    local wait_fn = function()
-        if start_time + timeout < uv.now() then
-            return false
+    local shard = self._shards[shard_id]
+    if shard and shard._state.connected then return true end
+    local thread = coroutine.running()
+    if not thread then return false end
+    local deadline = uv.now() + timeout
+    local timer = uv.new_timer()
+    timer:start(0, 100, function()
+        local current = self._shards[shard_id]
+        if current and current._state.connected then
+            timer:stop()
+            timer:close()
+            if coroutine.status(thread) == "suspended" then coroutine.resume(thread, true) end
+        elseif uv.now() >= deadline then
+            timer:stop()
+            timer:close()
+            if coroutine.status(thread) == "suspended" then coroutine.resume(thread, false) end
         end
-        local shard = self._shards[shard_id]
-        if shard and shard._state.connected then
-            return true
-        end
-        local timer = uv.timer:new(function()
-            self:wait_for_shard(shard_id, timeout)
-        end)
-        timer:start(100, 100)
-        return false
-    end
-
-    return wait_fn()
+    end)
+    return coroutine.yield()
 end
 
 return ShardManager

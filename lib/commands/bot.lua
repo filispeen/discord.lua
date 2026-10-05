@@ -4,6 +4,7 @@
 local class = require("../core/class")
 local Embed = require("../models/embed")
 local CommandTree = require("../interactions/command_tree")
+local uv = require("../core/luv_compat")
 
 local Bot = class('Bot')
 
@@ -410,9 +411,8 @@ function Bot:wait_for(event_name, opts)
     table.insert(self.listeners[event_name], listener)
 
     if opts.timeout then
-        local ok, luv = pcall(require, "luv")
-        if ok and luv then
-            timer_handle = luv.new_timer()
+        if uv and uv.new_timer then
+            timer_handle = uv.new_timer()
             timer_handle:start(math.floor(opts.timeout * 1000), 0, function()
                 if done then
                     return

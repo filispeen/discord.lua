@@ -5,9 +5,17 @@
 require("spec_helper")
 
 local class = require("./core/class")
+local timer_callbacks = {}
 
 -- Mock luv for testing
 local uv = {
+    new_timer = function()
+        return {
+            start = function(_, _, _, callback) timer_callbacks[#timer_callbacks + 1] = callback end,
+            stop = function() end,
+            close = function() end,
+        }
+    end,
     timer = {
         new = function()
             local timer = {
@@ -295,6 +303,18 @@ describe("ShardManager", function()
         assert.equals(err, error_args[3])
         assert.equals(event, disconnect_args[3])
         manager:stop()
+    end)
+
+    it("wait_for_shard resumes when the shard becomes ready", function()
+        local manager = ShardManager.new(MockHTTPClient.new("test_token"), 1)
+        local shard = { _state = { connected = false } }
+        manager._shards[0] = shard
+        local result
+        local thread = coroutine.create(function() result = manager:wait_for_shard(0, 1000) end)
+        assert.is_true(coroutine.resume(thread))
+        shard._state.connected = true
+        timer_callbacks[#timer_callbacks]()
+        assert.is_true(result)
     end)
 
     it("guild_shard_id returns 0 for a single shard", function()
