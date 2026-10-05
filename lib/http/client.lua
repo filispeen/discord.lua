@@ -211,7 +211,7 @@ function Client:request(method, endpoint, options)
         end
         local ok, res, response_body = pcall(http.request, method, url, header_list, request_body)
         if not ok then error("Request failed: " .. tostring(res), 0) end
-        local response_headers = normalized_headers(res.headers)
+        local response_headers = normalized_headers(res)
         if self.ratelimiter then
             if self.ratelimiter.update_bucket then self.ratelimiter:update_bucket(rate_key, response_headers) end
             if self.ratelimiter.update_global then self.ratelimiter:update_global(response_headers) end

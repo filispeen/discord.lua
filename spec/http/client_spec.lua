@@ -9,13 +9,38 @@ describe("HTTP Client interaction callbacks", function()
         package.loaded["coro-http"] = {
             request = function(_, url)
                 received_url = url
-                return { code = 200, headers = {} }, "{}"
+                return { code = 200 }, "{}"
             end,
         }
         local client = Client.new("token")
         client:get("/invites/a b?z=hello world&a=é")
         package.loaded["coro-http"] = previous_http
         assert.equals("https://discord.com/api/v10/invites/a%20b?a=%C3%A9&z=hello%20world", received_url)
+    end)
+
+    it("passes coro-http response header pairs to the rate limiter", function()
+        local previous_http = package.loaded["coro-http"]
+        local received_headers
+        package.loaded["coro-http"] = {
+            request = function()
+                return {
+                    code = 200,
+                    { "X-RateLimit-Remaining", "4" },
+                    { "X-RateLimit-Reset-After", "1.5" },
+                    { "Retry-After", "1" },
+                }, "{}"
+            end,
+        }
+        local limiter = {
+            is_rate_limited = function() return false end,
+            update_bucket = function(_, _, headers) received_headers = headers end,
+            update_global = function() end,
+        }
+        Client.new("token", limiter):get("/channels/1/messages")
+        package.loaded["coro-http"] = previous_http
+        assert.equals("4", received_headers["x-ratelimit-remaining"])
+        assert.equals("1.5", received_headers["x-ratelimit-reset-after"])
+        assert.equals("1", received_headers["retry-after"])
     end)
     it("sends an unauthenticated JSON callback request with its configured user agent", function()
         local previous_http = package.loaded["coro-http"]
