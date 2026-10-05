@@ -182,6 +182,39 @@ describe("ShardManager", function()
         Shard.connect = original_connect
     end)
 
+    it("connects each bucket shard inside a coroutine and advances after failure", function()
+        local Shard = require("./gateway/shard")
+        local original_connect = Shard.connect
+        local starts = {}
+        timer_callbacks = {}
+        Shard.connect = function(shard)
+            if coroutine.running() == nil then error("connect outside coroutine") end
+            starts[#starts + 1] = shard.shard_id
+            if shard.shard_id == 0 then error("connect failed") end
+            return shard
+        end
+        local function check(concurrency, initial, after_failure)
+            starts = {}
+            timer_callbacks = {}
+            local client = MockHTTPClient.new("test_token")
+            client.get = function()
+                return { shards = 5, session_start_limit = { max_concurrency = concurrency } }
+            end
+            local manager = ShardManager.new(client, concurrency)
+            local received
+            manager:on_shard_error(0, function(_, _, err) received = err end)
+            manager:start()
+            assert.same(initial, starts)
+            assert.is_truthy(tostring(received):find("connect failed", 1, true))
+            timer_callbacks[#timer_callbacks]()
+            assert.same(after_failure, starts)
+            manager:stop()
+        end
+        check(1, { 0 }, { 0, 1 })
+        check(2, { 0, 1 }, { 0, 1, 2 })
+        Shard.connect = original_connect
+    end)
+
     it("should forward a dispatch payload to on_dispatch listeners by event name", function()
         local mock_client = MockHTTPClient.new("test_token")
         local manager = ShardManager.new(mock_client, 2)

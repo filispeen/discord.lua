@@ -133,17 +133,27 @@ function ShardManager:start()
         local shard = self._shards[shard_id]
         local completed = false
         local timeout
-        local function launch_next()
-            if completed then return end
-            completed = true
-            if timeout then timeout:stop(); timeout:close() end
-            self._state.ready_count = self._state.ready_count + 1
+        local function schedule_next()
             local delay = uv.new_timer()
             table.insert(self._state.timers, delay)
             delay:start(5000, 0, function()
                 delay:close()
                 start_bucket(bucket)
             end)
+        end
+        local function launch_next()
+            if completed then return end
+            completed = true
+            if timeout then timeout:stop(); timeout:close() end
+            self._state.ready_count = self._state.ready_count + 1
+            schedule_next()
+        end
+        local function failed(err)
+            if completed then return end
+            completed = true
+            if timeout then timeout:stop(); timeout:close() end
+            shard:emit("error", err)
+            schedule_next()
         end
         shard:on_ready(function(ready_payload)
             if self.listeners["shard_ready"] then
@@ -159,7 +169,10 @@ function ShardManager:start()
         timeout = uv.new_timer()
         table.insert(self._state.timers, timeout)
         timeout:start(30000, 0, launch_next)
-        shard:connect()
+        coroutine.wrap(function()
+            local ok, err = pcall(function() shard:connect() end)
+            if not ok then failed(err) end
+        end)()
     end
 
     for bucket = 0, self.max_concurrency - 1 do
