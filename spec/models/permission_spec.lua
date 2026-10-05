@@ -20,6 +20,13 @@ package.loaded["luv"] = {
 local permission = require("./models/permission")
 
 describe("Permissions", function()
+    it("matches Discord permission values for current high bit flags", function()
+        assert.equals(281474976710656, permission.SET_VOICE_CHANNEL_STATUS)
+        assert.equals(562949953421312, permission.SEND_POLLS)
+        assert.equals(1125899906842624, permission.USE_EXTERNAL_APPS)
+        assert.equals(2251799813685248, permission.PIN_MESSAGES)
+        assert.equals(4503599627370496, permission.BYPASS_SLOWMODE)
+    end)
     it("defines ADMINISTRATOR permission", function()
         assert.equals(8, permission.ADMINISTRATOR)
     end)
