@@ -32,8 +32,6 @@ function Embed.new(data)
     self.pinned = data.pinned or false
     self.webhook_id = data.webhook_id
 
-    self.to_json = Embed.to_json
-
     return self
 end
 

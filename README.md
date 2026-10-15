@@ -135,5 +135,9 @@ See more examples in <a href="/examples/">`examples/`</a> directory:
 | Automatic gateway sharding           |      ✅      |     ✅     |
 </div>
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/chart?repos=filispeen/discord.lua&type=date&legend=top-left)](https://www.star-history.com/?repos=filispeen%2Fdiscord.lua&type=date&releases=&legend=top-left)
+
 ## Reference
 - <a href="https://github.com/Pycord-Development/pycord/">pycord</a>
