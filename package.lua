@@ -31,5 +31,6 @@ return {
     "lib/bundle/**/LICENSE*",
     "lib/bundle/LICENSE*",
     "lib/bundle/COPYING",
+    "bundle.sha256",
   },
 }
