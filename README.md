@@ -1,6 +1,6 @@
 ![Logo](md/wd.svg)
 
-<div align="center">Discord.lua is a modern, easy to use, feature-rich, and async ready API wrapper for Discord written in Lua for the Luvit runtime.</div>
+<div align="center">Discord.lua is an asynchronous Discord API wrapper written in Lua for the Luvit runtime.</div>
 
 ---
 
@@ -20,24 +20,25 @@
 
 ---
 
-## Key Features
-- Asynchronous
-- Proper rate limit handling.
-- Optimised for both speed and memory usage.
-- Full application API support.
+## Features
 
+- Coroutine-based async I/O on Luvit
+- Per-route and global rate limit handling
+- Optimized for speed and low memory usage
+- Full Discord application API support
 
 ## Installation
-### luvit
+
+### Luvit
 ```bash
 lit install filispeen/discord.lua
 ```
 
 On the first `require("discord.lua")`, Linux x64 and Windows x64 installations download the native voice bundle automatically. See the [installation guide](docs/getting-started/installation.md) for platform requirements.
 
-
 ## Quick example
-Traditional bot
+
+### Traditional bot
 ```lua
 local discord = require("discord.lua")
 
@@ -53,7 +54,8 @@ end)
 
 bot:run("YOUR_TOKEN")
 ```
-Interactions bot
+
+### Interactions bot
 ```lua
 local discord = require("discord.lua")
 
@@ -89,21 +91,20 @@ bot:slash_command("roll", {
 bot:run("YOUR_TOKEN")
 ```
 
+## Full examples
 
-## Full Examples
+More examples are in the <a href="/examples/">`examples/`</a> directory:
+- <a href="/examples/basic_bot.lua">`basic_bot.lua`</a> - Minimal bot with a `ping` prefix command
+- <a href="/examples/on_message.lua">`on_message.lua`</a> - Bot listening to the `on_message` event
+- <a href="/examples/interaction_bot.lua">`interaction_bot.lua`</a> - Bot with slash commands and interactions
+- <a href="/examples/view_button.lua">`view_button.lua`</a> - Button with a `View` timeout
+- <a href="/examples/hybrid_command.lua">`hybrid_command.lua`</a> - Hybrid command (prefix and slash)
+- <a href="/examples/voice_play.lua">`voice_play.lua`</a> - Playing audio with the voice client
+- <a href="/examples/sharded_bot.lua">`sharded_bot.lua`</a> - Auto-sharded gateway setup
 
-See more examples in <a href="/examples/">`examples/`</a> directory:
-- <a href="/examples/basic_bot.lua">`basic_bot.lua`</a> - Basic bot with some functions
-- <a href="/examples/on_message.lua">`on_message.lua`</a> - Bot with on_message event
-- <a href="/examples/interaction_bot.lua">`interaction_bot.lua`</a> - Bot with interactions
-- <a href="/examples/view_button.lua">`view_button.lua`</a> - Button with View timeout
-- <a href="/examples/hybrid_command.lua">`hybrid_command.lua`</a> - Hybrid command (prefix + slash)
-- <a href="/examples/voice_play.lua">`voice_play.lua`</a> - Voice client usage
-- <a href="/examples/sharded_bot.lua">`sharded_bot.lua`</a> - Sharded bot with auto-sharding
+## Feature comparison
 
-## Feature Comparison
-
-**For context:** ✅ Built in · ⚠️ Manual or limited support · ❌ No built-in high-level API
+✅ Built in · ⚠️ Manual or limited support · ❌ No built-in high-level API
 <div align="center">
 
 | Feature                              | discord.lua | Discordia |
@@ -135,7 +136,7 @@ See more examples in <a href="/examples/">`examples/`</a> directory:
 | Automatic gateway sharding           |      ✅      |     ✅     |
 </div>
 
-## Star History
+## Star history
 
 [![Star History Chart](https://api.star-history.com/chart?repos=filispeen/discord.lua&type=date&legend=top-left)](https://www.star-history.com/?repos=filispeen%2Fdiscord.lua&type=date&releases=&legend=top-left)
 
