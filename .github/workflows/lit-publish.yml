@@ -47,6 +47,14 @@ jobs:
         if: steps.native-bundle-cache.outputs.cache-hit != 'true'
         run: bash scripts/build-minimal-ffmpeg.sh
 
+      - name: Create native bundle archives and checksums
+        run: |
+          tar -C lib/bundle -cJf discord-bundle-linux-x64.tar.xz linux-x64
+          (cd lib/bundle && zip -qr "$GITHUB_WORKSPACE/discord-bundle-windows-x64.zip" windows-x64)
+          printf 'Linux=%s\nWindows=%s\n' \
+            "$(sha256sum discord-bundle-linux-x64.tar.xz | cut -d ' ' -f1)" \
+            "$(sha256sum discord-bundle-windows-x64.zip | cut -d ' ' -f1)" > bundle.sha256
+
       - name: Restore library cache
         id: library-cache
         uses: actions/cache/restore@v4
@@ -74,8 +82,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.workflow_run.head_branch }}
         run: |
-          tar -C lib/bundle -cJf discord-bundle-linux-x64.tar.xz linux-x64
-          (cd lib/bundle && zip -qr "$GITHUB_WORKSPACE/discord-bundle-windows-x64.zip" windows-x64)
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" discord-bundle-linux-x64.tar.xz discord-bundle-windows-x64.zip --clobber
           else
