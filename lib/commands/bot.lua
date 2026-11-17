@@ -775,7 +775,9 @@ function Bot:connect()
     -- connect() in the same process (hot-reload flows that call
     -- Bot:connect() again), so re-running setup code doesn't stack new
     -- bot:interaction/bot:component registrations on top of stale ones.
-    self:clear_interactions()
+    if self.client then
+        self:clear_interactions()
+    end
 
     local Client = require("../models/client")
     self.client = Client.new(self.token, self.ratelimiter, self.intents, {
