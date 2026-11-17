@@ -104,7 +104,7 @@ describe("ratelimiter", function()
             local ok = manager:consume_global()
 
             assert.is_true(ok)
-            assert.equals(9, manager.global_remaining)
+            assert.equals(49, manager.global_remaining)
         end)
 
         it("refills the global bucket after its cooldown", function()

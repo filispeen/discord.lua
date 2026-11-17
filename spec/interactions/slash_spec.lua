@@ -256,7 +256,7 @@ describe("SlashCommandContext", function()
                 token = "tok1",
                 data = {
                     name = "cmd",
-                    options = { { name = "target", type = 10, value = "555" } },
+                    options = { { name = "target", type = 9, value = "555" } },
                     resolved = {
                         users = { ["555"] = { id = "555", username = "someone" } },
                     },
@@ -274,7 +274,7 @@ describe("SlashCommandContext", function()
                 token = "tok1",
                 data = {
                     name = "cmd",
-                    options = { { name = "target", type = 10, value = "888" } },
+                    options = { { name = "target", type = 9, value = "888" } },
                     resolved = {
                         roles = { ["888"] = { id = "888", name = "Admins" } },
                     },

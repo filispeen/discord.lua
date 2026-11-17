@@ -148,7 +148,7 @@ describe("ext.tasks", function()
         local tasks = load_tasks()
         local loop = tasks.loop(function()
             error("fatal")
-        end, { seconds = 1 })
+        end, { seconds = 1, reconnect = false })
 
         loop:start()
         latest_timer().callback()

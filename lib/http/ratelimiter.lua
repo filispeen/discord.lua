@@ -36,8 +36,11 @@
 local uv = require("../core/luv_compat")
 
 local function now_seconds()
-    if uv and uv.now then
-        return uv.now() / 1000
+    if uv and uv.gettimeofday then
+        local sec, usec = uv.gettimeofday()
+        if sec then
+            return sec + (usec or 0) / 1000000
+        end
     end
     return os.time()
 end
