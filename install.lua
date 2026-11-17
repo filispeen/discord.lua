@@ -1,7 +1,7 @@
 local ffi = require("ffi")
 
 local source = debug.getinfo(1, "S").source
-local root = assert(source:match("^@(.+)[/\\][^/\\]+$"), "install.lua must be loaded from a file")
+local root = source:match("^@(.+)[/\\][^/\\]+$") or (source:sub(1, 1) == "@" and ".")
 local package_file = assert(loadfile(root .. "/package.lua"), "package.lua not found")
 local package_info = package_file()
 local version = assert(package_info.version, "package version not found")

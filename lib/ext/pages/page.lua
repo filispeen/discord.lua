@@ -46,7 +46,7 @@ local function is_embed_like(value)
 end
 
 function Page.from_value(value)
-    if class.isInstanceOf(value, Page) then
+    if class.isInstanceOf(value, Page) or (type(value) == "table" and getmetatable(value) and getmetatable(value)._name == "Page") then
         return value
     end
 

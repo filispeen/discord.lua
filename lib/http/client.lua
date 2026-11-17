@@ -56,10 +56,13 @@ end
 local function bucket_key(method, endpoint)
     local path = endpoint:match("^([^?]*)") or endpoint
     local majors = {}
-    local route = path:gsub("/(channels|guilds|webhooks)/([^/]+)", function(kind, id)
-        majors[#majors + 1] = id
-        return "/" .. kind .. "/:major" .. #majors
-    end)
+    local route = path
+    for _, kind in ipairs({ "channels", "guilds", "webhooks" }) do
+        route = route:gsub("/" .. kind .. "/([^/]+)", function(id)
+            majors[#majors + 1] = id
+            return "/" .. kind .. "/:major" .. #majors
+        end)
+    end
     route = route:gsub("/%d+", "/:id")
     route = route:gsub(":major(%d+)", function(index)
         return majors[tonumber(index)]

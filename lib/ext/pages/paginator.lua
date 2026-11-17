@@ -79,7 +79,7 @@ local function is_page_group_list(pages)
         return false
     end
     for _, page in ipairs(pages) do
-        if not class.isInstanceOf(page, PageGroup) then
+        if not class.isInstanceOf(page, PageGroup) and not (type(page) == "table" and getmetatable(page) and getmetatable(page)._name == "PageGroup") then
             return false
         end
     end

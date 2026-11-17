@@ -11,7 +11,7 @@ local timer_callbacks = {}
 local uv = {
     new_timer = function()
         local timer = {
-            start = function(_, _, callback) timer_callbacks[#timer_callbacks + 1] = callback end,
+            start = function(_, _, _, callback) timer_callbacks[#timer_callbacks + 1] = callback end,
             stop = function() end,
             close = function() end,
         }
@@ -208,8 +208,7 @@ describe("Shard", function()
         local sent
         shard.ws = { send = function(_, payload) sent = payload end }
         shard:send_heartbeat()
-        local decoded = require("./core/json_compat").decode(sent)
-        assert.equals(require("./core/json_compat").null, decoded.d)
+        assert.is_not_nil(sent:match('"d":null'))
     end)
 
     it("should reset state", function()

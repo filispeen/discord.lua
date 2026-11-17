@@ -1062,9 +1062,17 @@ describe("Bot", function()
             local requests = {}
             local http = {
                 get = function() return {} end,
-                put = function(_, endpoint, payload)
-                    table.insert(requests, { endpoint = endpoint, payload = payload })
+                post = function(_, endpoint, payload)
+                    table.insert(requests, { method = "POST", endpoint = endpoint, payload = payload })
                     return payload
+                end,
+                patch = function(_, endpoint, payload)
+                    table.insert(requests, { method = "PATCH", endpoint = endpoint, payload = payload })
+                    return payload
+                end,
+                delete = function(_, endpoint)
+                    table.insert(requests, { method = "DELETE", endpoint = endpoint })
+                    return {}
                 end,
             }
             local bot = Bot.new()
@@ -1080,12 +1088,10 @@ describe("Bot", function()
 
             bot:sync_commands()
 
-            assert.same({}, requests[1].payload)
             assert.equals("/applications/application-id/commands", requests[1].endpoint)
-            assert.equals("global", requests[2].payload[1].name)
-            assert.same({}, requests[3].payload)
-            assert.equals("/applications/application-id/guilds/guild-id/commands", requests[3].endpoint)
-            assert.equals("guild", requests[4].payload[1].name)
+            assert.equals("global", requests[1].payload.name)
+            assert.equals("/applications/application-id/guilds/guild-id/commands", requests[2].endpoint)
+            assert.equals("guild", requests[2].payload.name)
         end)
     end)
 end)

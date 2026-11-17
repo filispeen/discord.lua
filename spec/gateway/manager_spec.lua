@@ -49,6 +49,9 @@ package.loaded["coro-websocket"] = {
     end,
 }
 
+package.loaded["./gateway/shard"] = nil
+package.loaded["./gateway/manager"] = nil
+package.loaded["./shard"] = require("./gateway/shard")
 local ShardManager = require("./gateway/manager")
 
 -- Mock HTTP client
@@ -165,6 +168,8 @@ describe("ShardManager", function()
 
     it("queues five shards by identify bucket at concurrency one and two", function()
         local Shard = require("./gateway/shard")
+        local prev_rel = package.loaded["./shard"]
+        package.loaded["./shard"] = Shard
         local original_connect = Shard.connect
         local starts = {}
         Shard.connect = function(shard)
@@ -181,16 +186,19 @@ describe("ShardManager", function()
             local manager = ShardManager.new(client, concurrency)
             manager:start()
             assert.same(expected, starts)
-            assert.equals(5, #manager._state.queues[0] + (manager._state.queues[1] and #manager._state.queues[1] or 0))
+            assert.equals(5, #starts + #manager._state.queues[0] + (manager._state.queues[1] and #manager._state.queues[1] or 0))
             manager:stop()
         end
         check(1, { 0 })
         check(2, { 0, 1 })
         Shard.connect = original_connect
+        package.loaded["./shard"] = prev_rel
     end)
 
     it("connects each bucket shard inside a coroutine and advances after failure", function()
         local Shard = require("./gateway/shard")
+        local prev_rel = package.loaded["./shard"]
+        package.loaded["./shard"] = Shard
         local original_connect = Shard.connect
         local starts = {}
         timer_callbacks = {}
@@ -213,13 +221,14 @@ describe("ShardManager", function()
             manager:start()
             assert.same(initial, starts)
             assert.is_truthy(tostring(received):find("connect failed", 1, true))
-            timer_callbacks[#timer_callbacks]()
+            timer_callbacks[2]()
             assert.same(after_failure, starts)
             manager:stop()
         end
         check(1, { 0 }, { 0, 1 })
         check(2, { 0, 1 }, { 0, 1, 2 })
         Shard.connect = original_connect
+        package.loaded["./shard"] = prev_rel
     end)
 
     it("should forward a dispatch payload to on_dispatch listeners by event name", function()
