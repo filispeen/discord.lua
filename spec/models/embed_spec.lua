@@ -90,14 +90,14 @@ describe("Embed", function()
         local embed = Embed.new({})
         embed:with_thumbnail("https://example.com/thumb.png")
 
-        assert.equals("https://example.com/thumb.png", embed.thumbnail)
+        assert.equals("https://example.com/thumb.png", embed.thumbnail.url)
     end)
 
     it("with_image adds image", function()
         local embed = Embed.new({})
         embed:with_image("https://example.com/image.png")
 
-        assert.equals("https://example.com/image.png", embed.image)
+        assert.equals("https://example.com/image.png", embed.image.url)
     end)
 
     it("with_video adds video", function()
@@ -166,18 +166,18 @@ describe("Embed", function()
         assert.equals(0xFF0000, embed.color)
     end)
 
-    it("title sets title and url", function()
+    it("set_title sets title and url", function()
         local embed = Embed.new({})
-        embed:title("Test Title", "https://example.com", 0xFF0000)
+        embed:set_title("Test Title", "https://example.com", 0xFF0000)
 
         assert.equals("Test Title", embed.title)
         assert.equals("https://example.com", embed.url)
         assert.equals(0xFF0000, embed.color)
     end)
 
-    it("description sets description", function()
+    it("set_description sets description", function()
         local embed = Embed.new({})
-        embed:description("Test Description", 0xFF0000)
+        embed:set_description("Test Description", 0xFF0000)
 
         assert.equals("Test Description", embed.description)
         assert.equals(0xFF0000, embed.color)

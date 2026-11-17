@@ -56,7 +56,34 @@ function AutocompleteContext.new(interaction, client, focused_name, command)
     self.options = flatten_options(data.options, {})
     self.value = self.options[focused_name]
 
+    self._responded = false
     return self
+end
+
+function AutocompleteContext:respond(choices)
+    if not self.bot or not self.bot.rest then
+        error("AutocompleteContext has no rest client attached, cannot respond", 0)
+    end
+    local formatted = {}
+    for i, choice in ipairs(choices or {}) do
+        if type(choice) == "table" and choice.name ~= nil then
+            formatted[i] = {
+                name = tostring(choice.name),
+                value = choice.value ~= nil and choice.value or choice.name,
+            }
+        else
+            formatted[i] = { name = tostring(choice), value = choice }
+        end
+    end
+    self._responded = true
+    return self.bot.rest:create_interaction_response(
+        self.interaction.id,
+        self.interaction.token,
+        {
+            type = 8,
+            data = { choices = formatted },
+        }
+    )
 end
 
 return AutocompleteContext

@@ -45,20 +45,21 @@ function View.new(opts)
     return self
 end
 
-local function next_free_row(self)
-    local counts = {}
+local function next_free_row(self, item)
+    local weights = {}
     for i = 0, MAX_ROWS - 1 do
-        counts[i] = 0
+        weights[i] = 0
     end
 
-    for _, item in ipairs(self.items) do
-        if item.row ~= nil then
-            counts[item.row] = counts[item.row] + 1
+    for _, existing in ipairs(self.items) do
+        if not existing.v2 and existing.type ~= "action_row" and existing.row ~= nil then
+            weights[existing.row] = weights[existing.row] + (existing.width or 1)
         end
     end
 
+    local width = (item and item.width) or 1
     for i = 0, MAX_ROWS - 1 do
-        if counts[i] < 5 then
+        if weights[i] + width <= 5 then
             return i
         end
     end
@@ -67,8 +68,8 @@ local function next_free_row(self)
 end
 
 function View:add(item)
-    if item.row == nil then
-        local row = next_free_row(self)
+    if not item.v2 and item.type ~= "action_row" and item.row == nil then
+        local row = next_free_row(self, item)
         if row == nil then
             error("view already has 5 full rows, cannot add more items")
         end
@@ -122,7 +123,7 @@ function View:to_components()
     for i = 0, MAX_ROWS - 1 do rows[i] = {} end
 
     for _, item in ipairs(self.items) do
-        if item.type == "action_row" then
+        if item.type == "action_row" or item.v2 then
             components[#components + 1] = item:to_component()
         else
             local row_index = item.row or 0
@@ -139,7 +140,15 @@ end
 
 function View:stop()
     self.stopped = true
-    self._timer_handle = nil
+    if self._timer_handle then
+        if self._timer_handle.stop then
+            self._timer_handle:stop()
+        end
+        if self._timer_handle.close then
+            self._timer_handle:close()
+        end
+        self._timer_handle = nil
+    end
     return self
 end
 

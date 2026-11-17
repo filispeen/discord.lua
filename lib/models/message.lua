@@ -92,6 +92,38 @@ local Reaction = require("./reaction")
 local Poll = require("./poll").Poll
 
 -- Message class
+local function parse_iso8601(ts)
+    if ts == nil then
+        return nil
+    end
+    if type(ts) == "number" then
+        return ts
+    end
+    if type(ts) ~= "string" then
+        return nil
+    end
+    local year, month, day, hour, min, sec, rest = ts:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)[T ](%d%d):(%d%d):(%d%d)(.*)$")
+    if not year then
+        return tonumber(ts)
+    end
+    local local_t = os.time({
+        year = tonumber(year),
+        month = tonumber(month),
+        day = tonumber(day),
+        hour = tonumber(hour),
+        min = tonumber(min),
+        sec = tonumber(sec),
+    })
+    local utc_now = os.date("!*t", local_t)
+    local utc_offset = os.difftime(local_t, os.time(utc_now))
+    local tz_offset = 0
+    local sign, tz_h, tz_m = rest:match("([+-])(%d%d):?(%d%d)$")
+    if sign then
+        tz_offset = (tonumber(tz_h) * 3600 + tonumber(tz_m) * 60) * (sign == "-" and -1 or 1)
+    end
+    return local_t + utc_offset - tz_offset
+end
+
 local Message = class("Message")
 
 local function snapshot(data, http)
@@ -149,8 +181,8 @@ function Message.new(data, http)
     self.flag_set = require("./flags").MessageFlags.new(self.flags)
 
     -- Timestamps
-    self.timestamp = data.timestamp and tonumber(data.timestamp)
-    self.edited_timestamp = data.edited_timestamp and tonumber(data.edited_timestamp)
+    self.timestamp = parse_iso8601(data.timestamp)
+    self.edited_timestamp = parse_iso8601(data.edited_timestamp)
 
     -- Other fields
     self.pinned = data.pinned or false
@@ -196,7 +228,7 @@ function Message:_update(data)
     for _, field in ipairs(fields) do
         if data[field] ~= nil then
             if field == "timestamp" or field == "edited_timestamp" then
-                self[field] = tonumber(data[field])
+                self[field] = parse_iso8601(data[field])
             else
                 self[field] = data[field]
             end

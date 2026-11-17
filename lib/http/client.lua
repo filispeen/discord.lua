@@ -54,8 +54,9 @@ local function normalized_headers(response_headers)
 end
 
 local function bucket_key(method, endpoint)
+    local path = endpoint:match("^([^?]*)") or endpoint
     local majors = {}
-    local route = endpoint:gsub("/(channels|guilds|webhooks)/([^/]+)", function(kind, id)
+    local route = path:gsub("/(channels|guilds|webhooks)/([^/]+)", function(kind, id)
         majors[#majors + 1] = id
         return "/" .. kind .. "/:major" .. #majors
     end)
@@ -206,13 +207,22 @@ function Client:request(method, endpoint, options)
     local attempts = 0
     while true do
         if self.ratelimiter and self.ratelimiter.is_rate_limited then
-            local wait = math.max(
-                self.ratelimiter.get_retry_after and self.ratelimiter:get_retry_after(rate_key) or 0,
-                self.ratelimiter.get_global_retry_after and self.ratelimiter:get_global_retry_after() or 0
-            )
-            if wait > 0 then sleep(wait) end
-            if self.ratelimiter.consume then self.ratelimiter:consume(rate_key) end
-            if self.ratelimiter.consume_global then self.ratelimiter:consume_global() end
+            while true do
+                local wait = math.max(
+                    self.ratelimiter.get_retry_after and self.ratelimiter:get_retry_after(rate_key) or 0,
+                    self.ratelimiter.get_global_retry_after and self.ratelimiter:get_global_retry_after() or 0
+                )
+                if wait > 0 then
+                    sleep(wait)
+                else
+                    local ok_bucket = (not self.ratelimiter.consume) or (self.ratelimiter:consume(rate_key) ~= false)
+                    local ok_global = (not self.ratelimiter.consume_global) or (self.ratelimiter:consume_global() ~= false)
+                    if ok_bucket and ok_global then
+                        break
+                    end
+                    sleep(0.05)
+                end
+            end
         end
         local ok, res, response_body = pcall(http.request, method, url, header_list, request_body)
         if not ok then error("Request failed: " .. tostring(res), 0) end
@@ -291,7 +301,8 @@ function Client:post_interaction_callback(interaction_id, interaction_token, pay
 
     local status = res.code
     if status >= 400 then
-        return self:throw_error(status, response_body)
+        local _, data = pcall(json.decode, response_body or "")
+        return self:throw_error(status, type(data) == "table" and data or response_body)
     end
 
     local success, parsed = pcall(json.decode, response_body)
@@ -335,7 +346,7 @@ end
 function Client:check_rate_limit(endpoint)
     if self.ratelimiter and self.ratelimiter:is_rate_limited(endpoint) then
         local retry_after = self.ratelimiter:get_retry_after(endpoint)
-        coroutine.yield("Rate limited, waiting " .. retry_after .. "s")
+        sleep(retry_after)
         return true
     end
     return false

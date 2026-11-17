@@ -736,8 +736,9 @@ function VoiceGateway:resume(session_id, seq)
         op = enums.RESUME,
         d = {
             token = state.token,
+            server_id = self.guild_id or state.server_id,
             session_id = session_id,
-            seq = seq,
+            seq_ack = seq,
         },
     }
 

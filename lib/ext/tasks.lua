@@ -64,7 +64,7 @@ function Loop.new(callback, opts)
     local self = setmetatable({}, Loop)
     self.callback = callback
     self.count = opts.count
-    self.reconnect = opts.reconnect == true
+    self.reconnect = opts.reconnect ~= false
     self._times = opts.time and parse_times(opts.time) or nil
     if self._times then
         self._interval = nil
@@ -250,36 +250,39 @@ function Loop:_run()
     end
 
     self._in_callback = true
-    local ok, err = pcall(self.callback, unpack(self._args))
-    self._in_callback = false
-    if not self._running then
-        return
-    end
-    if not ok then
-        self._failed = true
-        if self._error then
-            pcall(self._error, err)
+    local co = coroutine.create(function()
+        local ok, err = pcall(self.callback, unpack(self._args))
+        self._in_callback = false
+        if not self._running then
+            return
         end
-        if not self.reconnect or not self:_matches_exception(err) then
+        if not ok then
+            self._failed = true
+            if self._error then
+                pcall(self._error, err)
+            end
+            if not self.reconnect or not self:_matches_exception(err) then
+                self:_finish()
+                return
+            end
+            local delay = self._backoff * 1000
+            self._backoff = math.min(self._backoff * 2, self._max_backoff)
+            self:_schedule(delay)
+            return
+        end
+
+        self._failed = false
+        self._backoff = self._initial_backoff
+        self._current_loop = self._current_loop + 1
+
+        if self._stop_requested or (self.count and self._current_loop >= self.count) then
             self:_finish()
             return
         end
-        local delay = self._backoff * 1000
-        self._backoff = math.min(self._backoff * 2, self._max_backoff)
-        self:_schedule(delay)
-        return
-    end
 
-    self._failed = false
-    self._backoff = self._initial_backoff
-    self._current_loop = self._current_loop + 1
-
-    if self._stop_requested or (self.count and self._current_loop >= self.count) then
-        self:_finish()
-        return
-    end
-
-    self:_schedule(self._times and self:_absolute_delay() or self._interval)
+        self:_schedule(self._times and self:_absolute_delay() or self._interval)
+    end)
+    coroutine.resume(co)
 end
 
 function Loop:start(...)

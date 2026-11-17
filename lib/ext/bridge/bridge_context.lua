@@ -55,6 +55,15 @@ function BridgeContext.new(source, kind)
         self.channel = source.channel
         self.bot = source.bot
         self.args = {}
+        if type(source.content) == "string" then
+            local parts = {}
+            for token in source.content:gmatch("%S+") do
+                parts[#parts + 1] = token
+            end
+            for i = 2, #parts do
+                self.args[#self.args + 1] = parts[i]
+            end
+        end
     end
 
     self.followup = {
@@ -76,7 +85,7 @@ function BridgeContext:respond(content, opts)
     end
 
     self._responded = true
-    return self._source:reply(content)
+    return self._source:reply(content, opts)
 end
 
 -- Alias, mirrors pycord's ctx.reply / ctx.respond overlap on ApplicationContext.

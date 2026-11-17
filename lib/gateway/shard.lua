@@ -236,8 +236,8 @@ end
 
 -- Send heartbeat. Discord requires reconnecting when an earlier heartbeat
 -- has not been acknowledged before the next one is due.
-function Shard:send_heartbeat()
-    if self._state.connected and self._state.awaiting_ack then
+function Shard:send_heartbeat(immediate)
+    if not immediate and self._state.connected and self._state.awaiting_ack then
         self:_on_close(1006, "Heartbeat ACK not received")
         return self
     end
@@ -307,6 +307,10 @@ function Shard:_on_close(code, reason)
     self._state.awaiting_ack = false
     self:clear_heartbeat()
     self:emit("disconnect", { code = code or 1006, reason = reason or "Connection closed" })
+    if code == 4007 or code == 4009 then
+        self._state.session_id = nil
+        self._state.seq = 0
+    end
     local terminal = { [4004] = true, [4010] = true, [4011] = true, [4012] = true, [4013] = true, [4014] = true }
     if terminal[code] then
         self:emit("error", errors.GatewayError.create("Gateway closed with non-recoverable code", code))
@@ -392,8 +396,7 @@ function Shard:dispatch(event)
     end
 
     if event.op == opcodes.HEARTBEAT then
-        -- Server is requesting an immediate heartbeat
-        self:send_heartbeat()
+        self:send_heartbeat(true)
         return
     end
 
@@ -463,7 +466,8 @@ function Shard:start_heartbeat()
     self:clear_heartbeat()
 
     local timer = uv.new_timer()
-    timer:start(interval, interval, function()
+    local jitter = math.floor(interval * math.random())
+    timer:start(jitter, interval, function()
         self:send_heartbeat()
     end)
     self._state.heartbeat_timer = timer

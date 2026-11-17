@@ -235,9 +235,23 @@ function ShardManager:guild_shard_id(guild_id)
         return 0
     end
 
-    local id = tonumber(guild_id) or 0
-    local shifted = math.floor(id / 4194304) -- id >> 22
-    return shifted % num_shards
+    local s = tostring(guild_id or "0"):match("^(%d+)") or "0"
+    local quotient_digits = {}
+    local rem = 0
+    local divisor = 4194304
+    for i = 1, #s do
+        local acc = rem * 10 + tonumber(s:sub(i, i))
+        local q = math.floor(acc / divisor)
+        rem = acc % divisor
+        if #quotient_digits > 0 or q > 0 then
+            quotient_digits[#quotient_digits + 1] = tostring(q)
+        end
+    end
+    local mod = 0
+    for i = 1, #quotient_digits do
+        mod = (mod * 10 + tonumber(quotient_digits[i])) % num_shards
+    end
+    return mod
 end
 
 -- Gets the shard responsible for a given guild.

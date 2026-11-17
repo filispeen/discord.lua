@@ -122,9 +122,9 @@ M.OPTION_TYPE = {
     USER = 6,
     CHANNEL = 7,
     ROLE = 8,
-    MENTIONABLE = 10,
-    NUMBER = 11,
-    ATTACHMENT = 12,
+    MENTIONABLE = 9,
+    NUMBER = 10,
+    ATTACHMENT = 11,
 }
 
 -- Discord API v10 channel and application-command context values.

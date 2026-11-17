@@ -505,6 +505,28 @@ function VoiceClient:disconnect(force)
         if self.state.playing then
             self:stop()
         end
+        if self._timer then
+            self._timer:stop()
+            if self._timer.close then
+                self._timer:close()
+            end
+            self._timer = nil
+        end
+        if self._jitter_timer then
+            self._jitter_timer:stop()
+            if self._jitter_timer.close then
+                self._jitter_timer:close()
+            end
+            self._jitter_timer = nil
+        end
+        state.jitter_buffers = {}
+        if self._udp_keepalive_timer then
+            self._udp_keepalive_timer:stop()
+            if self._udp_keepalive_timer.close then
+                self._udp_keepalive_timer:close()
+            end
+            self._udp_keepalive_timer = nil
+        end
         if self.udp and self.udp.close then
             self.udp:close()
         end
@@ -532,12 +554,7 @@ function VoiceClient:move_to(channel)
         error("Not connected", 0)
     end
 
-    -- self.client:voice_state_update({
-    --     guild_id = self.guild.id,
-    --     channel_id = channel.id,
-    --     self_mute = state.mute,
-    --     self_deaf = false,
-    -- })
+    self.client:voice_state_update(self.guild.id, channel and channel.id or nil, state.mute, false)
 
     self.channel = channel
 
@@ -934,6 +951,12 @@ function VoiceClient:_start_playback()
             if waiting_for_source then
                 self._playback_tick_count = self._playback_tick_count - 1
                 playback_started_at = luv.now()
+                if self._timer then
+                    self._timer:stop()
+                    if self._timer.close then
+                        self._timer:close()
+                    end
+                end
                 self._timer = luv.new_timer()
                 self._timer:start(5, 0, run_tick)
             else
@@ -949,6 +972,12 @@ function VoiceClient:_start_playback()
             delay = 0
         end
 
+        if self._timer then
+            self._timer:stop()
+            if self._timer.close then
+                self._timer:close()
+            end
+        end
         self._timer = luv.new_timer()
         self._timer:start(delay, 0, run_tick)
     end

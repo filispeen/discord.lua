@@ -46,13 +46,13 @@ function Embed.with_author(self, name, url, icon_url, color)
 end
 
 function Embed.with_thumbnail(self, url, color)
-    self.thumbnail = url
+    self.thumbnail = { url = url }
     if color then self:with_color(color) end
     return self
 end
 
 function Embed.with_image(self, url, color)
-    self.image = url
+    self.image = { url = url }
     if color then self:with_color(color) end
     return self
 end
@@ -76,7 +76,7 @@ function Embed.with_footer(self, text, icon_url, color)
 end
 
 function Embed.with_timestamp(self)
-    self.timestamp = os.date("%Y-%m-%dT%H:%M:%SZ")
+    self.timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
     return self
 end
 
@@ -98,22 +98,43 @@ function Embed.with_color(self, color)
     return self
 end
 
-function Embed.title(self, title, url, color)
+function Embed.set_title(self, title, url, color)
     self.title = title
     self.url = url
     if color then self:with_color(color) end
     return self
 end
 
-function Embed.description(self, desc, color)
+function Embed.set_description(self, desc, color)
     self.description = desc
     if color then self:with_color(color) end
     return self
 end
 
+function Embed.to_dict(self)
+    local out = {
+        title = self.title,
+        type = self.type,
+        url = self.url,
+        description = self.description,
+        color = self.color,
+        timestamp = self.timestamp,
+        footer = self.footer,
+        image = self.image,
+        thumbnail = self.thumbnail,
+        author = self.author,
+        provider = self.provider,
+        video = self.video,
+    }
+    if self.fields and #self.fields > 0 then
+        out.fields = self.fields
+    end
+    return out
+end
+
 function Embed.to_json(self)
     local json = require("../core/json_compat")
-    return json.encode(self)
+    return json.encode(self:to_dict())
 end
 
 -- Create a new embed (factory function)

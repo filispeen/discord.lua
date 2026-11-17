@@ -43,9 +43,9 @@ local UserConverter = class("UserConverter")
 function UserConverter.convert(ctx, value)
     local val_type = type(value)
     if val_type == "string" then
-        if value:sub(1, 2) == "@@" or value:sub(1, 2) == "<@" then
-            local user_id = value:sub(3, -2)
-            local user = ctx:get_user(user_id)
+        local mention_id = value:match("^<@!?(%d+)>$") or value:match("^@@!?(%d+)$")
+        if mention_id then
+            local user = ctx:get_user(mention_id)
             if user then return user end
             error(ConverterError.new("Could not find user: " .. value), 0)
         else
@@ -65,14 +65,8 @@ local MemberConverter = class("MemberConverter")
 function MemberConverter.convert(ctx, value)
     local val_type = type(value)
     if val_type == "string" then
-        if value:sub(1, 2) == "@@" or value:sub(1, 2) == "<@" then
-            -- Member mentions can be <@&ID> or <@ID>
-            local member_id
-            if value:sub(3, 3) == "&" then
-                member_id = value:sub(4, -2)
-            else
-                member_id = value:sub(3, -2)
-            end
+        local member_id = value:match("^<@!?(%d+)>$") or value:match("^@@!?(%d+)$")
+        if member_id then
             local member = ctx:get_member(member_id)
             if member then return member end
             error(ConverterError.new("Could not find member: " .. value), 0)
@@ -93,14 +87,8 @@ local RoleConverter = class("RoleConverter")
 function RoleConverter.convert(ctx, value)
     local val_type = type(value)
     if val_type == "string" then
-        if value:sub(1, 2) == "@@" or value:sub(1, 2) == "<@" then
-            -- Role mentions are <@&ID>
-            local role_id
-            if value:sub(3, 3) == "&" then
-                role_id = value:sub(4, -2)
-            else
-                role_id = value:sub(3, -2)
-            end
+        local role_id = value:match("^<@&(%d+)>$") or value:match("^@@&?(%d+)$")
+        if role_id then
             local role = ctx:get_role(role_id)
             if role then return role end
             error(ConverterError.new("Could not find role: " .. value), 0)
@@ -121,8 +109,8 @@ local ChannelConverter = class("ChannelConverter")
 function ChannelConverter.convert(ctx, value)
     local val_type = type(value)
     if val_type == "string" then
-        if value:sub(1, 1) == "#" then
-            local channel_id = value:sub(2, -1)
+        local channel_id = value:match("^<#(%d+)>$") or value:match("^#(%d+)$")
+        if channel_id then
             local channel = ctx:get_channel(channel_id)
             if channel then return channel end
             error(ConverterError.new("Could not find channel: " .. value), 0)

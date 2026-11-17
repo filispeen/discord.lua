@@ -52,6 +52,7 @@ function Bot.new(intents, ratelimiter)
     self.application_commands = {}
     self.command_tree = CommandTree.new(nil)
     self.components = {}
+    self.modals = {}
     self.interactions = {}
     self.client = nil
     self.auto_sync_commands = true
@@ -541,8 +542,11 @@ function Bot:get_commands()
     return self.commands
 end
 
-function Bot.get_member(_self, _user_id)
-    return nil
+function Bot:get_member(guild_id, user_id)
+    if not self.client then
+        return nil
+    end
+    return self.client:get_member(guild_id, user_id)
 end
 
 function Bot:get_user(user_id)
@@ -564,8 +568,11 @@ function Bot:get_channel(channel_id)
     return self.client:get_channel(channel_id)
 end
 
-function Bot.get_role(_self, _role_id)
-    return nil
+function Bot:get_role(guild_id, role_id)
+    if not self.client then
+        return nil
+    end
+    return self.client:get_role(guild_id, role_id)
 end
 
 -- Fetches Discord's built-in default soundboard sounds (not guild-specific),
@@ -643,6 +650,13 @@ end
 
 -- Registers a callback for a specific custom_id, invoked when a component
 -- interaction or modal submit with that custom_id is dispatched.
+function Bot:add_modal(modal)
+    if modal and modal.custom_id then
+        self.modals[modal.custom_id] = modal
+    end
+    return self
+end
+
 function Bot:interaction(custom_id, callback)
     self.interactions[custom_id] = callback
     return self
@@ -686,6 +700,23 @@ function Bot:dispatch_interaction(interaction)
     if custom_id then
         local ComponentContext = require("../interactions/component_context")
         local ctx = ComponentContext.new(interaction, self.client)
+
+        if interaction.type == 5 then
+            local modal = self.modals and self.modals[custom_id]
+            if modal and not modal.stopped and modal.on_submit then
+                event_dispatch.run(modal.on_submit, { n = 1, ctx }, function(err)
+                    self:emit("event_error", "modal_submit", err)
+                end)
+                return true
+            end
+            if self.interactions[custom_id] then
+                event_dispatch.run(self.interactions[custom_id], { n = 1, ctx }, function(err)
+                    self:emit("event_error", "modal_submit", err)
+                end)
+                return true
+            end
+            return false
+        end
 
         for _, view in ipairs(self.components) do
             if not view.stopped then
@@ -827,15 +858,33 @@ end
 -- Tries a two word "group sub" match first (for Bot:bridge_group subcommands,
 -- registered as "group sub"), falling back to a single word match.
 function Bot:dispatch_message(message)
+    if message.author and message.author.bot then
+        return false
+    end
+
     if type(message.content) ~= "string" then
         return false
     end
 
-    if message.content:sub(1, #self.prefix) ~= self.prefix then
-        return false
+    local rest
+    if message.content:sub(1, #self.prefix) == self.prefix then
+        rest = message.content:sub(#self.prefix + 1)
+    else
+        for cmd_name, custom_prefix in pairs(self.prefixes or {}) do
+            if custom_prefix and custom_prefix ~= "" and message.content:sub(1, #custom_prefix) == custom_prefix then
+                local after = message.content:sub(#custom_prefix + 1)
+                local two = after:match("^(%S+%s+%S+)")
+                local one = after:match("^(%S+)")
+                if two == cmd_name or one == cmd_name then
+                    rest = after
+                    break
+                end
+            end
+        end
+        if not rest then
+            return false
+        end
     end
-
-    local rest = message.content:sub(#self.prefix + 1)
     local first, second = rest:match("^(%S+)%s+(%S+)")
     local name
 

@@ -26,8 +26,29 @@
 --     which uses type 5, DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE).
 
 local class = require("../core/class")
+local bitwise = require("../core/bitwise")
 
 local ComponentContext = class("ComponentContext")
+
+local function collect_component_values(components, into)
+    for _, comp in ipairs(components or {}) do
+        if comp.custom_id then
+            if comp.value ~= nil then
+                into[comp.custom_id] = comp.value
+            elseif comp.values ~= nil then
+                into[comp.custom_id] = comp.values
+            elseif comp.checked ~= nil then
+                into[comp.custom_id] = comp.checked
+            end
+        end
+        if comp.component then
+            collect_component_values({ comp.component }, into)
+        end
+        if comp.components then
+            collect_component_values(comp.components, into)
+        end
+    end
+end
 
 function ComponentContext.new(interaction, client)
     local self = {}
@@ -44,10 +65,14 @@ function ComponentContext.new(interaction, client)
     -- never on the interaction's top level; hoist them here so callback
     -- code can read ctx.custom_id directly, matching the doc comment
     -- above and every example's usage.
+    self.values_by_id = {}
     if interaction.data then
         self.custom_id = interaction.data.custom_id
         self.component_type = interaction.data.component_type
         self.values = interaction.data.values
+        if interaction.data.components then
+            collect_component_values(interaction.data.components, self.values_by_id)
+        end
     end
 
     return self
@@ -56,8 +81,11 @@ end
 local function build_message_data(content, opts)
     opts = opts or {}
     local data = { content = content }
+    if opts.flags then
+        data.flags = opts.flags
+    end
     if opts.ephemeral then
-        data.flags = 64
+        data.flags = bitwise.bor(data.flags or 0, 64)
     end
     if opts.embeds then
         data.embeds = opts.embeds
@@ -117,14 +145,58 @@ function ComponentContext:defer(opts)
     end
 
     local response_type = 6 -- DEFERRED_UPDATE_MESSAGE
+    local data
     if opts.with_message then
         response_type = 5 -- DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
+        if opts.ephemeral then
+            data = { flags = 64 }
+        end
     end
 
     return self.bot.rest:create_interaction_response(
         self.interaction_id,
         self.interaction_token,
-        { type = response_type }
+        { type = response_type, data = data }
+    )
+end
+
+function ComponentContext:edit(content, opts)
+    if not self.bot or not self.bot.rest then
+        error("ComponentContext has no rest client attached, cannot edit", 0)
+    end
+    opts = opts or {}
+    local payload = build_message_data(content, opts)
+    return self.bot.rest:edit_interaction_response(
+        self.bot.application_id,
+        self.interaction_token,
+        payload,
+        opts.files
+    )
+end
+
+function ComponentContext:send_followup(content, opts)
+    if not self.bot or not self.bot.rest then
+        error("ComponentContext has no rest client attached, cannot send followup", 0)
+    end
+    opts = opts or {}
+    local payload = build_message_data(content, opts)
+    return self.bot.rest:create_followup_message(
+        self.bot.application_id,
+        self.interaction_token,
+        payload,
+        opts.files
+    )
+end
+
+function ComponentContext:send_modal(modal)
+    if not self.bot or not self.bot.rest then
+        error("ComponentContext has no rest client attached, cannot send modal", 0)
+    end
+    local data = modal.to_component and modal:to_component() or modal
+    return self.bot.rest:create_interaction_response(
+        self.interaction_id,
+        self.interaction_token,
+        { type = 9, data = data }
     )
 end
 

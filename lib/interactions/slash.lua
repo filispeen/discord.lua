@@ -171,9 +171,7 @@ function M.SlashCommandContext:parse_option(opt, resolved)
         else
             self.args[name] = { id = opt.value }
         end
-    elseif opt.type == 10 then
-        -- Mentionable option: opt.value can be a user id or a role id,
-        -- check resolved.users first, then resolved.roles.
+    elseif opt.type == 9 then
         local user = resolved.users and resolved.users[opt.value]
         local role = resolved.roles and resolved.roles[opt.value]
         if user then
@@ -191,6 +189,11 @@ function M.SlashCommandContext:parse_option(opt, resolved)
         else
             self.args[name] = { id = opt.value }
         end
+    elseif opt.type == 10 then
+        self.args[name] = tonumber(opt.value)
+    elseif opt.type == 11 then
+        local attachment = resolved.attachments and resolved.attachments[opt.value]
+        self.args[name] = attachment or { id = opt.value }
     elseif opt.type == 1 then
         -- Subcommand
         if opt.options then
@@ -211,7 +214,7 @@ end
 -- Get an argument with default
 function M.SlashCommandContext:get_arg(name, default)
     local value = self.args[name]
-    if value then
+    if value ~= nil then
         return value
     end
     return default
@@ -219,7 +222,7 @@ end
 
 -- Get an argument or throw error
 function M.SlashCommandContext:require_arg(name)
-    if self.args[name] then
+    if self.args[name] ~= nil then
         return self.args[name]
     end
     error("Missing required argument: " .. name, 0)

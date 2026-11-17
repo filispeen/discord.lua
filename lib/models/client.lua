@@ -82,6 +82,7 @@ function Client.new(token, ratelimiter, intents, opts)
         application_id = nil,
         intents = intents or enums.default_intents(),
         user = nil,
+        guilds = {},
         voice_states = VoiceStateStore.new(),
         channels = ChannelStore.new(),
         members = MemberStore.new(),
@@ -442,7 +443,11 @@ function Client:start_gateway()
 
     self.gateway:on_ready(function(ready_payload)
         if ready_payload and ready_payload.user then
-            self.user = ready_payload.user
+            local User = require("./user")
+            self.user = User.new(ready_payload.user)
+        end
+        if ready_payload and ready_payload.application and ready_payload.application.id then
+            self.application_id = ready_payload.application.id
         end
         self:emit("ready")
     end)
@@ -604,6 +609,8 @@ function Client:start_gateway()
 
     self.gateway:on_dispatch("GUILD_CREATE", function(data)
         if data and data.id then
+            local Guild = require("./guild")
+            self.guilds[data.id] = Guild.new(data, self.http)
             self.channels:put_many(data.channels, data.id)
             if data.voice_states then
                 for _, vs in ipairs(data.voice_states) do
@@ -617,16 +624,30 @@ function Client:start_gateway()
             if data.roles then
                 self.roles:put_many(data.id, data.roles)
             end
+            if data.emojis then
+                self.emojis[data.id] = data.emojis
+            end
+            if data.stickers then
+                self.stickers[data.id] = data.stickers
+            end
+            if data.stage_instances then
+                self.stage_instances[data.id] = data.stage_instances
+            end
         end
         self:emit("guild_create", data)
     end)
 
     self.gateway:on_dispatch("GUILD_UPDATE", function(data)
+        if data and data.id then
+            local Guild = require("./guild")
+            self.guilds[data.id] = Guild.new(data, self.http)
+        end
         self:emit("guild_update", data)
     end)
 
     self.gateway:on_dispatch("GUILD_DELETE", function(data)
         if data and data.id then
+            self.guilds[data.id] = nil
             self.channels:remove_guild(data.id)
             self.members:remove_guild(data.id)
             self.roles:remove_guild(data.id)
@@ -634,6 +655,8 @@ function Client:start_gateway()
             self.automod_rules[data.id] = nil
             self.stage_instances[data.id] = nil
             self.soundboard_sounds[data.id] = nil
+            self.emojis[data.id] = nil
+            self.stickers[data.id] = nil
         end
         self:emit("guild_delete", data)
     end)
@@ -1108,9 +1131,16 @@ function Client:get_user(id)
     return nil
 end
 
-function Client.get_member(_self, _id)
-    -- Guild context needed
-    return nil
+function Client:get_member(guild_id, user_id)
+    if user_id == nil then
+        local target_id = guild_id
+        for gid in pairs(self.members.by_guild or {}) do
+            local m = self.members:get(gid, target_id)
+            if m then return m end
+        end
+        return nil
+    end
+    return self.members:get(guild_id, user_id)
 end
 
 function Client:get_channel(id)
@@ -1137,12 +1167,22 @@ function Client:get_channel(id)
     return Channel.new(data, guild, self.http)
 end
 
-function Client.get_role(_self, _id)
-    -- Guild context needed
-    return nil
+function Client:get_role(guild_id, role_id)
+    if role_id == nil then
+        local target_id = guild_id
+        for gid in pairs(self.roles.by_guild or {}) do
+            local r = self.roles:get(gid, target_id)
+            if r then return r end
+        end
+        return nil
+    end
+    return self.roles:get(guild_id, role_id)
 end
 
 function Client:get_guild(id)
+    if self.guilds and self.guilds[id] then
+        return self.guilds[id]
+    end
     if self.rest then
         return self.rest:get_guild(id)
     end

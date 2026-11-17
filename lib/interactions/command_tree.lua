@@ -257,7 +257,10 @@ function CommandTree:dispatch_autocomplete(interaction, client)
 
     local AutocompleteContext = require("./autocomplete_context")
     local ctx = AutocompleteContext.new(interaction, client, focused.name, cmd)
-    callback(ctx)
+    local result = callback(ctx)
+    if not ctx._responded and type(result) == "table" and client and client.rest then
+        ctx:respond(result)
+    end
     return true
 end
 

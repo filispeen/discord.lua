@@ -33,6 +33,15 @@
 --   Manager:is_global_rate_limited() -> boolean
 --     Checks if global rate limit is reached.
 
+local uv = require("../core/luv_compat")
+
+local function now_seconds()
+    if uv and uv.now then
+        return uv.now() / 1000
+    end
+    return os.time()
+end
+
 local M = {}
 
 -- Default Discord API rate limit settings
@@ -59,14 +68,14 @@ function M.Bucket.new()
     self.remaining = M.DEFAULTS.rate_limit
     self.limit = M.DEFAULTS.rate_limit
     self.reset_at = 0
-    self.expires_at = os.time() + 300
+    self.expires_at = now_seconds() + 300
 
     return self
 end
 
 -- Check if a request can be made
 function M.Bucket:isAvailable()
-    if self.remaining == 0 and os.time() >= self.reset_at then
+    if self.remaining == 0 and now_seconds() >= self.reset_at then
         self.remaining = self.limit
         self.time_remaining = 0
     end
@@ -78,7 +87,7 @@ function M.Bucket:consume()
     if self.remaining > 0 then
         self.remaining = self.remaining - 1
         if self.remaining == 0 and self.reset_at == 0 then
-            self.reset_at = os.time() + math.ceil(self.reset_after)
+            self.reset_at = now_seconds() + self.reset_after
         end
         return true
     end
@@ -106,12 +115,12 @@ function M.Bucket:update(headers)
     -- Update time_remaining based on reset_after
     if self.remaining == 0 then
         self.time_remaining = self.reset_after
-        self.reset_at = os.time() + math.ceil(self.reset_after)
+        self.reset_at = now_seconds() + self.reset_after
     else
         self.time_remaining = 0
         self.reset_at = 0
     end
-    self.expires_at = os.time() + 300
+    self.expires_at = now_seconds() + 300
 end
 
 -- Check if we're rate limited (remaining == 0 and time_remaining > 0)
@@ -135,9 +144,10 @@ M.Manager.__index = M.Manager
 -- Create a new rate limit manager
 function M.Manager.new()
     local self = setmetatable({
-        buckets = {},  -- [path] = Bucket
-        global_remaining = 10,  -- Discord has a global rate limit of ~10 req/sec
-        global_limit = 10,
+        buckets = {},
+        route_buckets = {},
+        global_remaining = 50,
+        global_limit = 50,
         global_reset = 0,
         global_time_remaining = 0,
     }, M.Manager)
@@ -147,18 +157,24 @@ end
 
 -- Get or create a bucket for a specific path
 function M.Manager:get_bucket(path)
-    local now = os.time()
+    local now = now_seconds()
     for key, bucket in pairs(self.buckets) do
         if bucket.expires_at and bucket.expires_at < now then self.buckets[key] = nil end
     end
-    if not self.buckets[path] then
-        self.buckets[path] = M.Bucket.new()
+    local resolved = (self.route_buckets and self.route_buckets[path]) or path
+    if not self.buckets[resolved] then
+        self.buckets[resolved] = M.Bucket.new()
     end
-    return self.buckets[path]
+    return self.buckets[resolved]
 end
 
 -- Update a bucket with new rate limit headers
 function M.Manager:update_bucket(path, headers)
+    local bucket_hash = headers and (headers["x-ratelimit-bucket"] or headers["X-RateLimit-Bucket"])
+    if bucket_hash and bucket_hash ~= "" then
+        self.route_buckets = self.route_buckets or {}
+        self.route_buckets[path] = bucket_hash
+    end
     self:get_bucket(path):update(headers)
 end
 
@@ -178,7 +194,7 @@ end
 
 -- Check if globally rate limited
 function M.Manager:is_global_rate_limited()
-    if self.global_remaining == 0 and os.time() >= self.global_reset then
+    if self.global_remaining == 0 and now_seconds() >= self.global_reset then
         self.global_remaining = self.global_limit
         self.global_time_remaining = 0
     end
@@ -199,7 +215,7 @@ function M.Manager:consume_global()
         self.global_remaining = self.global_remaining - 1
         if self.global_remaining == 0 then
             self.global_time_remaining = 1
-            self.global_reset = os.time() + 1
+            self.global_reset = now_seconds() + 1
         end
         return true
     end
@@ -215,7 +231,7 @@ function M.Manager:update_global(headers)
     if limit then self.global_limit = tonumber(limit) end
     if retry_after then
         self.global_time_remaining = tonumber(retry_after) or 0
-        self.global_reset = os.time() + math.ceil(self.global_time_remaining)
+        self.global_reset = now_seconds() + self.global_time_remaining
     elseif remaining then
         self.global_time_remaining = 0
         self.global_reset = 0
@@ -232,7 +248,7 @@ function M.Manager:set_global_remaining(remaining, limit, reset)
     self.global_remaining = remaining or self.global_remaining
     self.global_limit = limit or self.global_limit
     self.global_time_remaining = reset or 0
-    self.global_reset = os.time() + math.ceil(self.global_time_remaining)
+    self.global_reset = now_seconds() + self.global_time_remaining
 end
 
 return {
