@@ -650,9 +650,15 @@ end
 
 -- Registers a callback for a specific custom_id, invoked when a component
 -- interaction or modal submit with that custom_id is dispatched.
-function Bot:add_modal(modal)
-    if modal and modal.custom_id then
-        self.modals[modal.custom_id] = modal
+function Bot:add_modal(modal_or_id, callback)
+    if type(modal_or_id) == "string" and type(callback) == "function" then
+        self.modals[modal_or_id] = {
+            custom_id = modal_or_id,
+            on_submit = callback,
+            stopped = false,
+        }
+    elseif type(modal_or_id) == "table" and modal_or_id.custom_id then
+        self.modals[modal_or_id.custom_id] = modal_or_id
     end
     return self
 end
